@@ -1,0 +1,11 @@
+{
+    "compilerOptions": {
+      "composite": true,                 // enables project references (used by Vite)
+      "module": "ESNext",                // keep ES modules for Node‑style imports
+      "moduleResolution": "Node",        // resolve imports like Node does
+      "allowSyntheticDefaultImports": true,
+      "types": ["node"]                  // adds Node.js type definitions
+    },
+    "include": ["vite.config.ts"]        // only the Vite config is compiled with this tsconfig
+  }
+  

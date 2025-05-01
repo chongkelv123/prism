@@ -1,12 +1,12 @@
 import React from 'react';
 import AuthHeader from './AuthHeader';
-import FormInput from '../../common/Input/FormInput';
-import Checkbox from '../../common/Checkbox/Checkbox';
-import ErrorAlert from '../../common/Alert/ErrorAlert';
-import PrimaryButton from '../../common/Button/PrimaryButton';
-import LinkButton from '../../common/Button/LinkButton';
-import CenteredCard from '../../layout/CenteredCard';
-import { useLoginForm } from '../../../features/auth/hooks/useLoginForm';
+import FormInput from '../common/Input/FormInput';
+import Checkbox from '../common/Checkbox/Checkbox';
+import ErrorAlert from '../common/Alert/ErrorAlert';
+import PrimaryButton from '../common/Button/PrimaryButton';
+import LinkButton from '../common/Button/LinkButton';
+import CenteredCard from '../layout/CenteredCard';
+import { useLoginForm } from '../../features/auth/hooks/useLoginForm';
 
 interface LoginFormProps {
   onLoginSuccess: () => void;

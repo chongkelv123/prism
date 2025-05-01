@@ -29,7 +29,7 @@ export const useLoginForm = (onSuccess: () => void) => {
       newErrors.email = 'Invalid email address';
     }
     if (!validatePassword(formData.password)) {
-      newErrors.password = 'Password must be at least 6 characters';
+      newErrors.password = 'Invalid email or password. Please try again.';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;

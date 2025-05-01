@@ -33,7 +33,7 @@ export const useRegistrationForm = () => {
     if (!formData.firstName.trim()) newErrors.firstName = 'First name is required';
     if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required';
     if (!validateEmail(formData.email)) newErrors.email = 'Invalid email address';
-    if (!validatePassword(formData.password)) newErrors.password = 'Password must be at least 6 characters';
+    if (!validatePassword(formData.password)) newErrors.password = 'Password must be at least 8 characters and include uppercase, lowercase, and a number';
     if (formData.password !== formData.confirmPassword)
       newErrors.confirmPassword = 'Passwords do not match';
 

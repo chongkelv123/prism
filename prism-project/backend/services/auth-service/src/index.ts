@@ -1,62 +1,42 @@
-// src/index.ts
-import express, { Request, Response } from 'express';
-import cors from 'cors';
 import dotenv from 'dotenv';
-import { eventPublisher } from './events/publisher';
-import connectDB from './config/database';
-import authRoutes from './routes/authRoutes';
-import { logger } from './utils/logger';
-
-// Load environment variables
 dotenv.config();
 
-// Initialize express app
+import express from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
+import { connectDB, disconnectDB } from './config/database';
+import { eventPublisher } from './events/publisher';
+import authRoutes from './routes/authRoutes';
+import logger from './utils/logger';
+
 const app = express();
-const PORT = process.env.PORT || 4000;
-
-// Connect to MongoDB
-connectDB();
-
-// Initialize event publisher
-(async () => {
-  try {
-    await eventPublisher.init();
-    logger.info('Event publisher initialized');
-  } catch (error) {
-    logger.error(`Failed to initialize event publisher: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-})();
-
-// Middleware
-app.use(cors());
+app.use(helmet());
+app.use(cors({ origin: true }));
 app.use(express.json());
-
-// Routes
 app.use('/api/auth', authRoutes);
 
-// Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
-  res.status(200).json({ status: 'Auth service is running' });
-});
+const PORT = Number(process.env.PORT) || 4000;
 
-// Error handling middleware
-app.use((err: Error, req: Request, res: Response, next: Function) => {
-  logger.error(`Unhandled error: ${err.message}`);
-  res.status(500).json({ message: 'Internal server error' });
-});
+async function start() {
+  try {
+    await connectDB();
+    await eventPublisher.init();
+    app.listen(PORT, () => logger.info(`Auth service up on ${PORT}`));
+  } catch (err) {
+    logger.error('Startup failed', err);
+    process.exit(1);
+  }
+}
 
-// Start server
-app.listen(PORT, () => {
-  logger.info(`Auth service running on port ${PORT}`);
-});
+start();
 
-// Handle graceful shutdown
-const shutdown = async () => {
-  logger.info('Shutting down auth service...');
+// Graceful shutdown
+async function shutdown() {
+  logger.info('Shutting down...');
   await eventPublisher.close();
+  await disconnectDB();
   process.exit(0);
-};
+}
 
-// Listen for termination signals
+process.on('SIGINT',  shutdown);
 process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);

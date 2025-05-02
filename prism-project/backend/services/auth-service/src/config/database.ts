@@ -1,23 +1,14 @@
-// src/config/database.ts
 import mongoose from 'mongoose';
-import { logger } from '../utils/logger';
+import logger from '../utils/logger';
 
-const connectDB = async (): Promise<void> => {
-  try {
-    const mongoURI = process.env.MONGO_URI || 'mongodb://localhost:27017/prism-auth';
-    
-    await mongoose.connect(mongoURI);
-    
-    logger.info('MongoDB Connected');
-  } catch (error) {
-    if (error instanceof Error) {
-      logger.error(`MongoDB Connection Error: ${error.message}`);
-    } else {
-      logger.error('Unknown MongoDB Connection Error');
-    }
-    // Exit process with failure
-    process.exit(1);
-  }
-};
+export async function connectDB() {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) throw new Error('MONGODB_URI not set');
+  await mongoose.connect(uri);
+  logger.info('MongoDB connected');
+}
 
-export default connectDB;
+export async function disconnectDB() {
+  await mongoose.disconnect();
+  logger.info('MongoDB disconnected');
+}

@@ -1,19 +1,20 @@
-FROM node:18-alpine
-
-# Create app directory
+# ─── Builder ─────────────────────────────────────────────────
+FROM node:18-alpine AS builder
 WORKDIR /app
 
-# Copy package files for efficient caching
-COPY package*.json ./
+# copy only manifest (lockfile optional)
+COPY package.json package-lock.json* ./
 
-# Install dependencies
-RUN npm ci
+# install all deps (npm ci → npm install fallback)
+RUN npm install
 
-# Copy source code
+# bring in your source & build
 COPY . .
+RUN npm run build         # dist/ gets generated
 
-# Expose port
-EXPOSE 5173
+# ─── Production ──────────────────────────────────────────────
+FROM nginx:stable-alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Command for development with hot reloading
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]

@@ -1,4 +1,3 @@
-# docker-compose.yml
 version: '3.8'
 
 services:
@@ -40,15 +39,16 @@ services:
     networks:
       - prism-network
 
-  # Frontend
+  # Frontend - Using the development Dockerfile
   frontend:
     build:
       context: ./frontend
+      dockerfile: Dockerfile.dev  # Use the development Dockerfile
     ports:
-      - "5173:80"
+      - "5173:5173"  # Map Vite's dev server port
     volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - ./frontend:/app  # Mount the source code for hot reloading
+      - /app/node_modules  # Prevent overwriting the node_modules with the host's
     environment:
       - VITE_API_URL=http://localhost:3000
     networks:

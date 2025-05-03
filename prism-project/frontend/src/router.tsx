@@ -1,4 +1,5 @@
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Outlet } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -8,40 +9,54 @@ import ReportsPage from './pages/ReportsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
+// Create a layout component that provides auth context
+const AuthLayout = () => {
+  return (
+    <AuthProvider>
+      <Outlet />
+    </AuthProvider>
+  );
+};
+
 const router = createBrowserRouter([
   {
-    path: '/',
-    element: <LandingPage />,
-  },
-  {
-    path: '/login',
-    element: <LoginPage />,
-  },
-  {
-    path: '/register',
-    element: <RegisterPage />,
-  },
-  {
-    path: '/',
-    element: <ProtectedRoute />,
+    element: <AuthLayout />,
     children: [
       {
-        path: '/dashboard',
-        element: <DashboardPage />,
+        path: '/',
+        element: <LandingPage />,
       },
       {
-        path: '/home',
-        element: <HomePage />,
+        path: '/login',
+        element: <LoginPage />,
       },
       {
-        path: '/reports',
-        element: <ReportsPage />,
+        path: '/register',
+        element: <RegisterPage />,
+      },
+      {
+        path: '/',
+        element: <ProtectedRoute />,
+        children: [
+          {
+            path: '/dashboard',
+            element: <DashboardPage />,
+          },
+          {
+            path: '/home',
+            element: <HomePage />,
+          },
+          {
+            path: '/reports',
+            element: <ReportsPage />,
+          },
+        ],
+      },
+      {
+        path: '*',
+        element: <NotFoundPage />,
       },
     ],
-  },
-  {
-    path: '*',
-    element: <NotFoundPage />,
   },
 ]);
 

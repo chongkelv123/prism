@@ -18,7 +18,9 @@ services:
     depends_on:
       - auth-service
     networks:
-      - prism-network
+      prism-network:
+        aliases: 
+          - localhost  # This makes localhost resolve to the API gateway
 
   # Authentication Service
   auth-service:
@@ -34,8 +36,10 @@ services:
       - RABBITMQ_URL=amqp://rabbitmq:5672
       - RABBITMQ_EXCHANGE=prism.events
     depends_on:
-      - mongo
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy      
     networks:
       - prism-network
 
@@ -50,7 +54,7 @@ services:
       - ./frontend:/app  # Mount the source code for hot reloading
       - /app/node_modules  # Prevent overwriting the node_modules with the host's
     environment:
-      - VITE_API_URL=http://localhost:3000
+      - VITE_API_URL=http://api-gateway:3000  # Changed from localhost
     networks:
       - prism-network
 
@@ -63,6 +67,11 @@ services:
       - mongo-data:/data/db
     networks:
       - prism-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   # RabbitMQ
   rabbitmq:
@@ -74,6 +83,11 @@ services:
       - rabbitmq-data:/var/lib/rabbitmq
     networks:
       - prism-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 networks:
   prism-network:

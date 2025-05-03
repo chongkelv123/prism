@@ -3,7 +3,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
-import HomePage from './pages/HomePage';
+import TemplatesPage from './pages/TemplatesPage';
 import DashboardPage from './pages/DashboardPage';
 import ReportsPage from './pages/ReportsPage';
 import NotFoundPage from './pages/NotFoundPage';
@@ -43,8 +43,8 @@ const router = createBrowserRouter([
             element: <DashboardPage />,
           },
           {
-            path: '/home',
-            element: <HomePage />,
+            path: '/templates',
+            element: <TemplatesPage />,
           },
           {
             path: '/reports',

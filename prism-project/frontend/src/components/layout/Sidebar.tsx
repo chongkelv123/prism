@@ -6,9 +6,8 @@ const Sidebar: React.FC = () => {
   const navigate = useNavigate();
   
   const navItems = [
-    { icon: <Home size={18} />, label: 'Home', path: '/' },
-    { icon: <FileText size={18} />, label: 'Reports', path: '/reports' },
-    { icon: <FolderKanban size={18} />, label: 'Projects', path: '/projects' },
+    { icon: <Home size={18} />, label: 'Home', path: '/dashboard' },
+    { icon: <FileText size={18} />, label: 'Reports', path: '/reports' },  
     { icon: <Layout size={18} />, label: 'Templates', path: '/templates' }
   ];
 

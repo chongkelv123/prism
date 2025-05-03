@@ -17,9 +17,14 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
 
   return (
     <CenteredCard>
-      <AuthHeader />
+      <div className="text-center mb-6">
+        <h1 className="text-2xl font-bold">Welcome Back</h1>
+        <p className="text-gray-600">Please sign in to your account</p>
+      </div>
+      
       {errors.general && <ErrorAlert message={errors.general} />}
-      <form onSubmit={handleSubmit}>
+      
+      <form onSubmit={handleSubmit} className="space-y-6">
         <FormInput
           label="Email"
           name="email"
@@ -29,6 +34,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
           error={errors.email}
           disabled={isLoading}
         />
+        
         <FormInput
           label="Password"
           name="password"
@@ -38,17 +44,28 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
           error={errors.password}
           disabled={isLoading}
         />
+        
         <div className="flex items-center justify-between mb-6">
-          <Checkbox
-            label="Remember me"
-            checked={formData.remember}
-            onChange={handleChange}
-          />
+          <div className="flex items-center">
+            <input
+              id="remember"
+              name="remember"
+              type="checkbox"
+              checked={formData.remember}
+              onChange={handleChange}
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+            />
+            <label htmlFor="remember" className="ml-2 block text-sm text-gray-700">
+              Remember me
+            </label>
+          </div>
           <LinkButton to="/forgot-password">Forgot password?</LinkButton>
         </div>
+        
         <PrimaryButton isLoading={isLoading} disabled={isLoading}>
           Sign in
         </PrimaryButton>
+        
         <div className="mt-6 text-center">
           <p className="text-gray-600">
             Don't have an account?{' '}

@@ -14,7 +14,7 @@ const UserMenu: React.FC = () => {
 
   const handleLogout = () => {
     localStorage.removeItem('authToken');
-    navigate('/login');
+    navigate('/');
   };
 
   return (

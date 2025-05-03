@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev:auth-service\"",
+    "dev": "concurrently \"npm run dev:api-gateway\" \"npm run dev:auth-service\"",
+    "dev:api-gateway": "cd api-gateway && npm run dev",
     "dev:auth-service": "cd services/auth-service && npm run dev",
     "build": "tsc -b services/*",
     "test": "jest"

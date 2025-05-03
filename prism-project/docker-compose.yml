@@ -1,0 +1,84 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./backend/api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=development
+      - AUTH_SERVICE_URL=http://auth-service:4000
+      - PROJECT_DATA_SERVICE_URL=http://project-data-service:4001
+      - REPORT_SERVICE_URL=http://report-service:4002
+      - NOTIFICATION_SERVICE_URL=http://notification-service:4003
+      - STORAGE_SERVICE_URL=http://storage-service:4004
+    depends_on:
+      - auth-service
+    networks:
+      - prism-network
+
+  # Authentication Service
+  auth-service:
+    build:
+      context: ./backend/services/auth-service
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - MONGODB_URI=mongodb://mongo:27017/prism-auth
+      - JWT_SECRET=your_jwt_secret_key_here
+      - TOKEN_EXPIRATION=24h
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - RABBITMQ_EXCHANGE=prism.events
+    depends_on:
+      - mongo
+      - rabbitmq
+    networks:
+      - prism-network
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:80"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:3000
+    networks:
+      - prism-network
+
+  # MongoDB
+  mongo:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - prism-network
+
+  # RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - prism-network
+
+networks:
+  prism-network:
+    driver: bridge
+
+volumes:
+  mongo-data:
+  rabbitmq-data:

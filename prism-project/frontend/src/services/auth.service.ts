@@ -1,3 +1,5 @@
+import apiClient from "./api.service";
+
 export interface AuthToken {
     accessToken: string;
     refreshToken?: string;
@@ -9,6 +11,12 @@ export interface UserRegistration {
     email: string;
     password: string;
 }
+
+export interface LoginCredentials {
+  email: string;
+  password: string;
+}
+
 
 export const login = async (email: string, password: string): Promise<AuthToken> => {
     try {
@@ -67,3 +75,18 @@ export const register = async (userData: UserRegistration): Promise<{userId: str
       throw new Error('Network error. Please check your connection.');
     }
   };
+
+  export const getCurrentUser = async (): Promise<any> => {
+    try {
+        const response = await apiClient.get('/api/auth/me');
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+export const logout = (): void => {
+    localStorage.removeItem('authToken');
+    sessionStorage.removeItem('authToken');
+    // Clear any user data in application state if needed
+};

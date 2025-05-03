@@ -62,9 +62,17 @@ export const useRegistrationForm = () => {
         state: { message: 'Registration successful! Please log in with your new account.' } 
       });
     } catch (err: any) {
-      setErrors({ 
-        general: err.message || 'Registration failed. Please try again.' 
-      });
+      // Improved error handling
+      let errorMessage = 'Registration failed. Please try again later.';
+      
+      if (err.message && !err.message.includes('Unexpected end of JSON')) {
+        errorMessage = err.message;
+      } else {
+        // If it's a JSON parsing error, use a user-friendly message
+        errorMessage = 'Cannot connect to the server. Please try again later.';
+      }
+      
+      setErrors({ general: errorMessage });
     } finally {
       setIsSubmitting(false);
     }

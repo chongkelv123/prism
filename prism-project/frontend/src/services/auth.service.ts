@@ -40,14 +40,30 @@ export const login = async (email: string, password: string): Promise<AuthToken>
 };
 
 export const register = async (userData: UserRegistration): Promise<{userId: string}> => {
-    const response = await fetch('/api/auth/register', {
+    try {
+      const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(userData),
-    });
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Registration failed');
+      });
+      
+      if (!response.ok) {
+        // Try to parse error message from response
+        try {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Registration failed');
+        } catch (parseError) {
+          // If JSON parsing fails, provide a generic error
+          throw new Error('Registration failed. Please try again later.');
+        }
+      }
+      
+      return response.json();
+    } catch (error) {
+      // Handle any network errors
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Network error. Please check your connection.');
     }
-    return response.json();
-};
+  };

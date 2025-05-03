@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { register } from '../../../services/auth.service';
 import { validateEmail, validatePassword } from '../../../utils/validation';
 
 interface FormData {
@@ -10,6 +12,7 @@ interface FormData {
 }
 
 export const useRegistrationForm = () => {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState<FormData>({
     firstName: '',
     lastName: '',
@@ -17,7 +20,7 @@ export const useRegistrationForm = () => {
     password: '',
     confirmPassword: '',
   });
-  const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
+  const [errors, setErrors] = useState<Partial<Record<keyof FormData | 'general', string>>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -45,10 +48,23 @@ export const useRegistrationForm = () => {
     e.preventDefault();
     if (!validate()) return;
     setIsSubmitting(true);
+    
     try {
-      // call registration API
-    } catch (err) {
-      // handle server error
+      await register({
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        password: formData.password
+      });
+      
+      // Redirect to login page after successful registration
+      navigate('/login', { 
+        state: { message: 'Registration successful! Please log in with your new account.' } 
+      });
+    } catch (err: any) {
+      setErrors({ 
+        general: err.message || 'Registration failed. Please try again.' 
+      });
     } finally {
       setIsSubmitting(false);
     }

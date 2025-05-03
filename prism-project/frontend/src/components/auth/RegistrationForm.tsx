@@ -2,6 +2,7 @@ import React from 'react';
 import { Card } from '../../components/common/Card/Card';
 import { Input } from '../../components/common/Input/Input';
 import { Button } from '../../components/common/Button/Button';
+import ErrorAlert from '../common/Alert/ErrorAlert';
 import { useRegistrationForm } from '../../features/auth/hooks/useRegistrationForm';
 
 export const RegistrationForm: React.FC = () => {
@@ -15,6 +16,9 @@ export const RegistrationForm: React.FC = () => {
             <h2 className="text-3xl font-bold text-gray-900">Create an Account</h2>
             <p className="mt-2 text-gray-600">Fill in your details to get started</p>
           </div>
+          
+          {errors.general && <ErrorAlert message={errors.general} />}
+          
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Input
@@ -74,6 +78,15 @@ export const RegistrationForm: React.FC = () => {
             <Button type="submit" isLoading={isSubmitting}>
               Create Account
             </Button>
+            
+            <div className="text-center mt-4">
+              <p className="text-gray-600">
+                Already have an account?{' '}
+                <a href="/login" className="text-blue-600 hover:underline">
+                  Sign in
+                </a>
+              </p>
+            </div>
           </form>
         </Card>
       </div>

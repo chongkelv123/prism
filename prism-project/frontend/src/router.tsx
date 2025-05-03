@@ -2,10 +2,11 @@ import { createBrowserRouter } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
-// import HomePage from './pages/HomePage';
+import HomePage from './pages/HomePage';
+import DashboardPage from './pages/DashboardPage';
+import ReportsPage from './pages/ReportsPage';
 import NotFoundPage from './pages/NotFoundPage';
-// import DashboardPage from './pages/DashboardPage';
-// import ReportsPage from './pages/ReportsPage';
+import ProtectedRoute from './components/auth/ProtectedRoute';
 
 const router = createBrowserRouter([
   {
@@ -20,18 +21,24 @@ const router = createBrowserRouter([
     path: '/register',
     element: <RegisterPage />,
   },
-  // {
-  //   path: '/dashboard',
-  //   element: <DashboardPage />,
-  // },
-  // {
-  //   path: '/home',
-  //   element: <HomePage />,
-  // },
-  // {
-  //   path: '/reports',
-  //   element: <ReportsPage />,
-  // },
+  {
+    path: '/',
+    element: <ProtectedRoute />,
+    children: [
+      {
+        path: '/dashboard',
+        element: <DashboardPage />,
+      },
+      {
+        path: '/home',
+        element: <HomePage />,
+      },
+      {
+        path: '/reports',
+        element: <ReportsPage />,
+      },
+    ],
+  },
   {
     path: '*',
     element: <NotFoundPage />,

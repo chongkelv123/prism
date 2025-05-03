@@ -38,17 +38,22 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
           error={errors.password}
           disabled={isLoading}
         />
-        <Checkbox
-          label="Remember me"
-          checked={formData.remember}
-          onChange={handleChange}
-        />
+        <div className="flex items-center justify-between mb-6">
+          <Checkbox
+            label="Remember me"
+            checked={formData.remember}
+            onChange={handleChange}
+          />
+          <LinkButton to="/forgot-password">Forgot password?</LinkButton>
+        </div>
         <PrimaryButton isLoading={isLoading} disabled={isLoading}>
           Sign in
         </PrimaryButton>
-        <div className="mt-4 flex justify-between">
-          <LinkButton to="/forgot-password">Forgot password?</LinkButton>
-          <LinkButton to="/signup">Sign up</LinkButton>
+        <div className="mt-6 text-center">
+          <p className="text-gray-600">
+            Don't have an account?{' '}
+            <LinkButton to="/register">Sign up</LinkButton>
+          </p>
         </div>
       </form>
     </CenteredCard>

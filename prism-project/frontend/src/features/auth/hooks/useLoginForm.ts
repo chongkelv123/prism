@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { login } from '../../../services/auth.service';
-import { validateEmail, validatePassword } from '../../../utils/validation';
+import { validateEmail } from '../../../utils/validation';
 
 interface LoginFormData {
   email: string;
@@ -26,10 +26,10 @@ export const useLoginForm = (onSuccess: () => void) => {
   const validate = (): boolean => {
     const newErrors: LoginFormErrors = {};
     if (!validateEmail(formData.email)) {
-      newErrors.email = 'Invalid email address';
+      newErrors.email = 'Please enter a valid email address';
     }
-    if (!validatePassword(formData.password)) {
-      newErrors.password = 'Invalid email or password. Please try again.';
+    if (formData.password.trim() === '') {
+      newErrors.password = 'Password is required';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -41,17 +41,33 @@ export const useLoginForm = (onSuccess: () => void) => {
       ...prev,
       [name]: type === 'checkbox' ? checked : value,
     }));
+    
+    // Clear error when user starts typing
+    if (errors[name as keyof LoginFormErrors]) {
+      setErrors(prev => ({ ...prev, [name]: undefined }));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
     setIsLoading(true);
+    
     try {
-      await login(formData.email, formData.password);
+      const { accessToken } = await login(formData.email, formData.password);
+      
+      // Store token in localStorage or sessionStorage based on "remember me"
+      if (formData.remember) {
+        localStorage.setItem('authToken', accessToken);
+      } else {
+        sessionStorage.setItem('authToken', accessToken);
+      }
+      
       onSuccess();
     } catch (err: any) {
-      setErrors({ general: err.message || 'Login failed' });
+      setErrors({ 
+        general: err.message || 'Invalid email or password. Please try again.' 
+      });
     } finally {
       setIsLoading(false);
     }

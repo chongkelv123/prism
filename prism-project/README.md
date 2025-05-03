@@ -7,7 +7,7 @@ PRISM is a web-based API that seamlessly integrates with project management plat
 ## 🌟 Key Features
 
 - **Automated Transformation**: Convert project data into polished PowerPoint reports automatically
-- **Multi-Platform Integration**: Seamless connections with Monday.com, Jira, and TROFOS
+- **Multi-Platform Integration**: Seamlessly connect with Monday.com, Jira, and TROFOS
 - **Real-Time Synchronization**: Ensure reports always reflect the latest project status
 - **Enhanced Productivity**: Eliminate manual report creation, saving valuable time
 - **Error Reduction**: Automated processing ensures consistent, accurate reporting
@@ -30,7 +30,7 @@ PRISM follows a microservices architecture with a Pub/Sub communication model fo
 
 ### Prerequisites
 
-- Node.js (v14+)
+- Node.js (v18+)
 - Docker and Docker Compose
 - Git
 
@@ -38,8 +38,8 @@ PRISM follows a microservices architecture with a Pub/Sub communication model fo
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/prism.git
-   cd prism
+   git clone https://github.com/your-username/prism-project.git
+   cd prism-project
    ```
 
 2. Install dependencies:
@@ -70,8 +70,8 @@ PRISM follows a microservices architecture with a Pub/Sub communication model fo
 
 5. Access the application:
    ```
-   Frontend: http://localhost:3000
-   API Gateway: http://localhost:8000
+   Frontend: http://localhost:5173
+   API Gateway: http://localhost:3000
    ```
 
 ## 💻 Development
@@ -79,12 +79,23 @@ PRISM follows a microservices architecture with a Pub/Sub communication model fo
 ### Project Structure
 
 ```
-/prism
-├── /frontend                # React frontend application
+/prism-project
+├── /frontend                # React frontend application with Vite
+│   ├── /public              # Static assets
+│   ├── /src                 # Frontend source code
+│   │   ├── /components      # Reusable UI components
+│   │   ├── /contexts        # React contexts (Auth, etc.)
+│   │   ├── /features        # Feature modules
+│   │   ├── /hooks           # Custom React hooks
+│   │   ├── /pages           # Page components
+│   │   ├── /services        # API services
+│   │   ├── /store           # State management
+│   │   ├── /styles          # Global styles
+│   │   └── /utils           # Utility functions
 ├── /backend                 # Backend microservices
 │   ├── /api-gateway         # API Gateway Service
 │   ├── /services            # Individual microservices
-│   │   ├── /auth-service
+│   │   ├── /auth-service    # Authentication service
 │   │   ├── /project-data-service
 │   │   ├── /report-generation-service
 │   │   ├── /notification-service
@@ -92,17 +103,45 @@ PRISM follows a microservices architecture with a Pub/Sub communication model fo
 │   └── /event-bus           # Message broker configuration
 ├── /shared                  # Shared code between services
 ├── /infra                   # Infrastructure configuration
+│   ├── /docker              # Docker configurations
+│   ├── /k8s                 # Kubernetes manifests
+│   └── /terraform           # Cloud infrastructure provisioning
 └── /tests                   # End-to-end and integration tests
+```
+
+### Running with Docker Compose
+
+The easiest way to run the full application stack is using Docker Compose:
+
+```bash
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop all services
+docker-compose down
 ```
 
 ### Running Individual Services
 
+The project is set up with npm workspaces, allowing you to run services directly from the root:
+
 ```bash
-# Run frontend in development mode
+# Run all services in development mode
+npm run dev
+
+# Run only frontend
+npm run dev:frontend
+
+# Run only backend services
+npm run dev:backend
+
+# Alternatively, you can run individual services from their directories
 cd frontend
 npm run dev
 
-# Run a specific backend service
 cd backend/services/auth-service
 npm run dev
 ```
@@ -110,32 +149,35 @@ npm run dev
 ## 🔧 Technology Stack
 
 ### Frontend
-- **Framework**: React.js
+- **Framework**: React.js with TypeScript
+- **Build Tool**: Vite
 - **Styling**: Tailwind CSS
-- **State Management**: Redux Toolkit
-- **API Communication**: Axios
+- **Routing**: React Router v6
+- **HTTP Client**: Axios
+- **UI Components**: Custom components with Lucide React icons
 
 ### Backend
 - **Runtime**: Node.js
 - **API Framework**: Express.js
-- **Authentication**: OAuth 2.0 / Passport.js
-- **Message Broker**: RabbitMQ / Apache Kafka
-- **Storage**: AWS S3 / Azure Blob Storage
+- **Authentication**: JWT with bcrypt
+- **Database**: MongoDB
+- **Message Broker**: RabbitMQ
+- **Storage**: Cloud storage (AWS S3/Azure Blob planned)
 
 ### DevOps
 - **Containerization**: Docker
-- **Orchestration**: Kubernetes
-- **CI/CD**: GitLab CI/CD
-- **Version Control**: Git (GitLab)
+- **Container Orchestration**: Kubernetes (planned)
+- **CI/CD**: GitHub Actions (configured)
+- **Version Control**: Git
 
 ## 📊 Project Timeline
 
 The development of PRISM follows a one-year plan:
 
-1. **Months 1-2**: Planning & Requirements
-2. **Months 3-4**: System Design
-3. **Months 5-6**: Core Backend Development
-4. **Months 7-8**: Frontend Development
+1. **Months 1-2**: Planning & Requirements ✅
+2. **Months 3-4**: System Design ✅
+3. **Months 5-6**: Core Backend Development 🔄
+4. **Months 7-8**: Frontend Development 🔄
 5. **Month 9**: Report Generation Engine
 6. **Month 10**: Storage & Notifications
 7. **Month 11**: Testing & QA
@@ -165,9 +207,7 @@ npm run test:e2e
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+Please make sure to follow our coding standards and run tests before submitting PRs.
 
 ## 👥 Team
 

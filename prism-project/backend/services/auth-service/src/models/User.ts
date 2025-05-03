@@ -20,7 +20,9 @@ const userSchema = new Schema<IUser>({
 
 // Hash on save
 userSchema.pre('save', async function () {
-  if (this.isModified('passwordHash')) return;
+  // Only hash the password if it has been modified (or is new)
+  if (!this.isModified('passwordHash')) return; 
+  
   const salt = await bcrypt.genSalt(10);
   this.passwordHash = await bcrypt.hash(this.passwordHash, salt);
 });

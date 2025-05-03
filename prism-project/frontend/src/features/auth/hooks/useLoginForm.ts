@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { login } from '../../../services/auth.service';
 import { validateEmail } from '../../../utils/validation';
+import { useAuth } from '../../../contexts/AuthContext';
 
 interface LoginFormData {
   email: string;
@@ -15,6 +16,7 @@ interface LoginFormErrors {
 }
 
 export const useLoginForm = (onSuccess: () => void) => {
+  const { login: authLogin } = useAuth();
   const [formData, setFormData] = useState<LoginFormData>({
     email: '',
     password: '',
@@ -56,15 +58,12 @@ export const useLoginForm = (onSuccess: () => void) => {
     try {
       const { accessToken } = await login(formData.email, formData.password);
       
-      // Store token in localStorage or sessionStorage based on "remember me"
-      if (formData.remember) {
-        localStorage.setItem('authToken', accessToken);
-      } else {
-        sessionStorage.setItem('authToken', accessToken);
-      }
+      // Use the AuthContext login method
+      authLogin(accessToken, formData.remember);
       
       onSuccess();
     } catch (err: any) {
+      console.error('Login error:', err);
       setErrors({ 
         general: err.message || 'Invalid email or password. Please try again.' 
       });

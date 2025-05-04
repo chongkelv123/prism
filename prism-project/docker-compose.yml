@@ -89,6 +89,30 @@ services:
       timeout: 5s
       retries: 5
 
+  # Report Generation Service
+  report-service:
+    build:
+      context: ./backend/services/report-generation-service
+    ports:
+      - "4002:4002"
+    environment:
+      - PORT=4002
+      - MONGODB_URI=mongodb://mongo:27017
+      - DB_NAME=prism-reports
+      - JWT_SECRET=your_jwt_secret_key_here
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - RABBITMQ_EXCHANGE=prism.events
+      - STORAGE_DIR=/usr/src/app/storage
+    volumes:
+      - ./backend/services/report-generation-service:/usr/src/app
+      - /usr/src/app/node_modules
+      - report-storage:/usr/src/app/storage
+    depends_on:
+      - rabbitmq
+      - mongo
+    networks:
+      - prism-network
+
 networks:
   prism-network:
     driver: bridge
@@ -96,3 +120,4 @@ networks:
 volumes:
   mongo-data:
   rabbitmq-data:
+  report-storage:

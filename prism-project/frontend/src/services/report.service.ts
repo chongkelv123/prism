@@ -65,13 +65,12 @@ const reportService = {
   // Generate a new report
   async generateReport(data: ReportGenerationRequest): Promise<Report> {
     try {
-      // Try to call the actual API if it exists
+      // Use the actual API endpoint
       const response = await apiClient.post('/api/reports/generate', data);
       return response.data;
     } catch (error) {
-      console.log('Using mock data for report generation');
-      
-      // Create a mock report
+      console.error('Error generating report:', error);
+      // Fall back to mock data if API call fails
       return {
         id: `report-${Date.now()}`,
         title: data.configuration?.title || 'New Report',
@@ -87,13 +86,12 @@ const reportService = {
   // Check report generation status
   async getReportStatus(id: string): Promise<{ status: string, progress?: number }> {
     try {
-      // Try to call the actual API if it exists
+      // Use the actual API endpoint
       const response = await apiClient.get(`/api/reports/${id}/status`);
       return response.data;
     } catch (error) {
-      console.log('Using mock data for report status');
-      
-      // Simulate processing and return completed after 3 seconds
+      console.error('Error checking report status:', error);
+      // Fall back to mock response if API call fails
       return new Promise((resolve) => {
         setTimeout(() => {
           resolve({ status: 'completed', progress: 100 });
@@ -104,140 +102,14 @@ const reportService = {
   
   // Download report - client-side implementation
   downloadReport(id: string, reportData?: Record<string, any>): void {
-    // Use the report data if provided, otherwise use a default template
-    const data = reportData || {
-      title: 'Sample Report',
-      platform: 'monday',
-      date: new Date().toLocaleDateString(),
-      metrics: [
-        { name: 'Tasks Completed', value: '32' },
-        { name: 'In Progress', value: '12' },
-        { name: 'Blockers', value: '3' }
-      ],
-      team: [
-        { name: 'John Doe', role: 'Product Manager' },
-        { name: 'Jane Smith', role: 'Developer' },
-        { name: 'Mike Johnson', role: 'Designer' }
-      ]
-    };
-    
-    // Create a new PowerPoint presentation
-    const pptx = new pptxgen();
-    
-    // Set presentation properties
-    pptx.layout = 'LAYOUT_16x9';
-    pptx.title = data.title;
-    
-    // Add title slide
-    const slide1 = pptx.addSlide();
-    slide1.background = { color: '0D47A1' };
-    slide1.addText(data.title, { 
-      x: 0.5, 
-      y: 1.5, 
-      w: '90%', 
-      h: 1.5, 
-      align: 'center', 
-      color: 'FFFFFF', 
-      fontSize: 44,
-      bold: true 
-    });
-    
-    slide1.addText(`Generated on: ${data.date}`, { 
-      x: 0.5, 
-      y: 3.5, 
-      w: '90%', 
-      h: 0.5, 
-      align: 'center', 
-      color: 'FFFFFF',
-      fontSize: 18 
-    });
-    
-    // Add logo based on platform
-    if (platformLogos[data.platform]) {
-      slide1.addImage({ 
-        data: platformLogos[data.platform],
-        x: 0.5, 
-        y: 0.5, 
-        w: 1, 
-        h: 1 
-      });
+    try {
+      // Redirect to the API endpoint for download
+      window.location.href = `${apiClient.defaults.baseURL}/api/reports/${id}/download`;
+    } catch (error) {
+      console.error('Error downloading report:', error);
+      // Show error to user
+      alert('Failed to download report. Please try again later.');
     }
-    
-    // Add metrics slide
-    const slide2 = pptx.addSlide();
-    slide2.addText('Project Metrics', { 
-      x: 0.5, 
-      y: 0.5, 
-      w: '90%', 
-      h: 0.8, 
-      fontSize: 36, 
-      color: '0D47A1',
-      bold: true 
-    });
-    
-    // Add metrics table
-    if (data.metrics && data.metrics.length > 0) {
-      const tableData = [
-        [{ text: 'Metric', options: { bold: true, fontSize: 18, fill: '0D47A1', color: 'FFFFFF' } }, 
-         { text: 'Value', options: { bold: true, fontSize: 18, fill: '0D47A1', color: 'FFFFFF' } }],
-        ...data.metrics.map(metric => [
-          { text: metric.name, options: { fontSize: 16 } },
-          { text: metric.value, options: { fontSize: 16 } }
-        ])
-      ];
-      
-      slide2.addTable(tableData, { x: 0.5, y: 1.5, w: 8, h: 2 });
-    }
-    
-    // Add team slide if data exists
-    if (data.team && data.team.length > 0) {
-      const slide3 = pptx.addSlide();
-      slide3.addText('Team Members', { 
-        x: 0.5, 
-        y: 0.5, 
-        w: '90%', 
-        h: 0.8, 
-        fontSize: 36, 
-        color: '0D47A1',
-        bold: true 
-      });
-      
-      // Add team table
-      const teamData = [
-        [{ text: 'Name', options: { bold: true, fontSize: 18, fill: '0D47A1', color: 'FFFFFF' } }, 
-         { text: 'Role', options: { bold: true, fontSize: 18, fill: '0D47A1', color: 'FFFFFF' } }],
-        ...data.team.map(member => [
-          { text: member.name, options: { fontSize: 16 } },
-          { text: member.role, options: { fontSize: 16 } }
-        ])
-      ];
-      
-      slide3.addTable(teamData, { x: 0.5, y: 1.5, w: 8, h: 2 });
-    }
-    
-    // Add a summary slide
-    const slide4 = pptx.addSlide();
-    slide4.addText('Summary', { 
-      x: 0.5, 
-      y: 0.5, 
-      w: '90%', 
-      h: 0.8, 
-      fontSize: 36, 
-      color: '0D47A1',
-      bold: true 
-    });
-    
-    slide4.addText('This is a sample report generated by PRISM.\nThe full version would include detailed project data from your connected platform.', { 
-      x: 0.5, 
-      y: 1.5, 
-      w: '90%', 
-      h: 1.5, 
-      fontSize: 18,
-      bullet: { type: 'number' }
-    });
-    
-    // Generate and download the PPTX file
-    pptx.writeFile({ fileName: `${data.title.replace(/\s+/g, '_')}.pptx` });
   }
 };
 

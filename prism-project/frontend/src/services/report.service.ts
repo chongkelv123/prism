@@ -61,7 +61,7 @@ const reportService = {
       ];
     }
   },
-  
+
   // Generate a new report
   async generateReport(data: ReportGenerationRequest): Promise<Report> {
     try {
@@ -82,7 +82,7 @@ const reportService = {
       };
     }
   },
-  
+
   // Check report generation status
   async getReportStatus(id: string): Promise<{ status: string, progress?: number }> {
     try {
@@ -99,12 +99,19 @@ const reportService = {
       });
     }
   },
-  
+
   // Download report - client-side implementation
   downloadReport(id: string, reportData?: Record<string, any>): void {
     try {
-      // Redirect to the API endpoint for download
-      window.location.href = `${apiClient.defaults.baseURL}/api/reports/${id}/download`;
+      // Get API base URL from environment or default to localhost
+      const baseURL = apiClient.defaults.baseURL || 'http://localhost:3000';
+
+      // Create a downloadable link and trigger it
+      const downloadURL = `${baseURL}/api/reports/${id}/download`;
+      console.log('Downloading report from:', downloadURL);
+
+      // Use window.open to handle the download
+      window.open(downloadURL, '_blank');
     } catch (error) {
       console.error('Error downloading report:', error);
       // Show error to user

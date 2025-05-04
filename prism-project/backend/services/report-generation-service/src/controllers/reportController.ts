@@ -1,6 +1,9 @@
 import { Request, Response } from 'express';
+import path from 'path';
+import fs from 'fs';
 import logger from '../utils/logger';
 import { Report } from '../models/Report';
+import { generatePowerPointReport } from '../utils/pptxGenerator';
 
 // Generate a new report
 export async function generateReport(req: Request, res: Response) {
@@ -90,6 +93,63 @@ export async function getAllReports(req: Request, res: Response) {
   }
 }
 
+// Download a generated report
+export async function downloadReport(req: Request, res: Response) {
+  try {
+    const reportId = req.params.id;
+    const report = await Report.findById(reportId);
+    
+    if (!report) {
+      return res.status(404).json({ message: 'Report not found' });
+    }
+    
+    if (report.status !== 'completed') {
+      return res.status(400).json({ 
+        message: 'Report is not ready for download',
+        status: report.status
+      });
+    }
+    
+    // For demo purposes, generate a PowerPoint file on-the-fly
+    // In a production environment, we would retrieve a pre-generated file
+    const reportData = {
+      title: report.title,
+      platform: report.platform,
+      date: new Date().toLocaleDateString(),
+      metrics: [
+        { name: 'Tasks Completed', value: '32' },
+        { name: 'In Progress', value: '12' },
+        { name: 'Blockers', value: '3' }
+      ],
+      team: [
+        { name: 'Professor Ganesh', role: 'Project Manager' },
+        { name: 'Kelvin Chong', role: 'Developer' },
+        { name: 'Chan Jian Da', role: 'DevOps' },
+        { name: 'Bryan', role: 'Designer' }
+      ],
+      configuration: report.configuration || {}
+    };
+    
+    const { filePath } = await generatePowerPointReport(reportData);
+    
+    // Get the filename from the path
+    const fileName = path.basename(filePath);
+    
+    // Set the appropriate headers
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    
+    // Create a read stream from the file and pipe it to the response
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+    
+    logger.info(`Report ${reportId} downloaded`);
+  } catch (error) {
+    logger.error('Error downloading report:', error);
+    return res.status(500).json({ message: 'Server error downloading report' });
+  }
+}
+
 // Process report (would typically be in a separate worker)
 async function processReport(reportId: string) {
   try {
@@ -110,6 +170,34 @@ async function processReport(reportId: string) {
       await new Promise(resolve => setTimeout(resolve, 1000));
       report.progress = i * 20;
       await report.save();
+    }
+    
+    // Generate sample report data
+    const reportData = {
+      title: report.title,
+      platform: report.platform,
+      date: new Date().toLocaleDateString(),
+      metrics: [
+        { name: 'Tasks Completed', value: '32' },
+        { name: 'In Progress', value: '12' },
+        { name: 'Blockers', value: '3' }
+      ],
+      team: [
+        { name: 'Professor Ganesh', role: 'Project Manager' },
+        { name: 'Kelvin Chong', role: 'Developer' },
+        { name: 'Chan Jian Da', role: 'DevOps' },
+        { name: 'Bryan', role: 'Designer' }
+      ],
+      configuration: report.configuration || {}
+    };
+    
+    // Pre-generate the PowerPoint file to ensure it exists
+    try {
+      // Only generate the file once to avoid duplication
+      await generatePowerPointReport(reportData);
+    } catch (genError) {
+      logger.error(`Error pre-generating PowerPoint for ${reportId}:`, genError);
+      // Continue anyway, as we'll generate on-demand for download
     }
     
     // Update status to completed

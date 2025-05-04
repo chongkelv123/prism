@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { generateReport, getReportStatus, getReportById, getAllReports } from '../controllers/reportController';
+import { generateReport, getReportStatus, getReportById, getAllReports, downloadReport } from '../controllers/reportController';
 
 const router = Router();
 
@@ -8,5 +8,6 @@ router.post('/generate', generateReport);
 router.get('/:id/status', getReportStatus);
 router.get('/:id', getReportById);
 router.get('/', getAllReports);
+router.get('/:id/download', downloadReport);
 
 export default router;

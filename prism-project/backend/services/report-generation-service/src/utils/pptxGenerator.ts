@@ -113,68 +113,6 @@ export async function generatePowerPointReport(data: ReportData): Promise<{ id: 
       slide2.addTable(tableData, { x: 0.5, y: 1.5, w: 8, h: 2 });
     }
     
-    // Add tasks slide if configured
-    if (data.configuration.includeTasks && data.tasks?.length) {
-      const slide3 = pptx.addSlide();
-      slide3.addText('Tasks & Issues', { 
-        x: 0.5, 
-        y: 0.5, 
-        w: '90%', 
-        h: 0.8, 
-        fontSize: 36, 
-        color: '0D47A1',
-        bold: true 
-      });
-      
-      // Add tasks table
-      const tasksData = [
-        [
-          { text: 'Task', options: { bold: true, fontSize: 18, fill: '0D47A1', color: 'FFFFFF' } }, 
-          { text: 'Status', options: { bold: true, fontSize: 18, fill: '0D47A1', color: 'FFFFFF' } },
-          { text: 'Assignee', options: { bold: true, fontSize: 18, fill: '0D47A1', color: 'FFFFFF' } }
-        ],
-        ...data.tasks.map(task => [
-          { text: task.name, options: { fontSize: 16 } },
-          { text: task.status, options: { fontSize: 16 } },
-          { text: task.assignee || 'Unassigned', options: { fontSize: 16 } }
-        ])
-      ];
-      
-      slide3.addTable(tasksData, { x: 0.5, y: 1.5, w: 8, h: 3 });
-    }
-    
-    // Add timeline slide if configured
-    if (data.configuration.includeTimeline && data.sprints?.length) {
-      const slide4 = pptx.addSlide();
-      slide4.addText('Project Timeline', { 
-        x: 0.5, 
-        y: 0.5, 
-        w: '90%', 
-        h: 0.8, 
-        fontSize: 36, 
-        color: '0D47A1',
-        bold: true 
-      });
-      
-      // Add sprints table
-      const sprintsData = [
-        [
-          { text: 'Sprint', options: { bold: true, fontSize: 18, fill: '0D47A1', color: 'FFFFFF' } }, 
-          { text: 'Start Date', options: { bold: true, fontSize: 18, fill: '0D47A1', color: 'FFFFFF' } },
-          { text: 'End Date', options: { bold: true, fontSize: 18, fill: '0D47A1', color: 'FFFFFF' } },
-          { text: 'Completed', options: { bold: true, fontSize: 18, fill: '0D47A1', color: 'FFFFFF' } }
-        ],
-        ...data.sprints.map(sprint => [
-          { text: sprint.name, options: { fontSize: 16 } },
-          { text: sprint.startDate, options: { fontSize: 16 } },
-          { text: sprint.endDate, options: { fontSize: 16 } },
-          { text: sprint.completed, options: { fontSize: 16 } }
-        ])
-      ];
-      
-      slide4.addTable(sprintsData, { x: 0.5, y: 1.5, w: 8, h: 3 });
-    }
-    
     // Add team slide if configured
     if (data.configuration.includeResources && data.team?.length) {
       const slide5 = pptx.addSlide();

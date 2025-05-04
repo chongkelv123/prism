@@ -14,7 +14,7 @@ const ReportWizard: React.FC = () => {
   const [generationComplete, setGenerationComplete] = useState(false);
   const [generationError, setGenerationError] = useState(false);
   const [reportId, setReportId] = useState<string | null>(null);
-  
+
   const { addNotification } = useNotifications();
 
   const totalSteps = 4;
@@ -30,8 +30,19 @@ const ReportWizard: React.FC = () => {
     if (currentStep < totalSteps) {
       setCurrentStep(currentStep + 1);
     } else {
-      // Final step - generate report
-      handleGenerateReport();
+      // Final step - check state
+      if (generationComplete) {
+        // If generation is complete, download the report
+        handleDownload();
+      } else if (generationError) {
+        // If there was an error, try again
+        setGenerationError(false);
+        setIsGenerating(false);
+        handleGenerateReport();
+      } else {
+        // Otherwise, start the generation
+        handleGenerateReport();
+      }
     }
   };
 
@@ -43,7 +54,7 @@ const ReportWizard: React.FC = () => {
 
   const handleGenerateReport = async () => {
     setIsGenerating(true);
-    
+
     try {
       // Call API to generate report
       const report = await reportService.generateReport({
@@ -51,14 +62,14 @@ const ReportWizard: React.FC = () => {
         templateId: wizardData.template,
         configuration: wizardData.configuration
       });
-      
+
       setReportId(report.id);
-      
+
       // Poll for report generation status
       const checkStatus = async () => {
         try {
           const status = await reportService.getReportStatus(report.id);
-          
+
           if (status.status === 'completed') {
             setGenerationComplete(true);
             setIsGenerating(false);
@@ -79,7 +90,7 @@ const ReportWizard: React.FC = () => {
             addNotification({
               type: 'error',
               title: 'Report Generation Failed',
-              message: `There was an error generating your report`,
+              message: 'There was an error generating your report',
               actions: [
                 { label: 'Try Again', action: 'retry', id: report.id }
               ]
@@ -94,10 +105,10 @@ const ReportWizard: React.FC = () => {
           setIsGenerating(false);
         }
       };
-      
+
       // Start polling
       checkStatus();
-      
+
     } catch (error) {
       console.error('Failed to generate report', error);
       setGenerationError(true);
@@ -107,7 +118,26 @@ const ReportWizard: React.FC = () => {
 
   const handleDownload = () => {
     if (reportId) {
-      reportService.downloadReport(reportId);
+      // Prepare report data based on the wizard input
+      const reportData = {
+        title: wizardData.configuration.title || 'Project Report',
+        platform: wizardData.platform,
+        date: new Date().toLocaleDateString(),
+        metrics: [
+          { name: 'Tasks Completed', value: '32' },
+          { name: 'In Progress', value: '12' },
+          { name: 'Blockers', value: '3' }
+        ],
+        team: [
+          { name: 'Professor Ganesh', role: 'Project Manager' },
+          { name: 'Kelvin Chong', role: 'Developer' },
+          { name: 'Chan Jian Da', role: 'DevOps' },
+          { name: 'Bryan', role: 'Designer' }
+        ]
+      };
+
+      // Pass the custom data to the download function
+      reportService.downloadReport(reportId, reportData);
     }
   };
 
@@ -163,7 +193,7 @@ const ReportWizard: React.FC = () => {
       case 3:
         return Object.keys(wizardData.configuration).length > 0;
       case 4:
-        return generationComplete;
+        return !isGenerating || generationComplete || generationError;
       default:
         return false;
     }
@@ -198,15 +228,14 @@ const ReportWizard: React.FC = () => {
             const stepNum = idx + 1;
             const isActive = currentStep === stepNum;
             const isDone = isStepComplete(stepNum);
-            
+
             return (
               <div key={idx} className="flex flex-col items-center relative">
                 {/* Connector line */}
                 {idx < totalSteps - 1 && (
-                  <div 
-                    className={`absolute w-full h-1 top-4 left-1/2 -z-10 ${
-                      isDone ? 'bg-blue-500' : 'bg-gray-200'
-                    }`}
+                  <div
+                    className={`absolute w-full h-1 top-4 left-1/2 -z-10 ${isDone ? 'bg-blue-500' : 'bg-gray-200'
+                      }`}
                   />
                 )}
                 {/* Step circle */}
@@ -245,7 +274,7 @@ const ReportWizard: React.FC = () => {
           <ArrowLeft size={16} className="mr-1" />
           Back
         </button>
-        
+
         <button
           onClick={handleNext}
           disabled={!isStepComplete(currentStep) || (isGenerating && !generationComplete && !generationError)}
@@ -279,14 +308,14 @@ const PlatformSelection: React.FC<{
     <div className="space-y-4">
       <h2 className="text-lg font-medium">Select Project Management Platform</h2>
       <p className="text-gray-500 mb-4">Choose the platform you want to generate a report from</p>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {platforms.map(platform => (
           <div
             key={platform.id}
             onClick={() => onSelectPlatform(platform.id)}
             className={`p-4 border rounded-lg cursor-pointer transition-all
-              ${selectedPlatform === platform.id 
+              ${selectedPlatform === platform.id
                 ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
                 : 'border-gray-200 hover:border-blue-300'}`}
           >
@@ -319,14 +348,14 @@ const TemplateSelection: React.FC<{
     <div className="space-y-4">
       <h2 className="text-lg font-medium">Select Template</h2>
       <p className="text-gray-500 mb-4">Choose a presentation template for your report</p>
-      
+
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {templates.map(template => (
           <div
             key={template.id}
             onClick={() => onSelectTemplate(template.id)}
             className={`border rounded-lg cursor-pointer overflow-hidden transition-all
-              ${selectedTemplate === template.id 
+              ${selectedTemplate === template.id
                 ? 'border-blue-500 ring-2 ring-blue-200'
                 : 'border-gray-200 hover:border-blue-300'}`}
           >
@@ -363,10 +392,10 @@ const ReportConfiguration: React.FC<{
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
-    const newValue = type === 'checkbox' 
-      ? (e.target as HTMLInputElement).checked 
+    const newValue = type === 'checkbox'
+      ? (e.target as HTMLInputElement).checked
       : value;
-    
+
     setConfig({
       ...config,
       [name]: newValue
@@ -381,7 +410,7 @@ const ReportConfiguration: React.FC<{
     <div className="space-y-4">
       <h2 className="text-lg font-medium">Configure Report</h2>
       <p className="text-gray-500 mb-4">Customize the content of your report</p>
-      
+
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -395,7 +424,7 @@ const ReportConfiguration: React.FC<{
             className="w-full px-3 py-2 border border-gray-300 rounded-md"
           />
         </div>
-        
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Date Range
@@ -413,12 +442,12 @@ const ReportConfiguration: React.FC<{
             <option value="custom">Custom Range</option>
           </select>
         </div>
-        
+
         <div className="space-y-2">
           <p className="block text-sm font-medium text-gray-700">
             Include in Report
           </p>
-          
+
           <div className="space-y-2">
             <label className="flex items-center">
               <input
@@ -430,7 +459,7 @@ const ReportConfiguration: React.FC<{
               />
               <span className="ml-2 text-sm text-gray-700">Project Metrics</span>
             </label>
-            
+
             <label className="flex items-center">
               <input
                 type="checkbox"
@@ -441,7 +470,7 @@ const ReportConfiguration: React.FC<{
               />
               <span className="ml-2 text-sm text-gray-700">Tasks & Issues</span>
             </label>
-            
+
             <label className="flex items-center">
               <input
                 type="checkbox"
@@ -452,7 +481,7 @@ const ReportConfiguration: React.FC<{
               />
               <span className="ml-2 text-sm text-gray-700">Project Timeline</span>
             </label>
-            
+
             <label className="flex items-center">
               <input
                 type="checkbox"
@@ -466,7 +495,7 @@ const ReportConfiguration: React.FC<{
           </div>
         </div>
       </div>
-      
+
       <div className="pt-4 text-right">
         <button
           onClick={handleSave}
@@ -496,7 +525,7 @@ const GenerationProgress: React.FC<{
           <p className="text-gray-500">This may take a few moments</p>
         </div>
       )}
-      
+
       {isComplete && (
         <div className="text-center">
           <div className="w-16 h-16 flex items-center justify-center bg-green-100 text-green-500 rounded-full mx-auto mb-4">
@@ -504,7 +533,7 @@ const GenerationProgress: React.FC<{
           </div>
           <h2 className="text-xl font-medium mb-2">Report Generated Successfully!</h2>
           <p className="text-gray-500 mb-4">Your PowerPoint report is ready to download</p>
-          <button 
+          <button
             onClick={onDownload}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center mx-auto"
           >
@@ -513,7 +542,7 @@ const GenerationProgress: React.FC<{
           </button>
         </div>
       )}
-      
+
       {hasError && (
         <div className="text-center">
           <div className="w-16 h-16 flex items-center justify-center bg-red-100 text-red-500 rounded-full mx-auto mb-4">
@@ -521,7 +550,7 @@ const GenerationProgress: React.FC<{
           </div>
           <h2 className="text-xl font-medium mb-2">Generation Failed</h2>
           <p className="text-gray-500 mb-4">There was an error generating your report</p>
-          <button 
+          <button
             onClick={onRetry}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >

@@ -218,7 +218,7 @@ export async function generatePowerPointReport(data: ReportData): Promise<{ id: 
         ])
       ];
 
-      slide4.addTable(tasksData, { x: 0.5, y: 1.5, w: 10, h: 3 });
+      slide4.addTable(tasksData, { x: 0.5, y: 1.5, w: 9, h: 3 });
     }
 
     // Add Summary slide 

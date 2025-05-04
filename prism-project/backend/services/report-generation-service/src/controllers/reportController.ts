@@ -127,12 +127,12 @@ export async function downloadReport(req: Request, res: Response) {
         { name: 'Chan Jian Da', role: 'DevOps' },
         { name: 'Bryan', role: 'Designer' }
       ],
-      tasks: [
-        { name: 'Create API Gateway', status: 'Completed', assignee: 'Chan Jian Da' },
-        { name: 'Implement Authentication', status: 'In Progress', assignee: 'Kelvin Chong' },
-        { name: 'Design UI Mockups', status: 'Completed', assignee: 'Bryan' },
+      tasks: [        
+        { name: 'Create API Gateway', status: 'Completed', assignee: 'Kelvin Chong' },
+        { name: 'Implement Authentication', status: 'Completed', assignee: 'Kelvin Chong' },        
         { name: 'Setup CI/CD Pipeline', status: 'In Progress', assignee: 'Chan Jian Da' },
-        { name: 'Implement Report Generation', status: 'In Progress', assignee: 'Kelvin Chong' }
+        { name: 'Implement Report Generation', status: 'In Progress', assignee: 'Kelvin Chong' },
+        { name: 'Perform Unit tests', status: 'In Progress', assignee: 'Bryan' }
       ],
       configuration: report.configuration || {
         includeMetrics: true,
@@ -200,12 +200,12 @@ async function processReport(reportId: string) {
         { name: 'Chan Jian Da', role: 'DevOps' },
         { name: 'Bryan', role: 'Designer' }
       ],
-      tasks: [
-        { name: 'Create API Gateway', status: 'Completed', assignee: 'Chan Jian Da' },
-        { name: 'Implement Authentication', status: 'In Progress', assignee: 'Kelvin Chong' },
-        { name: 'Design UI Mockups', status: 'Completed', assignee: 'Bryan' },
+      tasks: [        
+        { name: 'Create API Gateway', status: 'Completed', assignee: 'Kelvin Chong' },
+        { name: 'Implement Authentication', status: 'Completed', assignee: 'Kelvin Chong' },        
         { name: 'Setup CI/CD Pipeline', status: 'In Progress', assignee: 'Chan Jian Da' },
-        { name: 'Implement Report Generation', status: 'In Progress', assignee: 'Kelvin Chong' }
+        { name: 'Implement Report Generation', status: 'In Progress', assignee: 'Kelvin Chong' },
+        { name: 'Perform Unit tests', status: 'In Progress', assignee: 'Bryan' }
       ],
       configuration: report.configuration || {
         includeMetrics: true,

@@ -1,26 +1,32 @@
 import { createBrowserRouter, Outlet } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { NotificationProvider } from './contexts/NotificationContext';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
-import TemplatesPage from './pages/TemplatesPage';
 import DashboardPage from './pages/DashboardPage';
 import ReportsPage from './pages/ReportsPage';
+import CreateReportPage from './pages/CreateReportPage';
+import TemplatesPage from './pages/TemplatesPage';
+// import ConnectionsPage from './pages/ConnectionsPage';
+// import SettingsPage from './pages/SettingsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
 // Create a layout component that provides auth context
-const AuthLayout = () => {
+const AppProviders = () => {
   return (
     <AuthProvider>
-      <Outlet />
+      <NotificationProvider>
+        <Outlet />
+      </NotificationProvider>
     </AuthProvider>
   );
 };
 
 const router = createBrowserRouter([
   {
-    element: <AuthLayout />,
+    element: <AppProviders />,
     children: [
       {
         path: '/',
@@ -43,13 +49,25 @@ const router = createBrowserRouter([
             element: <DashboardPage />,
           },
           {
-            path: '/templates',
-            element: <TemplatesPage />,
-          },
-          {
             path: '/reports',
             element: <ReportsPage />,
           },
+          {
+            path: '/reports/create',
+            element: <CreateReportPage />,
+          },
+          {
+            path: '/templates',
+            element: <TemplatesPage />,
+          },
+          // {
+          //   path: '/connections',
+          //   element: <ConnectionsPage />,
+          // },
+          // {
+          //   path: '/settings',
+          //   element: <SettingsPage />,
+          // },
         ],
       },
       {

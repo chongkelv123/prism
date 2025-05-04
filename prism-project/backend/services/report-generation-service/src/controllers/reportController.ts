@@ -127,7 +127,19 @@ export async function downloadReport(req: Request, res: Response) {
         { name: 'Chan Jian Da', role: 'DevOps' },
         { name: 'Bryan', role: 'Designer' }
       ],
-      configuration: report.configuration || {}
+      tasks: [
+        { name: 'Create API Gateway', status: 'Completed', assignee: 'Chan Jian Da' },
+        { name: 'Implement Authentication', status: 'In Progress', assignee: 'Kelvin Chong' },
+        { name: 'Design UI Mockups', status: 'Completed', assignee: 'Bryan' },
+        { name: 'Setup CI/CD Pipeline', status: 'In Progress', assignee: 'Chan Jian Da' },
+        { name: 'Implement Report Generation', status: 'In Progress', assignee: 'Kelvin Chong' }
+      ],
+      configuration: report.configuration || {
+        includeMetrics: true,
+        includeTasks: true,
+        includeTimeline: true,
+        includeResources: true
+      }
     };
     
     const { filePath } = await generatePowerPointReport(reportData);
@@ -188,7 +200,19 @@ async function processReport(reportId: string) {
         { name: 'Chan Jian Da', role: 'DevOps' },
         { name: 'Bryan', role: 'Designer' }
       ],
-      configuration: report.configuration || {}
+      tasks: [
+        { name: 'Create API Gateway', status: 'Completed', assignee: 'Chan Jian Da' },
+        { name: 'Implement Authentication', status: 'In Progress', assignee: 'Kelvin Chong' },
+        { name: 'Design UI Mockups', status: 'Completed', assignee: 'Bryan' },
+        { name: 'Setup CI/CD Pipeline', status: 'In Progress', assignee: 'Chan Jian Da' },
+        { name: 'Implement Report Generation', status: 'In Progress', assignee: 'Kelvin Chong' }
+      ],
+      configuration: report.configuration || {
+        includeMetrics: true,
+        includeTasks: true,
+        includeTimeline: true,
+        includeResources: true
+      }
     };
     
     // Pre-generate the PowerPoint file to ensure it exists

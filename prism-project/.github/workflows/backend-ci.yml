@@ -1,0 +1,18 @@
+# .github/workflows/backend-ci.yml
+name: Backend CI
+
+on:
+  push:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [auth-service, report-generation-service]
+    steps:
+      - uses: actions/checkout@v2
+      - name

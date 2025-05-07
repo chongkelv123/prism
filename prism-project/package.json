@@ -19,6 +19,9 @@
     "test:backend": "cd backend && npm test"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22.14.1",
     "concurrently": "^8.2.0"
   }

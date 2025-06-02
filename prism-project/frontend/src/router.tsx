@@ -1,6 +1,7 @@
 import { createBrowserRouter, Outlet } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { NotificationProvider } from './contexts/NotificationContext';
+import { ConnectionsProvider } from './contexts/ConnectionsContext';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -12,13 +13,16 @@ import ConnectionsPage from './pages/ConnectionsPage';
 // import SettingsPage from './pages/SettingsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
+import { Connect } from 'vite';
 
 // Create a layout component that provides auth context
 const AppProviders = () => {
   return (
     <AuthProvider>
       <NotificationProvider>
+        <ConnectionsProvider>
         <Outlet />
+        </ConnectionsProvider>
       </NotificationProvider>
     </AuthProvider>
   );

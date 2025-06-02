@@ -1,70 +1,175 @@
-// frontend/src/contexts/ConnectionsContext.tsx
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 export interface Connection {
   id: string;
   name: string;
-  platform: 'monday' | 'jira' | 'trofos';
+  type: 'monday' | 'jira' | 'trofos';
   status: 'connected' | 'disconnected' | 'error';
-  lastSync?: string;
-  projectCount?: number;
-  configuration: Record<string, any>;
-  createdAt: string;
+  projects: number;
+  lastSync: string;
+  config?: {
+    apiKey?: string;
+    domain?: string;
+    boardId?: string;
+    projectKey?: string;
+  };
 }
 
 interface ConnectionsContextType {
   connections: Connection[];
-  addConnection: (connection: Omit<Connection, 'id' | 'createdAt'>) => void;
-  updateConnection: (id: string, updates: Partial<Connection>) => void;
-  deleteConnection: (id: string) => void;
-  testConnection: (id: string) => Promise<void>;
+  isLoading: boolean;
+  error: string | null;
+  addConnection: (connection: Omit<Connection, 'id'>) => Promise<void>;
+  removeConnection: (id: string) => Promise<void>;
+  syncConnection: (id: string) => Promise<void>;
+  refreshConnections: () => Promise<void>;
 }
 
 const ConnectionsContext = createContext<ConnectionsContextType | undefined>(undefined);
 
 export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const addConnection = (connectionData: Omit<Connection, 'id' | 'createdAt'>) => {
-    const newConnection: Connection = {
-      ...connectionData,
-      id: `conn-${Date.now()}`,
-      createdAt: new Date().toISOString()
-    };
-    setConnections(prev => [...prev, newConnection]);
-  };
+  // Mock data for development - replace with actual API calls
+  const mockConnections: Connection[] = [
+    {
+      id: 'monday-1',
+      name: 'Monday.com Workspace',
+      type: 'monday',
+      status: 'connected',
+      projects: 3,
+      lastSync: '2 hours ago',
+      config: {
+        apiKey: 'mock-api-key',
+        boardId: 'board-123'
+      }
+    },
+    {
+      id: 'jira-1',
+      name: 'Jira Cloud',
+      type: 'jira',
+      status: 'connected',
+      projects: 2,
+      lastSync: '1 day ago',
+      config: {
+        domain: 'company.atlassian.net',
+        projectKey: 'PRISM'
+      }
+    }
+  ];
 
-  const updateConnection = (id: string, updates: Partial<Connection>) => {
-    setConnections(prev => 
-      prev.map(conn => 
-        conn.id === id ? { ...conn, ...updates } : conn
-      )
-    );
-  };
+  // Load connections on mount
+  useEffect(() => {
+    loadConnections();
+  }, []);
 
-  const deleteConnection = (id: string) => {
-    setConnections(prev => prev.filter(conn => conn.id !== id));
-  };
-
-  const testConnection = async (id: string): Promise<void> => {
-    // Update status to indicate testing
-    updateConnection(id, { status: 'connected', lastSync: 'Just now' });
+  const loadConnections = async () => {
+    setIsLoading(true);
+    setError(null);
     
-    // Simulate API call
-    return new Promise(resolve => {
+    try {
+      // TODO: Replace with actual API call
+      // const response = await apiClient.get('/api/connections');
+      // setConnections(response.data);
+      
+      // For now, use mock data
       setTimeout(() => {
-        resolve();
-      }, 2000);
-    });
+        setConnections(mockConnections);
+        setIsLoading(false);
+      }, 500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load connections');
+      setConnections(mockConnections); // Fallback to mock data
+      setIsLoading(false);
+    }
+  };
+
+  const addConnection = async (connectionData: Omit<Connection, 'id'>) => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // TODO: Replace with actual API call
+      // const response = await apiClient.post('/api/connections', connectionData);
+      // const newConnection = response.data;
+      
+      // For now, simulate adding a connection
+      const newConnection: Connection = {
+        ...connectionData,
+        id: `${connectionData.type}-${Date.now()}`,
+      };
+      
+      setConnections(prev => [...prev, newConnection]);
+      setIsLoading(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add connection');
+      setIsLoading(false);
+      throw err;
+    }
+  };
+
+  const removeConnection = async (id: string) => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // TODO: Replace with actual API call
+      // await apiClient.delete(`/api/connections/${id}`);
+      
+      setConnections(prev => prev.filter(conn => conn.id !== id));
+      setIsLoading(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove connection');
+      setIsLoading(false);
+      throw err;
+    }
+  };
+
+  const syncConnection = async (id: string) => {
+    setError(null);
+    
+    try {
+      // TODO: Replace with actual API call
+      // await apiClient.post(`/api/connections/${id}/sync`);
+      
+      // For now, simulate sync by updating lastSync
+      setConnections(prev => 
+        prev.map(conn => 
+          conn.id === id 
+            ? { ...conn, lastSync: 'Just now', status: 'connected' as const }
+            : conn
+        )
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sync connection');
+      
+      // Update connection status to error
+      setConnections(prev => 
+        prev.map(conn => 
+          conn.id === id 
+            ? { ...conn, status: 'error' as const }
+            : conn
+        )
+      );
+      throw err;
+    }
+  };
+
+  const refreshConnections = async () => {
+    await loadConnections();
   };
 
   return (
     <ConnectionsContext.Provider value={{
       connections,
+      isLoading,
+      error,
       addConnection,
-      updateConnection,
-      deleteConnection,
-      testConnection
+      removeConnection,
+      syncConnection,
+      refreshConnections
     }}>
       {children}
     </ConnectionsContext.Provider>
@@ -74,8 +179,6 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
 export const useConnections = () => {
   const context = useContext(ConnectionsContext);
   if (context === undefined) {
-    console.error('useConnections hook called outside of ConnectionsProvider');
-    console.error('Make sure the component is wrapped in ConnectionsProvider');
     throw new Error('useConnections must be used within a ConnectionsProvider');
   }
   return context;

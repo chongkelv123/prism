@@ -23,7 +23,7 @@ const QuickActions: React.FC = () => {
       title: 'Connect Platform', 
       icon: <Link size={24} />, 
       description: 'Add a new project management tool',
-      onClick: () => navigate('/connections/new')
+      onClick: () => navigate('/connections')
     },
     { 
       title: 'Settings', 

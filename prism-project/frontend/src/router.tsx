@@ -8,7 +8,7 @@ import DashboardPage from './pages/DashboardPage';
 import ReportsPage from './pages/ReportsPage';
 import CreateReportPage from './pages/CreateReportPage';
 import TemplatesPage from './pages/TemplatesPage';
-// import ConnectionsPage from './pages/ConnectionsPage';
+import ConnectionsPage from './pages/ConnectionsPage';
 // import SettingsPage from './pages/SettingsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
@@ -60,10 +60,10 @@ const router = createBrowserRouter([
             path: '/templates',
             element: <TemplatesPage />,
           },
-          // {
-          //   path: '/connections',
-          //   element: <ConnectionsPage />,
-          // },
+          {
+            path: '/connections',
+            element: <ConnectionsPage />,
+          },
           // {
           //   path: '/settings',
           //   element: <SettingsPage />,

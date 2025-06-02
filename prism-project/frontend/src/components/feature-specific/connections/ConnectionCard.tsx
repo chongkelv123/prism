@@ -1,7 +1,7 @@
 // frontend/src/components/feature-specific/connections/ConnectionCard.tsx
 import React, { useState } from 'react';
 import { MoreVertical, RefreshCw, Trash2, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
-import { Connection } from '../../../pages/ConnectionsPage';
+import { Connection } from '../../../contexts/ConnectionsContext';
 
 interface ConnectionCardProps {
   connection: Connection;
@@ -84,7 +84,7 @@ const ConnectionCard: React.FC<ConnectionCardProps> = ({
   const statusInfo = getStatusInfo(connection.status);
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow">
+    <div className="relative bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow">
       {/* Header */}
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-center">

@@ -1,8 +1,11 @@
 // frontend/src/components/feature-specific/connections/AddConnectionModal.tsx
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
-import { Connection } from '../../../pages/ConnectionsPage';
+import { Connection } from '../../../contexts/ConnectionsContext';
 import PlatformSelector from './PlatformSelector';
+import MondayConfigForm from './MondayConfigForm';
+import JiraConfigForm from './JiraConfigForm';
+import TrofosConfigForm from './TrofosConfigForm';
 
 interface AddConnectionModalProps {
   isOpen: boolean;
@@ -19,6 +22,7 @@ const AddConnectionModal: React.FC<AddConnectionModalProps> = ({
 }) => {
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | null>(null);
   const [step, setStep] = useState<'platform' | 'configure'>('platform');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
@@ -31,6 +35,32 @@ const AddConnectionModal: React.FC<AddConnectionModalProps> = ({
     if (step === 'configure') {
       setStep('platform');
       setSelectedPlatform(null);
+    }
+  };
+
+  const handleConnectionSubmit = async (connectionData: any) => {
+    setIsSubmitting(true);
+    
+    try {
+      // Simulate API call delay
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const newConnection: Omit<Connection, 'id' | 'createdAt'> = {
+        name: connectionData.name,
+        platform: selectedPlatform!,
+        status: 'connected',
+        lastSync: 'Just now',
+        projectCount: connectionData.projectCount || 0,
+        configuration: connectionData
+      };
+      
+      onConnectionAdded(newConnection);
+      handleClose();
+    } catch (error) {
+      console.error('Failed to create connection:', error);
+      // Handle error - could show error message
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -72,34 +102,42 @@ const AddConnectionModal: React.FC<AddConnectionModalProps> = ({
           
           {step === 'configure' && selectedPlatform && (
             <div>
-              {/* Platform-specific configuration forms will go here */}
-              <div className="text-center py-8">
-                <p className="text-gray-500">
-                  Configuration form for {selectedPlatform} will be implemented next.
-                </p>
-              </div>
+              {selectedPlatform === 'monday' && (
+                <MondayConfigForm 
+                  onSubmit={handleConnectionSubmit}
+                  onBack={handleBack}
+                  isSubmitting={isSubmitting}
+                />
+              )}
+              {selectedPlatform === 'jira' && (
+                <JiraConfigForm 
+                  onSubmit={handleConnectionSubmit}
+                  onBack={handleBack}
+                  isSubmitting={isSubmitting}
+                />
+              )}
+              {selectedPlatform === 'trofos' && (
+                <TrofosConfigForm 
+                  onSubmit={handleConnectionSubmit}
+                  onBack={handleBack}
+                  isSubmitting={isSubmitting}
+                />
+              )}
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex justify-between items-center p-6 border-t border-gray-200">
-          <button
-            onClick={step === 'platform' ? handleClose : handleBack}
-            className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
-          >
-            {step === 'platform' ? 'Cancel' : 'Back'}
-          </button>
-          
-          {step === 'configure' && (
+        {step === 'platform' && (
+          <div className="flex justify-end items-center p-6 border-t border-gray-200">
             <button
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              disabled
+              onClick={handleClose}
+              className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
             >
-              Connect (Coming Soon)
+              Cancel
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

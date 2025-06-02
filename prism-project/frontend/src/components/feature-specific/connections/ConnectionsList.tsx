@@ -1,6 +1,6 @@
 // frontend/src/components/feature-specific/connections/ConnectionsList.tsx
 import React from 'react';
-import { Connection } from '../../../pages/ConnectionsPage';
+import { Connection } from '../../../contexts/ConnectionsContext';
 import ConnectionCard from './ConnectionCard';
 
 interface ConnectionsListProps {

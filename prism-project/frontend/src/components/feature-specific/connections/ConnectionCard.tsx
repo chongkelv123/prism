@@ -1,6 +1,6 @@
 // frontend/src/components/feature-specific/connections/ConnectionCard.tsx (Updated)
 import React, { useState } from 'react';
-import { MoreVertical, RefreshCw, Trash2, CheckCircle, XCircle, AlertCircle, Sync } from 'lucide-react';
+import { MoreVertical, RefreshCw, Trash2, CheckCircle, XCircle, AlertCircle, RotateCcw } from 'lucide-react';
 import { Connection } from '../../../contexts/ConnectionsContext';
 
 interface ConnectionCardProps {
@@ -127,7 +127,7 @@ const ConnectionCard: React.FC<ConnectionCardProps> = ({
                 }}
                 className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
               >
-                <Sync size={14} className="mr-2" />
+                <RotateCcw size={14} className="mr-2" />
                 Sync Now
               </button>
               <button

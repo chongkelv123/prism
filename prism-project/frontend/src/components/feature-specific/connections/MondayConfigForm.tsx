@@ -1,6 +1,7 @@
-// frontend/src/components/feature-specific/connections/MondayConfigForm.tsx
+// frontend/src/components/feature-specific/connections/MondayConfigForm.tsx (Updated)
 import React, { useState } from 'react';
 import { Eye, EyeOff, ExternalLink, AlertCircle } from 'lucide-react';
+import { useConnections } from '../../../contexts/ConnectionsContext';
 
 interface MondayConfigFormProps {
   onSubmit: (data: any) => void;
@@ -11,21 +12,19 @@ interface MondayConfigFormProps {
 interface MondayConfig {
   name: string;
   apiKey: string;
-  workspaceId: string;
-  selectedBoards: string[];
 }
 
 const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, isSubmitting }) => {
+  const { validatePlatformConfig } = useConnections();
   const [config, setConfig] = useState<MondayConfig>({
     name: '',
-    apiKey: '',
-    workspaceId: '',
-    selectedBoards: []
+    apiKey: ''
   });
   const [showApiKey, setShowApiKey] = useState(false);
   const [errors, setErrors] = useState<Partial<MondayConfig>>({});
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [connectionTested, setConnectionTested] = useState(false);
+  const [testResult, setTestResult] = useState<{valid: boolean, message: string} | null>(null);
 
   const handleChange = (field: keyof MondayConfig, value: string) => {
     setConfig(prev => ({ ...prev, [field]: value }));
@@ -33,8 +32,9 @@ const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, i
       setErrors(prev => ({ ...prev, [field]: undefined }));
     }
     // Reset connection test when credentials change
-    if (field === 'apiKey' || field === 'workspaceId') {
+    if (field === 'apiKey') {
       setConnectionTested(false);
+      setTestResult(null);
     }
   };
 
@@ -48,35 +48,33 @@ const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, i
     if (!config.apiKey.trim()) {
       newErrors.apiKey = 'API key is required';
     }
-    
-    if (!config.workspaceId.trim()) {
-      newErrors.workspaceId = 'Workspace ID is required';
-    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleTestConnection = async () => {
-    if (!config.apiKey || !config.workspaceId) {
-      setErrors({
-        apiKey: !config.apiKey ? 'API key is required for testing' : undefined,
-        workspaceId: !config.workspaceId ? 'Workspace ID is required for testing' : undefined
-      });
+    if (!config.apiKey) {
+      setErrors({ apiKey: 'API key is required for testing' });
       return;
     }
 
     setIsTestingConnection(true);
     
     try {
-      // Simulate API test call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const result = await validatePlatformConfig('monday', { apiKey: config.apiKey });
+      setTestResult(result);
+      setConnectionTested(result.valid);
       
-      // Mock successful connection
-      setConnectionTested(true);
-      setErrors({});
+      if (!result.valid) {
+        setErrors({ apiKey: result.message });
+      } else {
+        setErrors({});
+      }
     } catch (error) {
-      setErrors({ apiKey: 'Failed to connect. Please check your credentials.' });
+      const errorMessage = 'Failed to test connection. Please try again.';
+      setErrors({ apiKey: errorMessage });
+      setTestResult({ valid: false, message: errorMessage });
     } finally {
       setIsTestingConnection(false);
     }
@@ -93,9 +91,11 @@ const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, i
     }
 
     onSubmit({
-      ...config,
+      name: config.name,
       platform: 'monday',
-      projectCount: 3 // Mock project count
+      config: {
+        apiKey: config.apiKey
+      }
     });
   };
 
@@ -171,28 +171,6 @@ const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, i
         </div>
       </div>
 
-      {/* Workspace ID */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Workspace ID
-        </label>
-        <input
-          type="text"
-          value={config.workspaceId}
-          onChange={(e) => handleChange('workspaceId', e.target.value)}
-          placeholder="Enter your workspace ID"
-          className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-            errors.workspaceId ? 'border-red-500' : 'border-gray-300'
-          }`}
-        />
-        {errors.workspaceId && (
-          <p className="mt-1 text-sm text-red-600">{errors.workspaceId}</p>
-        )}
-        <p className="mt-1 text-sm text-gray-500">
-          You can find this in your Monday.com workspace URL
-        </p>
-      </div>
-
       {/* Test Connection */}
       <div className="border border-gray-200 rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
@@ -200,23 +178,27 @@ const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, i
           <button
             type="button"
             onClick={handleTestConnection}
-            disabled={isTestingConnection || !config.apiKey || !config.workspaceId}
+            disabled={isTestingConnection || !config.apiKey}
             className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isTestingConnection ? 'Testing...' : 'Test Connection'}
           </button>
         </div>
         
-        {connectionTested && (
-          <div className="flex items-center text-green-600">
+        {testResult && (
+          <div className={`flex items-center ${testResult.valid ? 'text-green-600' : 'text-red-600'}`}>
             <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              {testResult.valid ? (
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              ) : (
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              )}
             </svg>
-            <span className="text-sm">Connection successful!</span>
+            <span className="text-sm">{testResult.message}</span>
           </div>
         )}
         
-        {!connectionTested && (
+        {!testResult && (
           <div className="flex items-start text-gray-500">
             <AlertCircle size={16} className="mr-2 mt-0.5 flex-shrink-0" />
             <span className="text-sm">
@@ -224,6 +206,17 @@ const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, i
             </span>
           </div>
         )}
+      </div>
+
+      {/* Monday.com Integration Details */}
+      <div className="bg-orange-50 rounded-lg p-4">
+        <h5 className="font-medium text-gray-900 mb-2">Monday.com Integration Details</h5>
+        <div className="text-sm text-gray-600 space-y-1">
+          <p>• Syncs boards, items, and project status updates</p>
+          <p>• Pulls team member assignments and progress tracking</p>
+          <p>• Retrieves status columns and timeline information</p>
+          <p>• Updates automatically to reflect current workspace state</p>
+        </div>
       </div>
 
       {/* Submit Buttons */}

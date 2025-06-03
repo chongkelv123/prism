@@ -1,3 +1,4 @@
+// backend/api-gateway/src/index.ts
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -17,7 +18,16 @@ app.use(express.json());
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+  res.status(200).json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    services: {
+      gateway: 'running',
+      auth: process.env.AUTH_SERVICE_URL || 'http://localhost:4000',
+      platformIntegrations: process.env.PLATFORM_INTEGRATIONS_SERVICE_URL || 'http://localhost:4005',
+      reportGeneration: process.env.REPORT_SERVICE_URL || 'http://localhost:4002'
+    }
+  });
 });
 
 // Service URLs (from environment variables or defaults)
@@ -26,37 +36,92 @@ const PROJECT_DATA_SERVICE_URL = process.env.PROJECT_DATA_SERVICE_URL || 'http:/
 const REPORT_SERVICE_URL = process.env.REPORT_SERVICE_URL || 'http://localhost:4002';
 const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:4003';
 const STORAGE_SERVICE_URL = process.env.STORAGE_SERVICE_URL || 'http://localhost:4004';
+const PLATFORM_INTEGRATIONS_SERVICE_URL = process.env.PLATFORM_INTEGRATIONS_SERVICE_URL || 'http://localhost:4005';
+
+// Enhanced error handling for proxy
+const createProxyOptions = (serviceUrl: string, serviceName: string) => ({
+  target: serviceUrl,
+  changeOrigin: true,
+  timeout: 30000,
+  proxyErrorHandler: (err: any, res: any, next: any) => {
+    console.error(`Proxy error for ${serviceName}:`, err.message);
+    if (!res.headersSent) {
+      res.status(503).json({
+        error: 'Service temporarily unavailable',
+        service: serviceName,
+        message: 'Please try again later'
+      });
+    }
+  },
+  userResHeaderDecorator: (headers: any, userReq: any, userRes: any, proxyReq: any, proxyRes: any) => {
+    // Add service identification header
+    headers['x-service'] = serviceName;
+    return headers;
+  }
+});
 
 // Route API requests to appropriate microservices
+
+// Authentication routes
 app.use('/api/auth', proxy(AUTH_SERVICE_URL, {
-  proxyReqPathResolver: (req) => {
-    return `/api/auth${req.url}`;
-  }
+  ...createProxyOptions(AUTH_SERVICE_URL, 'auth-service'),
+  proxyReqPathResolver: (req) => `/api/auth${req.url}`
 }));
 
-app.use('/api/projects', proxy(PROJECT_DATA_SERVICE_URL, {
-  proxyReqPathResolver: (req) => {
-    return `/api/projects${req.url}`;
-  }
+// Platform integrations routes (NEW)
+app.use('/api/platforms', proxy(PLATFORM_INTEGRATIONS_SERVICE_URL, {
+  ...createProxyOptions(PLATFORM_INTEGRATIONS_SERVICE_URL, 'platform-integrations-service'),
+  proxyReqPathResolver: (req) => `/api/platforms${req.url}`
 }));
 
+app.use('/api/connections', proxy(PLATFORM_INTEGRATIONS_SERVICE_URL, {
+  ...createProxyOptions(PLATFORM_INTEGRATIONS_SERVICE_URL, 'platform-integrations-service'),
+  proxyReqPathResolver: (req) => `/api/connections${req.url}`
+}));
+
+// Report generation routes
 app.use('/api/reports', proxy(REPORT_SERVICE_URL, {
-  proxyReqPathResolver: (req) => {
-    return `/api/reports${req.url}`;
-  }
+  ...createProxyOptions(REPORT_SERVICE_URL, 'report-generation-service'),
+  proxyReqPathResolver: (req) => `/api/reports${req.url}`
 }));
 
+// Project data routes (if you implement this service later)
+app.use('/api/projects', proxy(PROJECT_DATA_SERVICE_URL, {
+  ...createProxyOptions(PROJECT_DATA_SERVICE_URL, 'project-data-service'),
+  proxyReqPathResolver: (req) => `/api/projects${req.url}`
+}));
+
+// Notification routes (if you implement this service later)
 app.use('/api/notifications', proxy(NOTIFICATION_SERVICE_URL, {
-  proxyReqPathResolver: (req) => {
-    return `/api/notifications${req.url}`;
-  }
+  ...createProxyOptions(NOTIFICATION_SERVICE_URL, 'notification-service'),
+  proxyReqPathResolver: (req) => `/api/notifications${req.url}`
 }));
 
+// Storage routes (if you implement this service later)
 app.use('/api/storage', proxy(STORAGE_SERVICE_URL, {
-  proxyReqPathResolver: (req) => {
-    return `/api/storage${req.url}`;
-  }
+  ...createProxyOptions(STORAGE_SERVICE_URL, 'storage-service'),
+  proxyReqPathResolver: (req) => `/api/storage${req.url}`
 }));
+
+// Global error handler
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error('Gateway error:', err);
+  if (!res.headersSent) {
+    res.status(500).json({
+      error: 'Internal server error',
+      message: 'Something went wrong processing your request'
+    });
+  }
+});
+
+// Handle 404 for API routes
+app.use('/api/*', (req, res) => {
+  res.status(404).json({
+    error: 'API endpoint not found',
+    path: req.path,
+    method: req.method
+  });
+});
 
 // For production, serve the static React app
 if (process.env.NODE_ENV === 'production') {
@@ -68,7 +133,23 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
+// Graceful shutdown handling
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully');
+  process.exit(0);
+});
+
 // Start the server
 app.listen(PORT, () => {
-  console.log(`API Gateway running on port ${PORT}`);
+  console.log(`🚀 API Gateway running on port ${PORT}`);
+  console.log(`📊 Health check: http://localhost:${PORT}/health`);
+  console.log(`🔗 Service routes configured:`);
+  console.log(`   - Auth: ${AUTH_SERVICE_URL}`);
+  console.log(`   - Platform Integrations: ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);
+  console.log(`   - Report Generation: ${REPORT_SERVICE_URL}`);
 });

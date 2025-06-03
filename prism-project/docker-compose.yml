@@ -15,12 +15,14 @@ services:
       - REPORT_SERVICE_URL=http://report-service:4002
       - NOTIFICATION_SERVICE_URL=http://notification-service:4003
       - STORAGE_SERVICE_URL=http://storage-service:4004
+      - PLATFORM_INTEGRATIONS_SERVICE_URL=http://platform-integrations-service:4005
     depends_on:
       - auth-service
+      - platform-integrations-service
     networks:
       prism-network:
         aliases: 
-          - localhost  # This makes localhost resolve to the API gateway
+          - localhost
 
   # Authentication Service
   auth-service:
@@ -43,18 +45,35 @@ services:
     networks:
       - prism-network
 
-  # Frontend - Using the development Dockerfile
+  # Platform Integrations Service
+  platform-integrations-service:
+    build:
+      context: ./backend/services/platform-integrations-service
+    ports:
+      - "4005:4005"
+    environment:
+      - PORT=4005
+      - MONGODB_URI=mongodb://mongo:27017/prism-integrations
+      - JWT_SECRET=your_jwt_secret_key_here
+      - ENCRYPTION_KEY=your_32_character_encryption_key_here_12345
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - prism-network
+
+  # Frontend
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile.dev  # Use the development Dockerfile
+      dockerfile: Dockerfile.dev
     ports:
-      - "5173:5173"  # Map Vite's dev server port
+      - "5173:5173"
     volumes:
-      - ./frontend:/app  # Mount the source code for hot reloading
-      - /app/node_modules  # Prevent overwriting the node_modules with the host's
+      - ./frontend:/app
+      - /app/node_modules
     environment:
-      - VITE_API_URL=http://api-gateway:3000  # Changed from localhost
+      - VITE_API_URL=http://api-gateway:3000
     networks:
       - prism-network
 

@@ -1,23 +1,55 @@
-import React, { useState } from 'react';
+// frontend/src/components/feature-specific/reports/ReportWizard.tsx (Updated)
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowRight, Check, FileText, CheckCircle, Clock, X } from 'lucide-react';
 import reportService from '../../../services/report.service';
 import { useNotifications } from '../../../contexts/NotificationContext';
+import { useConnections } from '../../../contexts/ConnectionsContext';
 
 const ReportWizard: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [wizardData, setWizardData] = useState({
-    platform: '',
-    template: '',
+    connectionId: '',
+    projectId: '',
+    templateId: '',
     configuration: {}
   });
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationComplete, setGenerationComplete] = useState(false);
   const [generationError, setGenerationError] = useState(false);
   const [reportId, setReportId] = useState<string | null>(null);
+  const [availableProjects, setAvailableProjects] = useState<any[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
 
   const { addNotification } = useNotifications();
-
+  const { connections, getProjectData } = useConnections();
   const totalSteps = 4;
+
+  // Filter only connected platforms
+  const connectedPlatforms = connections.filter(conn => conn.status === 'connected');
+
+  useEffect(() => {
+    if (wizardData.connectionId && currentStep === 2) {
+      loadProjectsForConnection();
+    }
+  }, [wizardData.connectionId, currentStep]);
+
+  const loadProjectsForConnection = async () => {
+    if (!wizardData.connectionId) return;
+
+    setIsLoadingProjects(true);
+    try {
+      const projectData = await getProjectData(wizardData.connectionId);
+      
+      // Handle both single project and array of projects
+      const projects = Array.isArray(projectData) ? projectData : [projectData];
+      setAvailableProjects(projects);
+    } catch (error) {
+      console.error('Failed to load projects:', error);
+      setAvailableProjects([]);
+    } finally {
+      setIsLoadingProjects(false);
+    }
+  };
 
   const updateWizardData = (key: string, value: any) => {
     setWizardData(prev => ({
@@ -30,17 +62,13 @@ const ReportWizard: React.FC = () => {
     if (currentStep < totalSteps) {
       setCurrentStep(currentStep + 1);
     } else {
-      // Final step - check state
       if (generationComplete) {
-        // If generation is complete, download the report
         handleDownload();
       } else if (generationError) {
-        // If there was an error, try again
         setGenerationError(false);
         setIsGenerating(false);
         handleGenerateReport();
       } else {
-        // Otherwise, start the generation
         handleGenerateReport();
       }
     }
@@ -56,11 +84,29 @@ const ReportWizard: React.FC = () => {
     setIsGenerating(true);
 
     try {
-      // Call API to generate report
+      // Get selected connection and project data
+      const selectedConnection = connections.find(c => c.id === wizardData.connectionId);
+      const selectedProject = availableProjects.find(p => p.id === wizardData.projectId);
+      
+      if (!selectedConnection || !selectedProject) {
+        throw new Error('Invalid connection or project selection');
+      }
+
+      // Create report title based on connection and project
+      const reportTitle = wizardData.configuration.title || 
+        `${selectedProject.name} - ${selectedConnection.name} Report`;
+
       const report = await reportService.generateReport({
-        platformId: wizardData.platform,
-        templateId: wizardData.template,
-        configuration: wizardData.configuration
+        platformId: selectedConnection.platform,
+        templateId: wizardData.templateId,
+        configuration: {
+          ...wizardData.configuration,
+          title: reportTitle,
+          connectionId: wizardData.connectionId,
+          projectId: wizardData.projectId,
+          connectionName: selectedConnection.name,
+          projectName: selectedProject.name
+        }
       });
 
       setReportId(report.id);
@@ -73,11 +119,10 @@ const ReportWizard: React.FC = () => {
           if (status.status === 'completed') {
             setGenerationComplete(true);
             setIsGenerating(false);
-            // Add notification
             addNotification({
               type: 'success',
               title: 'Report Generated',
-              message: `Your "${report.title}" report is ready to download`,
+              message: `Your "${reportTitle}" report is ready to download`,
               actions: [
                 { label: 'Download', action: 'download', id: report.id },
                 { label: 'View', action: 'view', id: report.id }
@@ -86,7 +131,6 @@ const ReportWizard: React.FC = () => {
           } else if (status.status === 'failed') {
             setGenerationError(true);
             setIsGenerating(false);
-            // Add notification
             addNotification({
               type: 'error',
               title: 'Report Generation Failed',
@@ -96,7 +140,6 @@ const ReportWizard: React.FC = () => {
               ]
             });
           } else {
-            // Still processing, check again in 2 seconds
             setTimeout(checkStatus, 2000);
           }
         } catch (error) {
@@ -106,7 +149,6 @@ const ReportWizard: React.FC = () => {
         }
       };
 
-      // Start polling
       checkStatus();
 
     } catch (error) {
@@ -118,25 +160,22 @@ const ReportWizard: React.FC = () => {
 
   const handleDownload = () => {
     if (reportId) {
-      // Prepare report data based on the wizard input
+      // Get real project data for the report
+      const selectedProject = availableProjects.find(p => p.id === wizardData.projectId);
+      const selectedConnection = connections.find(c => c.id === wizardData.connectionId);
+      
       const reportData = {
-        title: wizardData.configuration.title || 'Project Report',
-        platform: wizardData.platform,
+        title: wizardData.configuration.title || `${selectedProject?.name} Report`,
+        platform: selectedConnection?.platform,
+        connectionName: selectedConnection?.name,
+        projectName: selectedProject?.name,
         date: new Date().toLocaleDateString(),
-        metrics: [
-          { name: 'Tasks Completed', value: '32' },
-          { name: 'In Progress', value: '12' },
-          { name: 'Blockers', value: '3' }
-        ],
-        team: [
-          { name: 'Professor Ganesh', role: 'Project Manager' },
-          { name: 'Kelvin Chong', role: 'Developer' },
-          { name: 'Chan Jian Da', role: 'DevOps' },
-          { name: 'Bryan', role: 'Designer' }
-        ]
+        metrics: selectedProject?.metrics || [],
+        team: selectedProject?.team || [],
+        tasks: selectedProject?.tasks || [],
+        configuration: wizardData.configuration
       };
 
-      // Pass the custom data to the download function
       reportService.downloadReport(reportId, reportData);
     }
   };
@@ -145,27 +184,39 @@ const ReportWizard: React.FC = () => {
     switch (currentStep) {
       case 1:
         return (
-          <PlatformSelection
-            selectedPlatform={wizardData.platform}
-            onSelectPlatform={(platform) => updateWizardData('platform', platform)}
+          <ConnectionSelection
+            connections={connectedPlatforms}
+            selectedConnectionId={wizardData.connectionId}
+            onSelectConnection={(connectionId) => updateWizardData('connectionId', connectionId)}
           />
         );
       case 2:
         return (
-          <TemplateSelection
-            selectedTemplate={wizardData.template}
-            onSelectTemplate={(template) => updateWizardData('template', template)}
+          <ProjectSelection
+            projects={availableProjects}
+            isLoading={isLoadingProjects}
+            selectedProjectId={wizardData.projectId}
+            onSelectProject={(projectId) => updateWizardData('projectId', projectId)}
+            connectionName={connections.find(c => c.id === wizardData.connectionId)?.name}
           />
         );
       case 3:
         return (
-          <ReportConfiguration
-            configuration={wizardData.configuration}
-            onUpdateConfiguration={(config) => updateWizardData('configuration', config)}
-            platform={wizardData.platform}
+          <TemplateSelection
+            selectedTemplate={wizardData.templateId}
+            onSelectTemplate={(template) => updateWizardData('templateId', template)}
           />
         );
       case 4:
+        return (
+          <ReportConfiguration
+            configuration={wizardData.configuration}
+            onUpdateConfiguration={(config) => updateWizardData('configuration', config)}
+            connectionName={connections.find(c => c.id === wizardData.connectionId)?.name}
+            projectName={availableProjects.find(p => p.id === wizardData.projectId)?.name}
+          />
+        );
+      case 5:
         return (
           <GenerationProgress
             isGenerating={isGenerating}
@@ -187,12 +238,14 @@ const ReportWizard: React.FC = () => {
   const isStepComplete = (step: number) => {
     switch (step) {
       case 1:
-        return !!wizardData.platform;
+        return !!wizardData.connectionId;
       case 2:
-        return !!wizardData.template;
+        return !!wizardData.projectId;
       case 3:
-        return Object.keys(wizardData.configuration).length > 0;
+        return !!wizardData.templateId;
       case 4:
+        return Object.keys(wizardData.configuration).length > 0;
+      case 5:
         return !isGenerating || generationComplete || generationError;
       default:
         return false;
@@ -200,7 +253,7 @@ const ReportWizard: React.FC = () => {
   };
 
   const getButtonText = () => {
-    if (currentStep === totalSteps) {
+    if (currentStep === 5) {
       if (!isGenerating && !generationComplete && !generationError) {
         return 'Generate Report';
       } else if (generationComplete) {
@@ -210,47 +263,46 @@ const ReportWizard: React.FC = () => {
       }
       return 'Generating...';
     }
-    return 'Continue';
+    return currentStep === 4 ? 'Generate Report' : 'Continue';
   };
+
+  const actualTotalSteps = 5; // Updated to include generation step
 
   return (
     <div className="bg-white rounded-xl shadow-md p-6 max-w-4xl mx-auto">
       {/* Wizard Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Create New Report</h1>
-        <p className="text-gray-600">Follow the steps to generate your PowerPoint report</p>
+        <p className="text-gray-600">Generate PowerPoint reports from your connected platforms</p>
       </div>
 
       {/* Progress Indicator */}
       <div className="mb-8">
         <div className="flex justify-between">
-          {Array.from({ length: totalSteps }).map((_, idx) => {
+          {Array.from({ length: actualTotalSteps }).map((_, idx) => {
             const stepNum = idx + 1;
             const isActive = currentStep === stepNum;
-            const isDone = isStepComplete(stepNum);
+            const isDone = stepNum < currentStep || (stepNum === currentStep && isStepComplete(stepNum));
 
             return (
               <div key={idx} className="flex flex-col items-center relative">
-                {/* Connector line */}
-                {idx < totalSteps - 1 && (
+                {idx < actualTotalSteps - 1 && (
                   <div
-                    className={`absolute w-full h-1 top-4 left-1/2 -z-10 ${isDone ? 'bg-blue-500' : 'bg-gray-200'
-                      }`}
+                    className={`absolute w-full h-1 top-4 left-1/2 -z-10 ${isDone ? 'bg-blue-500' : 'bg-gray-200'}`}
                   />
                 )}
-                {/* Step circle */}
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center 
                     ${isActive || isDone ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'}`}
                 >
-                  {isDone ? <Check size={16} /> : stepNum}
+                  {isDone && stepNum < currentStep ? <Check size={16} /> : stepNum}
                 </div>
-                {/* Step label */}
                 <span className={`text-sm mt-2 ${isActive ? 'text-blue-600 font-medium' : 'text-gray-500'}`}>
-                  {stepNum === 1 && 'Platform'}
-                  {stepNum === 2 && 'Template'}
-                  {stepNum === 3 && 'Configure'}
-                  {stepNum === 4 && 'Generate'}
+                  {stepNum === 1 && 'Connection'}
+                  {stepNum === 2 && 'Project'}
+                  {stepNum === 3 && 'Template'}
+                  {stepNum === 4 && 'Configure'}
+                  {stepNum === 5 && 'Generate'}
                 </span>
               </div>
             );
@@ -285,281 +337,24 @@ const ReportWizard: React.FC = () => {
             }`}
         >
           {getButtonText()}
-          {currentStep !== totalSteps && <ArrowRight size={16} className="ml-1" />}
-          {currentStep === totalSteps && generationComplete && <Check size={16} className="ml-1" />}
+          {currentStep < 4 && <ArrowRight size={16} className="ml-1" />}
+          {currentStep === 5 && generationComplete && <Check size={16} className="ml-1" />}
         </button>
       </div>
     </div>
   );
 };
 
-// Platform Selection Component
-const PlatformSelection: React.FC<{
-  selectedPlatform: string,
-  onSelectPlatform: (platform: string) => void
-}> = ({ selectedPlatform, onSelectPlatform }) => {
-  const platforms = [
-    { id: 'monday', name: 'Monday.com', icon: '📊' },
-    { id: 'jira', name: 'Jira', icon: '🔄' },
-    { id: 'trofos', name: 'TROFOS', icon: '📈' }
-  ];
-
-  return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-medium">Select Project Management Platform</h2>
-      <p className="text-gray-500 mb-4">Choose the platform you want to generate a report from</p>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {platforms.map(platform => (
-          <div
-            key={platform.id}
-            onClick={() => onSelectPlatform(platform.id)}
-            className={`p-4 border rounded-lg cursor-pointer transition-all
-              ${selectedPlatform === platform.id
-                ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
-                : 'border-gray-200 hover:border-blue-300'}`}
-          >
-            <div className="flex flex-col items-center text-center p-4">
-              <div className="text-3xl mb-2">{platform.icon}</div>
-              <h3 className="font-medium">{platform.name}</h3>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-// Template Selection Component
-const TemplateSelection: React.FC<{
-  selectedTemplate: string,
-  onSelectTemplate: (template: string) => void
-}> = ({ selectedTemplate, onSelectTemplate }) => {
-  const templates = [
-    { id: 'project-overview', name: 'Project Overview', thumbnail: '🖼️' },
-    { id: 'sprint-review', name: 'Sprint Review', thumbnail: '🖼️' },
-    { id: 'status-report', name: 'Status Report', thumbnail: '🖼️' },
-    { id: 'roadmap', name: 'Project Roadmap', thumbnail: '🖼️' },
-    { id: 'resource-allocation', name: 'Resource Allocation', thumbnail: '🖼️' },
-    { id: 'custom-1', name: 'Custom Template 1', thumbnail: '🖼️' }
-  ];
-
-  return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-medium">Select Template</h2>
-      <p className="text-gray-500 mb-4">Choose a presentation template for your report</p>
-
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        {templates.map(template => (
-          <div
-            key={template.id}
-            onClick={() => onSelectTemplate(template.id)}
-            className={`border rounded-lg cursor-pointer overflow-hidden transition-all
-              ${selectedTemplate === template.id
-                ? 'border-blue-500 ring-2 ring-blue-200'
-                : 'border-gray-200 hover:border-blue-300'}`}
-          >
-            <div className="aspect-video bg-gray-100 flex items-center justify-center">
-              <span className="text-4xl">{template.thumbnail}</span>
-            </div>
-            <div className="p-3">
-              <h3 className="font-medium text-center">{template.name}</h3>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-// Report Configuration Component
-const ReportConfiguration: React.FC<{
-  configuration: Record<string, any>,
-  onUpdateConfiguration: (config: Record<string, any>) => void,
-  platform: string
-}> = ({ configuration, onUpdateConfiguration, platform }) => {
-  // Sample configuration with default values
-  const defaultConfig = {
-    title: 'Project Status Report',
-    includeMetrics: true,
-    includeTasks: true,
-    includeTimeline: true,
-    includeResources: false,
-    dateRange: 'last30Days'
-  };
-
-  const [config, setConfig] = useState({ ...defaultConfig, ...configuration });
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value, type } = e.target;
-    const newValue = type === 'checkbox'
-      ? (e.target as HTMLInputElement).checked
-      : value;
-
-    setConfig({
-      ...config,
-      [name]: newValue
-    });
-  };
-
-  const handleSave = () => {
-    onUpdateConfiguration(config);
-  };
-
-  return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-medium">Configure Report</h2>
-      <p className="text-gray-500 mb-4">Customize the content of your report</p>
-
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Report Title
-          </label>
-          <input
-            type="text"
-            name="title"
-            value={config.title}
-            onChange={handleChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md"
-          />
+// Connection Selection Component (NEW)
+const ConnectionSelection: React.FC<{
+  connections: any[],
+  selectedConnectionId: string,
+  onSelectConnection: (connectionId: string) => void
+}> = ({ connections, selectedConnectionId, onSelectConnection }) => {
+  if (connections.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <FileText size={24} className="text-gray-400" />
         </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Date Range
-          </label>
-          <select
-            name="dateRange"
-            value={config.dateRange}
-            onChange={handleChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md"
-          >
-            <option value="last7Days">Last 7 Days</option>
-            <option value="last14Days">Last 14 Days</option>
-            <option value="last30Days">Last 30 Days</option>
-            <option value="currentSprint">Current Sprint</option>
-            <option value="custom">Custom Range</option>
-          </select>
-        </div>
-
-        <div className="space-y-2">
-          <p className="block text-sm font-medium text-gray-700">
-            Include in Report
-          </p>
-
-          <div className="space-y-2">
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                name="includeMetrics"
-                checked={config.includeMetrics}
-                onChange={handleChange}
-                className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-              />
-              <span className="ml-2 text-sm text-gray-700">Project Metrics</span>
-            </label>
-
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                name="includeTasks"
-                checked={config.includeTasks}
-                onChange={handleChange}
-                className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-              />
-              <span className="ml-2 text-sm text-gray-700">Tasks & Issues</span>
-            </label>
-
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                name="includeTimeline"
-                checked={config.includeTimeline}
-                onChange={handleChange}
-                className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-              />
-              <span className="ml-2 text-sm text-gray-700">Project Timeline</span>
-            </label>
-
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                name="includeResources"
-                checked={config.includeResources}
-                onChange={handleChange}
-                className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-              />
-              <span className="ml-2 text-sm text-gray-700">Resource Allocation</span>
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <div className="pt-4 text-right">
-        <button
-          onClick={handleSave}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-        >
-          Save Configuration
-        </button>
-      </div>
-    </div>
-  );
-};
-
-// Generation Progress Component
-const GenerationProgress: React.FC<{
-  isGenerating: boolean,
-  isComplete: boolean,
-  hasError: boolean,
-  onRetry: () => void,
-  onDownload: () => void
-}> = ({ isGenerating, isComplete, hasError, onRetry, onDownload }) => {
-  return (
-    <div className="flex flex-col items-center justify-center py-8">
-      {isGenerating && (
-        <div className="text-center">
-          <div className="w-16 h-16 border-t-4 border-b-4 border-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
-          <h2 className="text-xl font-medium mb-2">Generating Your Report</h2>
-          <p className="text-gray-500">This may take a few moments</p>
-        </div>
-      )}
-
-      {isComplete && (
-        <div className="text-center">
-          <div className="w-16 h-16 flex items-center justify-center bg-green-100 text-green-500 rounded-full mx-auto mb-4">
-            <CheckCircle size={32} />
-          </div>
-          <h2 className="text-xl font-medium mb-2">Report Generated Successfully!</h2>
-          <p className="text-gray-500 mb-4">Your PowerPoint report is ready to download</p>
-          <button
-            onClick={onDownload}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center mx-auto"
-          >
-            <FileText size={18} className="mr-2" />
-            Download Report
-          </button>
-        </div>
-      )}
-
-      {hasError && (
-        <div className="text-center">
-          <div className="w-16 h-16 flex items-center justify-center bg-red-100 text-red-500 rounded-full mx-auto mb-4">
-            <X size={32} />
-          </div>
-          <h2 className="text-xl font-medium mb-2">Generation Failed</h2>
-          <p className="text-gray-500 mb-4">There was an error generating your report</p>
-          <button
-            onClick={onRetry}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Try Again
-          </button>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default ReportWizard;
+        <h3 className="text-lg font-medium text-gray-900 mb-2">No Connected Platforms</h3>

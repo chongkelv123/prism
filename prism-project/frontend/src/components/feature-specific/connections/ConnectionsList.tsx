@@ -1,19 +1,23 @@
 // frontend/src/components/feature-specific/connections/ConnectionsList.tsx
 import React from 'react';
-import { Connection } from '../../../contexts/ConnectionsContext';
+import { type Connection } from '../../../contexts/ConnectionsContext';
 import ConnectionCard from './ConnectionCard';
 
 interface ConnectionsListProps {
   connections: Connection[];
   isLoading: boolean;
+  actionLoadingId?: string | null;
   onTestConnection: (connectionId: string) => void;
+  onSyncConnection: (connectionId: string) => void;
   onDeleteConnection: (connectionId: string) => void;
 }
 
 const ConnectionsList: React.FC<ConnectionsListProps> = ({
   connections,
   isLoading,
+  actionLoadingId,
   onTestConnection,
+  onSyncConnection,
   onDeleteConnection
 }) => {
   if (connections.length === 0) {
@@ -42,8 +46,9 @@ const ConnectionsList: React.FC<ConnectionsListProps> = ({
         <ConnectionCard
           key={connection.id}
           connection={connection}
-          isLoading={isLoading}
+          isLoading={actionLoadingId === connection.id}
           onTestConnection={onTestConnection}
+          onSyncConnection={onSyncConnection}
           onDeleteConnection={onDeleteConnection}
         />
       ))}

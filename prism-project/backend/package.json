@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev:api-gateway\" \"npm run dev:auth-service\" \"npm run dev:report-generation-service\"",
+    "dev": "concurrently \"npm run dev:api-gateway\" \"npm run dev:auth-service\" \"npm run dev:report-generation-service\" \"npm run dev:platform-integrations-service\"",
     "dev:api-gateway": "cd api-gateway && npm run dev",
     "dev:auth-service": "cd services/auth-service && npm run dev",
     "dev:report-generation-service": "cd services/report-generation-service && npm run dev",
+    "dev:platform-integrations-service": "cd services/platform-integrations-service && npm run dev",
     "build": "tsc -b services/*",
     "test": "jest"
   },

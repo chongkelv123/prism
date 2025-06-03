@@ -1,6 +1,6 @@
-// frontend/src/components/feature-specific/reports/ReportWizard.tsx (Updated)
+// frontend/src/components/feature-specific/reports/ReportWizard.tsx
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, ArrowRight, Check, FileText, CheckCircle, Clock, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, FileText, CheckCircle, Clock, X, AlertCircle, Loader } from 'lucide-react';
 import reportService from '../../../services/report.service';
 import { useNotifications } from '../../../contexts/NotificationContext';
 import { useConnections } from '../../../contexts/ConnectionsContext';
@@ -345,12 +345,21 @@ const ReportWizard: React.FC = () => {
   );
 };
 
-// Connection Selection Component (NEW)
+// Connection Selection Component
 const ConnectionSelection: React.FC<{
   connections: any[],
   selectedConnectionId: string,
   onSelectConnection: (connectionId: string) => void
 }> = ({ connections, selectedConnectionId, onSelectConnection }) => {
+  const getPlatformIcon = (platform: string) => {
+    switch (platform) {
+      case 'monday': return '📊';
+      case 'jira': return '🔄';
+      case 'trofos': return '📈';
+      default: return '🔗';
+    }
+  };
+
   if (connections.length === 0) {
     return (
       <div className="text-center py-8">
@@ -358,3 +367,389 @@ const ConnectionSelection: React.FC<{
           <FileText size={24} className="text-gray-400" />
         </div>
         <h3 className="text-lg font-medium text-gray-900 mb-2">No Connected Platforms</h3>
+        <p className="text-gray-600 mb-4">
+          You need to connect to a platform before generating reports.
+        </p>
+        <button
+          onClick={() => window.location.href = '/connections'}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          Connect a Platform
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 className="text-xl font-semibold text-gray-900 mb-4">Select Connection</h2>
+      <p className="text-gray-600 mb-6">Choose which platform connection to use for your report</p>
+      
+      <div className="space-y-3">
+        {connections.map((connection) => (
+          <div
+            key={connection.id}
+            onClick={() => onSelectConnection(connection.id)}
+            className={`p-4 border rounded-lg cursor-pointer transition-all ${
+              selectedConnectionId === connection.id
+                ? 'border-blue-500 bg-blue-50'
+                : 'border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            <div className="flex items-center">
+              <span className="text-2xl mr-3">{getPlatformIcon(connection.platform)}</span>
+              <div className="flex-1">
+                <h3 className="font-medium text-gray-900">{connection.name}</h3>
+                <p className="text-sm text-gray-500">
+                  {connection.platform} • {connection.projectCount} project{connection.projectCount !== 1 ? 's' : ''}
+                </p>
+              </div>
+              {selectedConnectionId === connection.id && (
+                <CheckCircle size={20} className="text-blue-500" />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Project Selection Component
+const ProjectSelection: React.FC<{
+  projects: any[],
+  isLoading: boolean,
+  selectedProjectId: string,
+  onSelectProject: (projectId: string) => void,
+  connectionName?: string
+}> = ({ projects, isLoading, selectedProjectId, onSelectProject, connectionName }) => {
+  if (isLoading) {
+    return (
+      <div className="text-center py-8">
+        <Loader className="animate-spin h-8 w-8 mx-auto text-blue-500 mb-4" />
+        <p className="text-gray-600">Loading projects...</p>
+      </div>
+    );
+  }
+
+  if (projects.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <AlertCircle size={48} className="mx-auto text-gray-400 mb-4" />
+        <h3 className="text-lg font-medium text-gray-900 mb-2">No Projects Found</h3>
+        <p className="text-gray-600">
+          No projects were found in your {connectionName} connection.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 className="text-xl font-semibold text-gray-900 mb-4">Select Project</h2>
+      <p className="text-gray-600 mb-6">
+        Choose the project from {connectionName} to include in your report
+      </p>
+      
+      <div className="space-y-3">
+        {projects.map((project) => (
+          <div
+            key={project.id}
+            onClick={() => onSelectProject(project.id)}
+            className={`p-4 border rounded-lg cursor-pointer transition-all ${
+              selectedProjectId === project.id
+                ? 'border-blue-500 bg-blue-50'
+                : 'border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-medium text-gray-900">{project.name}</h3>
+                {project.description && (
+                  <p className="text-sm text-gray-500 mt-1">{project.description}</p>
+                )}
+                <div className="flex items-center mt-2 space-x-4">
+                  {project.tasks && (
+                    <span className="text-xs text-gray-500">
+                      {project.tasks.length} tasks
+                    </span>
+                  )}
+                  {project.team && (
+                    <span className="text-xs text-gray-500">
+                      {project.team.length} team members
+                    </span>
+                  )}
+                </div>
+              </div>
+              {selectedProjectId === project.id && (
+                <CheckCircle size={20} className="text-blue-500" />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Template Selection Component
+const TemplateSelection: React.FC<{
+  selectedTemplate: string,
+  onSelectTemplate: (template: string) => void
+}> = ({ selectedTemplate, onSelectTemplate }) => {
+  const templates = [
+    {
+      id: 'standard-report',
+      name: 'Standard Project Report',
+      description: 'A comprehensive overview including metrics, tasks, and team information',
+      features: ['Project Overview', 'Team Members', 'Task Status', 'Metrics Dashboard']
+    },
+    {
+      id: 'executive-summary',
+      name: 'Executive Summary',
+      description: 'High-level overview perfect for stakeholder presentations',
+      features: ['Key Metrics', 'Project Status', 'Critical Issues', 'Next Steps']
+    },
+    {
+      id: 'detailed-analysis',
+      name: 'Detailed Analysis',
+      description: 'In-depth analysis with detailed charts and breakdowns',
+      features: ['Detailed Metrics', 'Task Breakdown', 'Timeline Analysis', 'Resource Allocation']
+    }
+  ];
+
+  return (
+    <div>
+      <h2 className="text-xl font-semibold text-gray-900 mb-4">Choose Template</h2>
+      <p className="text-gray-600 mb-6">Select the report template that best fits your needs</p>
+      
+      <div className="space-y-4">
+        {templates.map((template) => (
+          <div
+            key={template.id}
+            onClick={() => onSelectTemplate(template.id)}
+            className={`p-6 border rounded-lg cursor-pointer transition-all ${
+              selectedTemplate === template.id
+                ? 'border-blue-500 bg-blue-50'
+                : 'border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <h3 className="font-semibold text-gray-900 mb-2">{template.name}</h3>
+                <p className="text-gray-600 mb-3">{template.description}</p>
+                <div className="flex flex-wrap gap-2">
+                  {template.features.map((feature, index) => (
+                    <span
+                      key={index}
+                      className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full"
+                    >
+                      {feature}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              {selectedTemplate === template.id && (
+                <CheckCircle size={20} className="text-blue-500 ml-4" />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Report Configuration Component
+const ReportConfiguration: React.FC<{
+  configuration: any,
+  onUpdateConfiguration: (config: any) => void,
+  connectionName?: string,
+  projectName?: string
+}> = ({ configuration, onUpdateConfiguration, connectionName, projectName }) => {
+  const [config, setConfig] = useState({
+    title: '',
+    includeMetrics: true,
+    includeTasks: true,
+    includeTimeline: true,
+    includeResources: true,
+    dateRange: '30',
+    ...configuration
+  });
+
+  const handleConfigChange = (key: string, value: any) => {
+    const newConfig = { ...config, [key]: value };
+    setConfig(newConfig);
+    onUpdateConfiguration(newConfig);
+  };
+
+  // Set default title if empty
+  React.useEffect(() => {
+    if (!config.title && projectName && connectionName) {
+      const defaultTitle = `${projectName} - ${connectionName} Report`;
+      handleConfigChange('title', defaultTitle);
+    }
+  }, [projectName, connectionName]);
+
+  return (
+    <div>
+      <h2 className="text-xl font-semibold text-gray-900 mb-4">Configure Report</h2>
+      <p className="text-gray-600 mb-6">Customize your report settings and content</p>
+      
+      <div className="space-y-6">
+        {/* Report Title */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Report Title
+          </label>
+          <input
+            type="text"
+            value={config.title}
+            onChange={(e) => handleConfigChange('title', e.target.value)}
+            placeholder={`${projectName} - ${connectionName} Report`}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        {/* Content Options */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-3">
+            Include in Report
+          </label>
+          <div className="space-y-3">
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={config.includeMetrics}
+                onChange={(e) => handleConfigChange('includeMetrics', e.target.checked)}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <span className="ml-2 text-sm text-gray-700">Project Metrics & Statistics</span>
+            </label>
+            
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={config.includeTasks}
+                onChange={(e) => handleConfigChange('includeTasks', e.target.checked)}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <span className="ml-2 text-sm text-gray-700">Task List & Status</span>
+            </label>
+            
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={config.includeTimeline}
+                onChange={(e) => handleConfigChange('includeTimeline', e.target.checked)}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <span className="ml-2 text-sm text-gray-700">Timeline & Milestones</span>
+            </label>
+            
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={config.includeResources}
+                onChange={(e) => handleConfigChange('includeResources', e.target.checked)}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <span className="ml-2 text-sm text-gray-700">Team & Resources</span>
+            </label>
+          </div>
+        </div>
+
+        {/* Date Range */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Data Range (Days)
+          </label>
+          <select
+            value={config.dateRange}
+            onChange={(e) => handleConfigChange('dateRange', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="all">All time</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Generation Progress Component
+const GenerationProgress: React.FC<{
+  isGenerating: boolean,
+  isComplete: boolean,
+  hasError: boolean,
+  onRetry: () => void,
+  onDownload: () => void
+}> = ({ isGenerating, isComplete, hasError, onRetry, onDownload }) => {
+  if (hasError) {
+    return (
+      <div className="text-center py-8">
+        <X size={48} className="mx-auto text-red-500 mb-4" />
+        <h3 className="text-lg font-medium text-gray-900 mb-2">Generation Failed</h3>
+        <p className="text-gray-600 mb-4">
+          There was an error generating your report. Please try again.
+        </p>
+        <button
+          onClick={onRetry}
+          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
+  if (isComplete) {
+    return (
+      <div className="text-center py-8">
+        <CheckCircle size={48} className="mx-auto text-green-500 mb-4" />
+        <h3 className="text-lg font-medium text-gray-900 mb-2">Report Generated Successfully!</h3>
+        <p className="text-gray-600 mb-4">
+          Your PowerPoint report is ready for download.
+        </p>
+        <button
+          onClick={onDownload}
+          className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+        >
+          Download Report
+        </button>
+      </div>
+    );
+  }
+
+  if (isGenerating) {
+    return (
+      <div className="text-center py-8">
+        <div className="relative">
+          <Clock size={48} className="mx-auto text-blue-500 mb-4 animate-spin" />
+        </div>
+        <h3 className="text-lg font-medium text-gray-900 mb-2">Generating Report...</h3>
+        <p className="text-gray-600 mb-4">
+          Please wait while we create your PowerPoint report. This may take a few moments.
+        </p>
+        <div className="w-full bg-gray-200 rounded-full h-2 max-w-xs mx-auto">
+          <div className="bg-blue-600 h-2 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="text-center py-8">
+      <FileText size={48} className="mx-auto text-gray-400 mb-4" />
+      <h3 className="text-lg font-medium text-gray-900 mb-2">Ready to Generate</h3>
+      <p className="text-gray-600">
+        Click "Generate Report" to create your PowerPoint presentation.
+      </p>
+    </div>
+  );
+};
+
+export default ReportWizard;

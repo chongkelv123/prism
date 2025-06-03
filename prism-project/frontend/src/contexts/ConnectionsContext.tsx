@@ -1,4 +1,4 @@
-// frontend/src/contexts/ConnectionsContext.tsx
+// frontend/src/contexts/ConnectionsContext.tsx - FIXED VERSION
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import connectionService, { Connection, ConnectionConfig, Platform } from '../services/connection.service';
 
@@ -31,45 +31,18 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load initial data
+  // Check if user is authenticated
+  const isAuthenticated = () => {
+    const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+    return !!token;
+  };
+
+  // Load initial data only if authenticated
   useEffect(() => {
-    loadInitialData();
-  }, []);
-
-  const loadInitialData = async () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      await Promise.all([
-        loadConnections(),
-        loadPlatforms()
-      ]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load data');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const loadConnections = async () => {
-    try {
-      const connectionsData = await connectionService.getConnections();
-      setConnections(connectionsData);
-    } catch (err) {
-      console.error('Failed to load connections:', err);
-      // Don't throw here, let the user work with empty connections
-      setConnections([]);
-    }
-  };
-
-  const loadPlatforms = async () => {
-    try {
-      const platformsData = await connectionService.getPlatforms();
-      setPlatforms(platformsData);
-    } catch (err) {
-      console.error('Failed to load platforms:', err);
-      // Set fallback platforms if API fails
+    if (isAuthenticated()) {
+      loadInitialData();
+    } else {
+      // Set fallback platforms for unauthenticated users
       setPlatforms([
         {
           id: 'monday',
@@ -108,9 +81,62 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         }
       ]);
     }
+  }, []);
+
+  const loadInitialData = async () => {
+    if (!isAuthenticated()) {
+      setError('Please log in to access connections');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      await Promise.all([
+        loadConnections(),
+        loadPlatforms()
+      ]);
+    } catch (err) {
+      console.error('Failed to load initial data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadConnections = async () => {
+    try {
+      const connectionsData = await connectionService.getConnections();
+      setConnections(connectionsData);
+    } catch (err) {
+      console.error('Failed to load connections:', err);
+      // Don't throw here, let the user work with empty connections
+      setConnections([]);
+      
+      // Check if it's an auth error
+      if (err?.response?.status === 401) {
+        setError('Authentication required. Please log in again.');
+      }
+    }
+  };
+
+  const loadPlatforms = async () => {
+    try {
+      const platformsData = await connectionService.getPlatforms();
+      setPlatforms(platformsData);
+    } catch (err) {
+      console.error('Failed to load platforms:', err);
+      // Keep fallback platforms even if API fails
+      // (they're already set in useEffect)
+    }
   };
 
   const createConnection = async (connectionData: ConnectionConfig): Promise<Connection> => {
+    if (!isAuthenticated()) {
+      throw new Error('Please log in to create connections');
+    }
+
     setIsLoading(true);
     setError(null);
     
@@ -121,6 +147,17 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to create connection';
       setError(errorMessage);
+      
+      // Check if it's an auth error
+      if (err?.response?.status === 401) {
+        setError('Session expired. Please log in again.');
+        // Clear tokens
+        localStorage.removeItem('authToken');
+        sessionStorage.removeItem('authToken');
+        // Redirect to login
+        window.location.href = '/login';
+      }
+      
       throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
@@ -128,6 +165,11 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const refreshConnections = async (): Promise<void> => {
+    if (!isAuthenticated()) {
+      setError('Please log in to refresh connections');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     
@@ -142,6 +184,10 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const testConnection = async (connectionId: string): Promise<{success: boolean, message: string}> => {
+    if (!isAuthenticated()) {
+      return { success: false, message: 'Please log in to test connections' };
+    }
+
     setError(null);
     
     try {
@@ -175,6 +221,10 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const syncConnection = async (connectionId: string): Promise<{success: boolean, message: string}> => {
+    if (!isAuthenticated()) {
+      return { success: false, message: 'Please log in to sync connections' };
+    }
+
     setError(null);
     
     try {
@@ -200,6 +250,10 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const deleteConnection = async (connectionId: string): Promise<{success: boolean, message: string}> => {
+    if (!isAuthenticated()) {
+      return { success: false, message: 'Please log in to delete connections' };
+    }
+
     setError(null);
     
     try {
@@ -241,6 +295,10 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const getProjectData = async (connectionId: string, projectId?: string): Promise<any> => {
+    if (!isAuthenticated()) {
+      throw new Error('Please log in to access project data');
+    }
+
     try {
       return await connectionService.getProjectData(connectionId, projectId);
     } catch (err) {

@@ -1,4 +1,4 @@
-// backend/api-gateway/src/index.ts
+// backend/api-gateway/src/index.ts - FIXED VERSION
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -25,7 +25,9 @@ app.get('/health', (req, res) => {
       gateway: 'running',
       auth: process.env.AUTH_SERVICE_URL || 'http://localhost:4000',
       platformIntegrations: process.env.PLATFORM_INTEGRATIONS_SERVICE_URL || 'http://localhost:4005',
-      reportGeneration: process.env.REPORT_SERVICE_URL || 'http://localhost:4002'
+      reportGeneration: process.env.REPORT_SERVICE_URL || 'http://localhost:4002',
+      notifications: 'not implemented',
+      storage: 'not implemented'
     }
   });
 });
@@ -68,7 +70,7 @@ app.use('/api/auth', proxy(AUTH_SERVICE_URL, {
   proxyReqPathResolver: (req) => `/api/auth${req.url}`
 }));
 
-// Platform integrations routes (NEW)
+// Platform integrations routes
 app.use('/api/platforms', proxy(PLATFORM_INTEGRATIONS_SERVICE_URL, {
   ...createProxyOptions(PLATFORM_INTEGRATIONS_SERVICE_URL, 'platform-integrations-service'),
   proxyReqPathResolver: (req) => `/api/platforms${req.url}`
@@ -91,17 +93,25 @@ app.use('/api/projects', proxy(PROJECT_DATA_SERVICE_URL, {
   proxyReqPathResolver: (req) => `/api/projects${req.url}`
 }));
 
-// Notification routes (if you implement this service later)
-app.use('/api/notifications', proxy(NOTIFICATION_SERVICE_URL, {
-  ...createProxyOptions(NOTIFICATION_SERVICE_URL, 'notification-service'),
-  proxyReqPathResolver: (req) => `/api/notifications${req.url}`
-}));
+// Notification routes - Handle missing service gracefully
+app.use('/api/notifications', (req, res) => {
+  console.warn('Notification service not implemented yet');
+  res.status(503).json({
+    error: 'Service not implemented',
+    service: 'notification-service',
+    message: 'Notification service is planned for future implementation'
+  });
+});
 
-// Storage routes (if you implement this service later)
-app.use('/api/storage', proxy(STORAGE_SERVICE_URL, {
-  ...createProxyOptions(STORAGE_SERVICE_URL, 'storage-service'),
-  proxyReqPathResolver: (req) => `/api/storage${req.url}`
-}));
+// Storage routes - Handle missing service gracefully  
+app.use('/api/storage', (req, res) => {
+  console.warn('Storage service not implemented yet');
+  res.status(503).json({
+    error: 'Service not implemented',
+    service: 'storage-service',
+    message: 'Storage service is planned for future implementation'
+  });
+});
 
 // Global error handler
 app.use((err: any, req: any, res: any, next: any) => {
@@ -152,4 +162,6 @@ app.listen(PORT, () => {
   console.log(`   - Auth: ${AUTH_SERVICE_URL}`);
   console.log(`   - Platform Integrations: ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);
   console.log(`   - Report Generation: ${REPORT_SERVICE_URL}`);
+  console.log(`   - Notifications: Not implemented (returns 503)`);
+  console.log(`   - Storage: Not implemented (returns 503)`);
 });

@@ -1,3 +1,4 @@
+// backend/services/auth-service/src/index.ts - CORRECTED VERSION
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -5,8 +6,8 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import { connectDB, disconnectDB } from './config/database';
-import platformRoutes from './routes/platformRoutes';
-import connectionRoutes from './routes/connectionRoutes';
+import { eventPublisher } from './events/publisher';
+import authRoutes from './routes/authRoutes';
 import logger from './utils/logger';
 
 const app = express();
@@ -15,20 +16,20 @@ app.use(cors({ origin: true }));
 app.use(express.json());
 
 // Routes
-app.use('/api/platforms', platformRoutes);
-app.use('/api/connections', connectionRoutes);
+app.use('/api/auth', authRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', service: 'platform-integrations' });
+  res.status(200).json({ status: 'ok', service: 'auth-service' });
 });
 
-const PORT = Number(process.env.PORT) || 4005;
+const PORT = Number(process.env.PORT) || 4000;
 
 async function start() {
   try {
     await connectDB();
-    app.listen(PORT, () => logger.info(`Platform Integrations service up on ${PORT}`));
+    await eventPublisher.init();
+    app.listen(PORT, () => logger.info(`Auth service up on ${PORT}`));
   } catch (err) {
     logger.error('Startup failed', err);
     process.exit(1);
@@ -40,6 +41,7 @@ start();
 // Graceful shutdown
 async function shutdown() {
   logger.info('Shutting down...');
+  await eventPublisher.close();
   await disconnectDB();
   process.exit(0);
 }

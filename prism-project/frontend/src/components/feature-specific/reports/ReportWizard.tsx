@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowRight, Check, FileText, CheckCircle, Clock, X, AlertCircle, Loader } from 'lucide-react';
 import reportService from '../../../services/report.service';
-import { useNotifications } from '../../../contexts/NotificationContext';
 import { useConnections } from '../../../contexts/ConnectionsContext';
 
 const ReportWizard: React.FC = () => {
@@ -20,7 +19,6 @@ const ReportWizard: React.FC = () => {
   const [availableProjects, setAvailableProjects] = useState<any[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
 
-  const { addNotification } = useNotifications();
   const { connections, getProjectData } = useConnections();
   const totalSteps = 4;
 

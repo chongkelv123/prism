@@ -1,7 +1,6 @@
 // frontend/src/router.tsx - FIXED VERSION
 import { createBrowserRouter, Outlet } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
-import { NotificationProvider } from './contexts/NotificationContext';
 import { ConnectionsProvider } from './contexts/ConnectionsContext';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
@@ -13,24 +12,24 @@ import TemplatesPage from './pages/TemplatesPage';
 import ConnectionsPage from './pages/ConnectionsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
+import AuthDebug from './components/debug/AuthDebug';
 
 // Create a layout component that provides auth context
 const AppProviders = () => {
   return (
     <AuthProvider>
       <Outlet />
+      <AuthDebug />
     </AuthProvider>
   );
 };
 
 // Protected layout that includes all providers after authentication
 const ProtectedLayout = () => {
-  return (
-    <NotificationProvider>
-      <ConnectionsProvider>
-        <Outlet />
-      </ConnectionsProvider>
-    </NotificationProvider>
+  return (    
+    <ConnectionsProvider>
+      <Outlet />
+    </ConnectionsProvider>    
   );
 };
 

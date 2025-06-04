@@ -1,6 +1,7 @@
-// frontend/src/components/feature-specific/connections/JiraConfigForm.tsx
+// frontend/src/components/feature-specific/connections/JiraConfigForm.tsx (FIXED)
 import React, { useState } from 'react';
 import { Eye, EyeOff, ExternalLink, AlertCircle } from 'lucide-react';
+import { useConnections } from '../../../contexts/ConnectionsContext';
 
 interface JiraConfigFormProps {
   onSubmit: (data: any) => void;
@@ -17,6 +18,7 @@ interface JiraConfig {
 }
 
 const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSubmitting }) => {
+  const { validatePlatformConfig } = useConnections();
   const [config, setConfig] = useState<JiraConfig>({
     name: '',
     domain: '',
@@ -28,6 +30,7 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
   const [errors, setErrors] = useState<Partial<JiraConfig>>({});
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [connectionTested, setConnectionTested] = useState(false);
+  const [testResult, setTestResult] = useState<{valid: boolean, message: string} | null>(null);
 
   const handleChange = (field: keyof JiraConfig, value: string) => {
     setConfig(prev => ({ ...prev, [field]: value }));
@@ -35,8 +38,9 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
       setErrors(prev => ({ ...prev, [field]: undefined }));
     }
     // Reset connection test when credentials change
-    if (field === 'domain' || field === 'email' || field === 'apiToken') {
+    if (field === 'domain' || field === 'email' || field === 'apiToken' || field === 'projectKey') {
       setConnectionTested(false);
+      setTestResult(null);
     }
   };
 
@@ -72,26 +76,57 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
   };
 
   const handleTestConnection = async () => {
-    if (!config.domain || !config.email || !config.apiToken) {
+    // Clear previous errors
+    setErrors({});
+    
+    // Check required fields for testing
+    if (!config.domain || !config.email || !config.apiToken || !config.projectKey) {
       setErrors({
         domain: !config.domain ? 'Domain is required for testing' : undefined,
         email: !config.email ? 'Email is required for testing' : undefined,
-        apiToken: !config.apiToken ? 'API token is required for testing' : undefined
+        apiToken: !config.apiToken ? 'API token is required for testing' : undefined,
+        projectKey: !config.projectKey ? 'Project key is required for testing' : undefined
       });
       return;
     }
 
     setIsTestingConnection(true);
+    setTestResult(null);
     
     try {
-      // Simulate API test call to Jira
-      await new Promise(resolve => setTimeout(resolve, 2500));
+      console.log('🔄 Testing Jira connection with backend...');
       
-      // Mock successful connection
-      setConnectionTested(true);
-      setErrors({});
+      // Prepare config for validation
+      const validationConfig = {
+        domain: config.domain,
+        email: config.email,
+        apiToken: config.apiToken,
+        projectKey: config.projectKey
+      };
+      
+      // Call real backend API to validate Jira configuration
+      const result = await validatePlatformConfig('jira', validationConfig);
+      
+      console.log('✅ Backend validation result:', result);
+      
+      setTestResult(result);
+      setConnectionTested(result.valid);
+      
+      if (!result.valid) {
+        setErrors({ apiToken: result.message });
+      } else {
+        setErrors({});
+      }
     } catch (error) {
-      setErrors({ apiToken: 'Failed to connect. Please check your credentials.' });
+      console.error('❌ Connection test failed:', error);
+      
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'Failed to test connection. Please check your network and try again.';
+      
+      setErrors({ apiToken: errorMessage });
+      setTestResult({ valid: false, message: errorMessage });
+      setConnectionTested(false);
     } finally {
       setIsTestingConnection(false);
     }
@@ -107,10 +142,16 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
       return;
     }
 
+    // Submit the real configuration to backend
     onSubmit({
-      ...config,
+      name: config.name,
       platform: 'jira',
-      projectCount: 2 // Mock project count
+      config: {
+        domain: config.domain,
+        email: config.email,
+        apiToken: config.apiToken,
+        projectKey: config.projectKey
+      }
     });
   };
 
@@ -259,23 +300,27 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
           <button
             type="button"
             onClick={handleTestConnection}
-            disabled={isTestingConnection || !config.domain || !config.email || !config.apiToken}
+            disabled={isTestingConnection || !config.domain || !config.email || !config.apiToken || !config.projectKey}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isTestingConnection ? 'Testing...' : 'Test Connection'}
           </button>
         </div>
         
-        {connectionTested && (
-          <div className="flex items-center text-green-600">
+        {testResult && (
+          <div className={`flex items-center ${testResult.valid ? 'text-green-600' : 'text-red-600'}`}>
             <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              {testResult.valid ? (
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              ) : (
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              )}
             </svg>
-            <span className="text-sm">Connection successful! Found project "{config.projectKey}"</span>
+            <span className="text-sm">{testResult.message}</span>
           </div>
         )}
         
-        {!connectionTested && (
+        {!testResult && (
           <div className="flex items-start text-gray-500">
             <AlertCircle size={16} className="mr-2 mt-0.5 flex-shrink-0" />
             <span className="text-sm">
@@ -283,6 +328,17 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
             </span>
           </div>
         )}
+      </div>
+
+      {/* Jira Integration Details */}
+      <div className="bg-blue-50 rounded-lg p-4">
+        <h5 className="font-medium text-gray-900 mb-2">Jira Integration Details</h5>
+        <div className="text-sm text-gray-600 space-y-1">
+          <p>• Syncs issues, epics, and sprint data from your project</p>
+          <p>• Pulls team member assignments and story points</p>
+          <p>• Retrieves workflow status and priority information</p>
+          <p>• Updates automatically to reflect current project state</p>
+        </div>
       </div>
 
       {/* Submit Buttons */}

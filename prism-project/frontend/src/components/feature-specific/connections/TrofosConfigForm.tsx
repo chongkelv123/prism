@@ -1,6 +1,7 @@
-// frontend/src/components/feature-specific/connections/TrofosConfigForm.tsx
+// frontend/src/components/feature-specific/connections/TrofosConfigForm.tsx (FIXED)
 import React, { useState } from 'react';
 import { Eye, EyeOff, ExternalLink, AlertCircle } from 'lucide-react';
+import { useConnections } from '../../../contexts/ConnectionsContext';
 
 interface TrofosConfigFormProps {
   onSubmit: (data: any) => void;
@@ -15,7 +16,13 @@ interface TrofosConfig {
   projectId: string;
 }
 
+interface TrofosProject {
+  id: string;
+  name: string;
+}
+
 const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, isSubmitting }) => {
+  const { validatePlatformConfig } = useConnections();
   const [config, setConfig] = useState<TrofosConfig>({
     name: '',
     serverUrl: '',
@@ -26,7 +33,8 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
   const [errors, setErrors] = useState<Partial<TrofosConfig>>({});
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [connectionTested, setConnectionTested] = useState(false);
-  const [availableProjects, setAvailableProjects] = useState<Array<{id: string, name: string}>>([]);
+  const [availableProjects, setAvailableProjects] = useState<TrofosProject[]>([]);
+  const [testResult, setTestResult] = useState<{valid: boolean, message: string} | null>(null);
 
   const handleChange = (field: keyof TrofosConfig, value: string) => {
     setConfig(prev => ({ ...prev, [field]: value }));
@@ -37,6 +45,7 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
     if (field === 'serverUrl' || field === 'apiKey') {
       setConnectionTested(false);
       setAvailableProjects([]);
+      setTestResult(null);
     }
   };
 
@@ -75,23 +84,49 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
     }
 
     setIsTestingConnection(true);
+    setTestResult(null);
     
     try {
-      // Simulate API test call to TROFOS
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log('🔄 Testing TROFOS connection with backend...');
       
-      // Mock successful connection with available projects
-      const mockProjects = [
-        { id: 'proj-1', name: 'PRISM Development Project' },
-        { id: 'proj-2', name: 'Mobile App Project' },
-        { id: 'proj-3', name: 'API Integration Project' }
-      ];
+      // Call real backend API to validate TROFOS configuration
+      const result = await validatePlatformConfig('trofos', {
+        serverUrl: config.serverUrl,
+        apiKey: config.apiKey,
+        projectId: config.projectId || 'test' // Use a test project ID for validation
+      });
       
-      setAvailableProjects(mockProjects);
-      setConnectionTested(true);
-      setErrors({});
+      console.log('✅ Backend validation result:', result);
+      
+      setTestResult(result);
+      setConnectionTested(result.valid);
+      
+      if (result.valid) {
+        // If connection is successful, simulate loading available projects
+        // In a real implementation, the backend would return available projects
+        const mockProjects: TrofosProject[] = [
+          { id: 'proj-1', name: 'PRISM Development Project' },
+          { id: 'proj-2', name: 'Mobile App Project' },
+          { id: 'proj-3', name: 'API Integration Project' }
+        ];
+        
+        setAvailableProjects(mockProjects);
+        setErrors({});
+      } else {
+        setErrors({ apiKey: result.message });
+        setAvailableProjects([]);
+      }
     } catch (error) {
-      setErrors({ apiKey: 'Failed to connect. Please check your credentials and server URL.' });
+      console.error('❌ TROFOS connection test failed:', error);
+      
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'Failed to connect. Please check your credentials and server URL.';
+      
+      setErrors({ apiKey: errorMessage });
+      setTestResult({ valid: false, message: errorMessage });
+      setConnectionTested(false);
+      setAvailableProjects([]);
     } finally {
       setIsTestingConnection(false);
     }
@@ -109,11 +144,17 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
 
     const selectedProject = availableProjects.find(p => p.id === config.projectId);
     
+    // Submit the real configuration to backend
     onSubmit({
-      ...config,
+      name: config.name,
       platform: 'trofos',
+      config: {
+        serverUrl: config.serverUrl,
+        apiKey: config.apiKey,
+        projectId: config.projectId
+      },
       projectName: selectedProject?.name || 'Unknown Project',
-      projectCount: 1 // Single project connection
+      projectCount: 1
     });
   };
 
@@ -216,7 +257,7 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
         </div>
       </div>
 
-      {/* Test Connection */}
+      {/* Test Connection & Load Projects */}
       <div className="border border-gray-200 rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <h4 className="font-medium text-gray-900">Test Connection & Load Projects</h4>
@@ -230,7 +271,7 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
           </button>
         </div>
         
-        {connectionTested && availableProjects.length > 0 && (
+        {testResult && testResult.valid && availableProjects.length > 0 && (
           <div className="space-y-3">
             <div className="flex items-center text-green-600">
               <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
@@ -264,8 +305,17 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
             </div>
           </div>
         )}
+
+        {testResult && !testResult.valid && (
+          <div className="flex items-center text-red-600">
+            <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+            <span className="text-sm">{testResult.message}</span>
+          </div>
+        )}
         
-        {!connectionTested && (
+        {!testResult && (
           <div className="flex items-start text-gray-500">
             <AlertCircle size={16} className="mr-2 mt-0.5 flex-shrink-0" />
             <span className="text-sm">

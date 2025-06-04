@@ -1,4 +1,4 @@
-// frontend/src/components/feature-specific/connections/MondayConfigForm.tsx (Updated)
+// frontend/src/components/feature-specific/connections/MondayConfigForm.tsx (FIXED)
 import React, { useState } from 'react';
 import { Eye, EyeOff, ExternalLink, AlertCircle } from 'lucide-react';
 import { useConnections } from '../../../contexts/ConnectionsContext';
@@ -60,9 +60,18 @@ const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, i
     }
 
     setIsTestingConnection(true);
+    setTestResult(null);
     
     try {
-      const result = await validatePlatformConfig('monday', { apiKey: config.apiKey });
+      console.log('🔄 Testing Monday.com connection with backend...');
+      
+      // Call real backend API to validate Monday.com configuration
+      const result = await validatePlatformConfig('monday', { 
+        apiKey: config.apiKey 
+      });
+      
+      console.log('✅ Backend validation result:', result);
+      
       setTestResult(result);
       setConnectionTested(result.valid);
       
@@ -72,9 +81,15 @@ const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, i
         setErrors({});
       }
     } catch (error) {
-      const errorMessage = 'Failed to test connection. Please try again.';
+      console.error('❌ Monday.com connection test failed:', error);
+      
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'Failed to test connection. Please check your network and try again.';
+      
       setErrors({ apiKey: errorMessage });
       setTestResult({ valid: false, message: errorMessage });
+      setConnectionTested(false);
     } finally {
       setIsTestingConnection(false);
     }
@@ -90,6 +105,7 @@ const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, i
       return;
     }
 
+    // Submit the real configuration to backend
     onSubmit({
       name: config.name,
       platform: 'monday',

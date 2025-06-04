@@ -25,19 +25,14 @@ app.get('/health', (req, res) => {
       gateway: 'running',
       auth: process.env.AUTH_SERVICE_URL || 'http://localhost:4000',
       platformIntegrations: process.env.PLATFORM_INTEGRATIONS_SERVICE_URL || 'http://localhost:4005',
-      reportGeneration: process.env.REPORT_SERVICE_URL || 'http://localhost:4002',
-      notifications: 'not implemented',
-      storage: 'not implemented'
+      reportGeneration: process.env.REPORT_SERVICE_URL || 'http://localhost:4002'
     }
   });
 });
 
 // Service URLs (from environment variables or defaults)
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://localhost:4000';
-const PROJECT_DATA_SERVICE_URL = process.env.PROJECT_DATA_SERVICE_URL || 'http://localhost:4001';
 const REPORT_SERVICE_URL = process.env.REPORT_SERVICE_URL || 'http://localhost:4002';
-const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:4003';
-const STORAGE_SERVICE_URL = process.env.STORAGE_SERVICE_URL || 'http://localhost:4004';
 const PLATFORM_INTEGRATIONS_SERVICE_URL = process.env.PLATFORM_INTEGRATIONS_SERVICE_URL || 'http://localhost:4005';
 
 // Enhanced error handling for proxy
@@ -86,32 +81,6 @@ app.use('/api/reports', proxy(REPORT_SERVICE_URL, {
   ...createProxyOptions(REPORT_SERVICE_URL, 'report-generation-service'),
   proxyReqPathResolver: (req) => `/api/reports${req.url}`
 }));
-
-// Project data routes (if you implement this service later)
-app.use('/api/projects', proxy(PROJECT_DATA_SERVICE_URL, {
-  ...createProxyOptions(PROJECT_DATA_SERVICE_URL, 'project-data-service'),
-  proxyReqPathResolver: (req) => `/api/projects${req.url}`
-}));
-
-// Notification routes - Handle missing service gracefully
-app.use('/api/notifications', (req, res) => {
-  console.warn('Notification service not implemented yet');
-  res.status(503).json({
-    error: 'Service not implemented',
-    service: 'notification-service',
-    message: 'Notification service is planned for future implementation'
-  });
-});
-
-// Storage routes - Handle missing service gracefully  
-app.use('/api/storage', (req, res) => {
-  console.warn('Storage service not implemented yet');
-  res.status(503).json({
-    error: 'Service not implemented',
-    service: 'storage-service',
-    message: 'Storage service is planned for future implementation'
-  });
-});
 
 // Global error handler
 app.use((err: any, req: any, res: any, next: any) => {
@@ -162,6 +131,4 @@ app.listen(PORT, () => {
   console.log(`   - Auth: ${AUTH_SERVICE_URL}`);
   console.log(`   - Platform Integrations: ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);
   console.log(`   - Report Generation: ${REPORT_SERVICE_URL}`);
-  console.log(`   - Notifications: Not implemented (returns 503)`);
-  console.log(`   - Storage: Not implemented (returns 503)`);
 });

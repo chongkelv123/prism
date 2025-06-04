@@ -38,8 +38,9 @@ const router = createBrowserRouter([
   {
     element: <AppProviders />,
     children: [
+      // Public routes MUST come before protected routes to avoid conflicts
       {
-        path: '/',
+        path: '/landing',
         element: <LandingPage />,
       },
       {
@@ -50,8 +51,10 @@ const router = createBrowserRouter([
         path: '/register',
         element: <RegisterPage />,
       },
+      
+      
+      // Protected routes group - handles root and all protected paths
       {
-        // Protected routes group
         path: '/',
         element: <ProtectedRoute />,
         children: [
@@ -60,23 +63,27 @@ const router = createBrowserRouter([
             element: <ProtectedLayout />,
             children: [
               {
-                path: '/dashboard',
+                index: true, // This handles the root "/" path
                 element: <DashboardPage />,
               },
               {
-                path: '/reports',
+                path: 'dashboard',
+                element: <DashboardPage />,
+              },
+              {
+                path: 'reports',
                 element: <ReportsPage />,
               },
               {
-                path: '/reports/create',
+                path: 'reports/create',
                 element: <CreateReportPage />,
               },
               {
-                path: '/templates',
+                path: 'templates',
                 element: <TemplatesPage />,
               },
               {
-                path: '/connections',
+                path: 'connections',
                 element: <ConnectionsPage />,
               },
             ],

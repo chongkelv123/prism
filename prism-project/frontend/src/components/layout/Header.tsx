@@ -1,4 +1,4 @@
-// src/components/layout/Header.tsx
+// src/components/layout/Header.tsx - UPDATED VERSION
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -9,7 +9,7 @@ const Header: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         <span
           className="text-2xl font-bold text-blue-600 cursor-pointer"
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/landing')} // Changed from '/' to '/landing'
         >
           PRISM
         </span>

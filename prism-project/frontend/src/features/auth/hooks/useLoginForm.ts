@@ -71,17 +71,30 @@ export const useLoginForm = (onSuccess?: () => void) => {
       await authLogin(accessToken, formData.remember);
       console.log('✅ AuthContext login completed');
       
-      // Determine where to redirect
-      const from = (location.state as any)?.from?.pathname || '/dashboard';
-      console.log(`🚀 Redirecting to: ${from}`);
-      
       // Call onSuccess callback if provided
       if (onSuccess) {
         onSuccess();
-      } else {
-        // Navigate to the intended destination
-        navigate(from, { replace: true });
+        return; // Don't navigate if callback is provided
       }
+      
+      // Determine where to redirect
+      const from = (location.state as any)?.from?.pathname;
+      let redirectTo = '/dashboard'; // Default to dashboard
+      
+      // If user was trying to access a protected route, redirect there
+      if (from && from !== '/login' && from !== '/register' && from !== '/landing' && from !== '/') {
+        redirectTo = from;
+      }
+      
+      console.log(`🚀 Redirecting to: ${redirectTo}`);
+      
+      // Use a Promise-based timeout to ensure React has time to update the auth state
+      await new Promise(resolve => {
+        setTimeout(() => {
+          navigate(redirectTo, { replace: true });
+          resolve(void 0);
+        }, 150); // Small delay to prevent race conditions
+      });
       
     } catch (err: any) {
       console.error('❌ Login error:', err);

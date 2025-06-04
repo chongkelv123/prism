@@ -1,6 +1,7 @@
-// frontend/src/contexts/ConnectionsContext.tsx (FIXED)
+// frontend/src/contexts/ConnectionsContext.tsx - FIXED VERSION
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import connectionService, { Connection, ConnectionConfig, Platform } from '../services/connection.service';
+import { useAuth } from './AuthContext';
 
 interface ConnectionsContextType {
   connections: Connection[];
@@ -26,15 +27,25 @@ interface ConnectionsContextType {
 const ConnectionsContext = createContext<ConnectionsContextType | undefined>(undefined);
 
 export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load initial data
+  // Load initial data only when authenticated
   useEffect(() => {
-    loadInitialData();
-  }, []);
+    if (isAuthenticated && !authLoading) {
+      console.log('🔄 User authenticated, loading connections data...');
+      loadInitialData();
+    } else if (!isAuthenticated && !authLoading) {
+      console.log('🚫 User not authenticated, clearing connections data');
+      // Clear data when not authenticated
+      setConnections([]);
+      setPlatforms([]);
+      setError(null);
+    }
+  }, [isAuthenticated, authLoading]);
 
   const loadInitialData = async () => {
     setIsLoading(true);
@@ -46,8 +57,9 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         loadPlatforms()
       ]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load data');
-      console.error('Failed to load initial data:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load data';
+      setError(errorMessage);
+      console.error('❌ Failed to load initial data:', err);
     } finally {
       setIsLoading(false);
     }
@@ -61,6 +73,13 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       setConnections(connectionsData);
     } catch (err) {
       console.error('❌ Failed to load connections:', err);
+      
+      // Check if it's an auth error
+      if (err?.response?.status === 401) {
+        console.warn('🔒 Authentication required for connections');
+        throw new Error('Authentication required');
+      }
+      
       // Don't throw here, let the user work with empty connections
       setConnections([]);
     }
@@ -75,53 +94,59 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     } catch (err) {
       console.error('❌ Failed to load platforms:', err);
       
-      // Only use fallback if we can't reach the backend at all
-      if (err instanceof Error && err.message.includes('Network Error')) {
-        console.warn('🌐 Using fallback platforms due to network error');
-        setPlatforms([
-          {
-            id: 'monday',
-            name: 'Monday.com',
-            description: 'Connect to your Monday.com workspace',
-            icon: '📊',
-            configFields: [
-              { name: 'apiKey', label: 'API Key', type: 'password', required: true }
-            ],
-            features: ['Boards & Items', 'Status Updates']
-          },
-          {
-            id: 'jira',
-            name: 'Jira',
-            description: 'Integrate with Jira Cloud',
-            icon: '🔄',
-            configFields: [
-              { name: 'domain', label: 'Domain', type: 'text', required: true },
-              { name: 'email', label: 'Email', type: 'email', required: true },
-              { name: 'apiToken', label: 'API Token', type: 'password', required: true },
-              { name: 'projectKey', label: 'Project Key', type: 'text', required: true }
-            ],
-            features: ['Issues & Epics', 'Sprint Data']
-          },
-          {
-            id: 'trofos',
-            name: 'TROFOS',
-            description: 'Connect to TROFOS server',
-            icon: '📈',
-            configFields: [
-              { name: 'serverUrl', label: 'Server URL', type: 'url', required: true },
-              { name: 'apiKey', label: 'API Key', type: 'password', required: true },
-              { name: 'projectId', label: 'Project ID', type: 'text', required: true }
-            ],
-            features: ['Project Metrics', 'Resource Allocation']
-          }
-        ]);
-      } else {
-        throw err; // Re-throw if it's not a network error
+      // Check if it's an auth error
+      if (err?.response?.status === 401) {
+        console.warn('🔒 Authentication required for platforms');
+        throw new Error('Authentication required');
       }
+      
+      // Use fallback platforms if backend is unavailable
+      console.warn('🌐 Using fallback platforms');
+      setPlatforms([
+        {
+          id: 'monday',
+          name: 'Monday.com',
+          description: 'Connect to your Monday.com workspace',
+          icon: '📊',
+          configFields: [
+            { name: 'apiKey', label: 'API Key', type: 'password', required: true }
+          ],
+          features: ['Boards & Items', 'Status Updates']
+        },
+        {
+          id: 'jira',
+          name: 'Jira',
+          description: 'Integrate with Jira Cloud',
+          icon: '🔄',
+          configFields: [
+            { name: 'domain', label: 'Domain', type: 'text', required: true },
+            { name: 'email', label: 'Email', type: 'email', required: true },
+            { name: 'apiToken', label: 'API Token', type: 'password', required: true },
+            { name: 'projectKey', label: 'Project Key', type: 'text', required: true }
+          ],
+          features: ['Issues & Epics', 'Sprint Data']
+        },
+        {
+          id: 'trofos',
+          name: 'TROFOS',
+          description: 'Connect to TROFOS server',
+          icon: '📈',
+          configFields: [
+            { name: 'serverUrl', label: 'Server URL', type: 'url', required: true },
+            { name: 'apiKey', label: 'API Key', type: 'password', required: true },
+            { name: 'projectId', label: 'Project ID', type: 'text', required: true }
+          ],
+          features: ['Project Metrics', 'Resource Allocation']
+        }
+      ]);
     }
   };
 
   const createConnection = async (connectionData: ConnectionConfig): Promise<Connection> => {
+    if (!isAuthenticated) {
+      throw new Error('Authentication required');
+    }
+
     setIsLoading(true);
     setError(null);
     
@@ -143,6 +168,10 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const refreshConnections = async (): Promise<void> => {
+    if (!isAuthenticated) {
+      throw new Error('Authentication required');
+    }
+
     setIsLoading(true);
     setError(null);
     
@@ -157,6 +186,10 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const testConnection = async (connectionId: string): Promise<{success: boolean, message: string}> => {
+    if (!isAuthenticated) {
+      return { success: false, message: 'Authentication required' };
+    }
+
     setError(null);
     
     try {
@@ -193,6 +226,10 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const syncConnection = async (connectionId: string): Promise<{success: boolean, message: string}> => {
+    if (!isAuthenticated) {
+      return { success: false, message: 'Authentication required' };
+    }
+
     setError(null);
     
     try {
@@ -221,6 +258,10 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const deleteConnection = async (connectionId: string): Promise<{success: boolean, message: string}> => {
+    if (!isAuthenticated) {
+      return { success: false, message: 'Authentication required' };
+    }
+
     setError(null);
     
     try {
@@ -246,6 +287,10 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       return platforms;
     }
     
+    if (!isAuthenticated) {
+      throw new Error('Authentication required');
+    }
+    
     try {
       console.log('🔄 Loading platforms...');
       const platformsData = await connectionService.getPlatforms();
@@ -259,6 +304,10 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const validatePlatformConfig = async (platformId: string, config: Record<string, any>): Promise<{valid: boolean, message: string}> => {
+    if (!isAuthenticated) {
+      return { valid: false, message: 'Authentication required' };
+    }
+
     try {
       console.log('🔄 Validating platform config:', { platformId, config: Object.keys(config) });
       const result = await connectionService.validatePlatformConfig(platformId, config);
@@ -272,6 +321,10 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const getProjectData = async (connectionId: string, projectId?: string): Promise<any> => {
+    if (!isAuthenticated) {
+      throw new Error('Authentication required');
+    }
+
     try {
       console.log('🔄 Getting project data:', { connectionId, projectId });
       const result = await connectionService.getProjectData(connectionId, projectId);

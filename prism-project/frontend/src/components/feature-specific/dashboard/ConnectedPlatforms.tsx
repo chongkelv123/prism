@@ -1,10 +1,14 @@
 import React from 'react';
 import { Plus } from 'lucide-react';
 import DashboardSection from './DashboardSection';
-import { useConnections } from '../../../contexts/ConnectionsContext';
+// import { useConnections } from '../../../contexts/ConnectionsContext';
 
 const ConnectedPlatforms: React.FC = () => {
-  const { connections, isLoading, syncConnection } = useConnections();
+  // Temporarily disable connections
+  const connections = [];
+  const isLoading = false;
+  const syncConnection = async (id: string) => { console.log('Sync disabled'); };
+  // const { connections, isLoading, syncConnection } = useConnections();
 
   const handleSyncConnection = async (id: string) => {
     try {

@@ -56,8 +56,17 @@ export const useLoginForm = (onSuccess?: () => void) => {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
+    console.log('🔴 Form submit triggered'); // Add this
     e.preventDefault();
-    if (!validate()) return;
+    
+    console.log('🔴 Form data:', formData); // Add this
+    
+    if (!validate()) {
+      console.log('🔴 Form validation failed'); // Add this
+      return;
+    }
+    
+    console.log('🔴 Form validation passed, setting loading...'); // Add this
     setIsLoading(true);
     
     try {

@@ -16,6 +16,11 @@ interface LoginFormProps {
 const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
   const { formData, errors, isLoading, handleChange, handleSubmit } = useLoginForm(onLoginSuccess);
 
+  // Add this before the return statement
+  const testClick = () => {
+    console.log('🔴 Submit button clicked!');
+  };
+
   return (
     <CenteredCard>
       <div className="text-center mb-6">
@@ -61,9 +66,13 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
             </label>
           </div>
           <LinkButton to="/forgot-password">Forgot password?</LinkButton>
-        </div>
-        
-        <PrimaryButton isLoading={isLoading} disabled={isLoading}>
+        </div>              
+
+        <PrimaryButton 
+        isLoading={isLoading} 
+        disabled={isLoading}
+        onClick={testClick} // Add this line temporarily
+        >
           Sign in
         </PrimaryButton>
         

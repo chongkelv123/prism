@@ -1,19 +1,22 @@
 import React from 'react';
 import StatCard from './StatCard';
 import { useNavigate } from 'react-router-dom';
-import DashboardSection from './DashboardSection';
+// import DashboardSection from './DashboardSection';
 import RecentReports from '../reports/RecentReports';
 import QuickActions from './QuickActions';
 import ConnectedPlatforms from './ConnectedPlatforms';
-import { useConnections } from '../../../contexts/ConnectionsContext';
+// import { useConnections } from '../../../contexts/ConnectionsContext';
 
 const DashboardContent: React.FC = () => {
   const navigate = useNavigate();
-  const { connections } = useConnections();
+  // Temporarily disable connections
+  const connections = [];
+  // const { connections } = useConnections();
 
   // Calculate stats based on connections
-  const connectedPlatformsCount = connections.filter(conn => conn.status === 'connected').length;
-  
+  const connectedPlatformsCount = connections.filter(conn => conn.status === 'connected').length;    
+
+
   const stats = [
     { title: 'Reports Generated', value: 12, icon: 'FileText' },
     { title: 'Templates Available', value: 8, icon: 'Layout' },
@@ -29,7 +32,7 @@ const DashboardContent: React.FC = () => {
             <h1 className="text-2xl font-bold mb-2">Welcome to PRISM</h1>
             <p className="mb-4">Transform your project data into professional PowerPoint presentations</p>
           </div>
-          <button 
+          <button
             onClick={() => navigate('/reports/create')}
             className="bg-white text-blue-800 px-6 py-2 rounded-lg font-medium hover:bg-blue-50 transition-colors"
           >
@@ -37,20 +40,20 @@ const DashboardContent: React.FC = () => {
           </button>
         </div>
       </div>
-      
+
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {stats.map((stat) => (
           <StatCard key={stat.title} title={stat.title} value={stat.value} icon={stat.icon} />
         ))}
       </div>
-      
+
       {/* Quick Actions */}
       <QuickActions />
-      
+
       {/* Recent Reports */}
       <RecentReports limit={3} />
-      
+
       {/* Connected Platforms */}
       <ConnectedPlatforms />
     </div>

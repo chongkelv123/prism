@@ -105,7 +105,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       // Try to get user data
-      try {
+      /* try {
         const response = await fetch('/api/auth/me', {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -133,7 +133,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           email: 'user@example.com',
           firstName: 'User'
         });
-      }
+      } */
 
       // Set authenticated state AFTER everything is ready
       setIsAuthenticated(true);

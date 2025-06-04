@@ -27,9 +27,12 @@ const AppProviders = () => {
 // Protected layout that includes all providers after authentication
 const ProtectedLayout = () => {
   return (    
-    <ConnectionsProvider>
-      <Outlet />
-    </ConnectionsProvider>    
+      <>
+      {/* Temporarily comment this out */}
+      {/* <ConnectionsProvider> */}
+        <Outlet />
+      {/* </ConnectionsProvider> */}
+      </>
   );
 };
 

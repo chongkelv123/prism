@@ -1,4 +1,4 @@
-// frontend/src/router.tsx - FIXED VERSION
+// frontend/src/router.tsx - IMPROVED VERSION WITH LAZY CONNECTIONS
 import { createBrowserRouter, Outlet } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ConnectionsProvider } from './contexts/ConnectionsContext';
@@ -14,25 +14,26 @@ import NotFoundPage from './pages/NotFoundPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import AuthDebug from './components/debug/AuthDebug';
 
-// Create a layout component that provides auth context
+// Create a layout component that provides auth context only
 const AppProviders = () => {
   return (
     <AuthProvider>
-      <Outlet />
-      <AuthDebug />
+      <Outlet />      
     </AuthProvider>
   );
 };
 
-// Protected layout that includes all providers after authentication
-const ProtectedLayout = () => {
-  return (    
-      <>
-      {/* Temporarily comment this out */}
-      {/* <ConnectionsProvider> */}
-        <Outlet />
-      {/* </ConnectionsProvider> */}
-      </>
+// Basic protected layout without connections (fast loading)
+const BasicProtectedLayout = () => {
+  return <Outlet />;
+};
+
+// Protected layout WITH connections (lazy loaded)
+const ConnectionsProtectedLayout = () => {
+  return (
+    <ConnectionsProvider>
+      <Outlet />
+    </ConnectionsProvider>
   );
 };
 
@@ -40,7 +41,7 @@ const router = createBrowserRouter([
   {
     element: <AppProviders />,
     children: [
-      // Public routes MUST come before protected routes to avoid conflicts
+      // Public routes - MUST come first to avoid conflicts
       {
         path: '/landing',
         element: <LandingPage />,
@@ -54,15 +55,14 @@ const router = createBrowserRouter([
         element: <RegisterPage />,
       },
       
-      
-      // Protected routes group - handles root and all protected paths
+      // Protected routes group
       {
         path: '/',
         element: <ProtectedRoute />,
         children: [
+          // Basic routes that DON'T need connections (fast loading)
           {
-            // Nested layout for authenticated users with all providers
-            element: <ProtectedLayout />,
+            element: <BasicProtectedLayout />,
             children: [
               {
                 index: true, // This handles the root "/" path
@@ -73,6 +73,21 @@ const router = createBrowserRouter([
                 element: <DashboardPage />,
               },
               {
+                path: 'templates',
+                element: <TemplatesPage />,
+              },
+            ],
+          },
+          
+          // Routes that DO need connections (lazy loaded)
+          {
+            element: <ConnectionsProtectedLayout />,
+            children: [
+              {
+                path: 'connections',
+                element: <ConnectionsPage />,
+              },
+              {
                 path: 'reports',
                 element: <ReportsPage />,
               },
@@ -80,18 +95,12 @@ const router = createBrowserRouter([
                 path: 'reports/create',
                 element: <CreateReportPage />,
               },
-              {
-                path: 'templates',
-                element: <TemplatesPage />,
-              },
-              {
-                path: 'connections',
-                element: <ConnectionsPage />,
-              },
             ],
           },
         ],
       },
+      
+      // 404 handler
       {
         path: '*',
         element: <NotFoundPage />,

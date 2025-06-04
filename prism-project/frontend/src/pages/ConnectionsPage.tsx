@@ -1,9 +1,10 @@
-// frontend/src/pages/ConnectionsPage.tsx
+// frontend/src/pages/ConnectionsPage.tsx - UPDATED WITH SERVICE BANNER
 import React, { useState, useCallback } from 'react';
 import MainLayout from '../components/layout/MainLayout';
 import ConnectionsHeader from '../components/feature-specific/connections/ConnectionsHeader';
 import ConnectionsList from '../components/feature-specific/connections/ConnectionsList';
 import AddConnectionModal from '../components/feature-specific/connections/AddConnectionModal';
+import ServiceAvailabilityBanner from '../components/common/ServiceAvailabilityBanner';
 import { useConnections, type Connection } from '../contexts/ConnectionsContext';
 
 interface ConnectionConfig {
@@ -17,6 +18,7 @@ const ConnectionsPage: React.FC = () => {
     connections, 
     isLoading,
     error,
+    isServiceAvailable,
     testConnection, 
     syncConnection,
     deleteConnection,
@@ -27,8 +29,12 @@ const ConnectionsPage: React.FC = () => {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const handleAddConnection = useCallback(() => {
+    if (!isServiceAvailable) {
+      alert('Platform integrations service is not available. Please ensure the service is running.');
+      return;
+    }
     setIsAddModalOpen(true);
-  }, []);
+  }, [isServiceAvailable]);
 
   const handleConnectionAdded = useCallback(async (newConnectionData: ConnectionConfig) => {
     try {
@@ -99,8 +105,11 @@ const ConnectionsPage: React.FC = () => {
       <div className="space-y-6">
         <ConnectionsHeader onAddConnection={handleAddConnection} />
         
+        {/* Service Availability Banner */}
+        <ServiceAvailabilityBanner />
+        
         {/* Error Display */}
-        {error && (
+        {error && isServiceAvailable && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
             <div className="flex items-center">
               <svg className="h-5 w-5 mr-2" fill="currentColor" viewBox="0 0 20 20">

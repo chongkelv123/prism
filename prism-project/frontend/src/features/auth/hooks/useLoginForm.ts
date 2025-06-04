@@ -1,4 +1,6 @@
+// frontend/src/features/auth/hooks/useLoginForm.ts - FIXED VERSION
 import { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { login } from '../../../services/auth.service';
 import { validateEmail } from '../../../utils/validation';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -15,8 +17,11 @@ interface LoginFormErrors {
   general?: string;
 }
 
-export const useLoginForm = (onSuccess: () => void) => {
+export const useLoginForm = (onSuccess?: () => void) => {
   const { login: authLogin } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  
   const [formData, setFormData] = useState<LoginFormData>({
     email: '',
     password: '',
@@ -56,14 +61,30 @@ export const useLoginForm = (onSuccess: () => void) => {
     setIsLoading(true);
     
     try {
+      console.log('🔄 Starting login process...');
+      
+      // Call login service to get token
       const { accessToken } = await login(formData.email, formData.password);
+      console.log('✅ Login service successful, got token');
       
-      // Use the AuthContext login method
-      authLogin(accessToken, formData.remember);
+      // Use the AuthContext login method and WAIT for it to complete
+      await authLogin(accessToken, formData.remember);
+      console.log('✅ AuthContext login completed');
       
-      onSuccess();
+      // Determine where to redirect
+      const from = (location.state as any)?.from?.pathname || '/dashboard';
+      console.log(`🚀 Redirecting to: ${from}`);
+      
+      // Call onSuccess callback if provided
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        // Navigate to the intended destination
+        navigate(from, { replace: true });
+      }
+      
     } catch (err: any) {
-      console.error('Login error:', err);
+      console.error('❌ Login error:', err);
       setErrors({ 
         general: err.message || 'Invalid email or password. Please try again.' 
       });

@@ -1,5 +1,6 @@
+// frontend/src/pages/LoginPage.tsx - FIXED VERSION
 import React from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import LoginForm from '../components/auth/LoginForm';
 
 interface LocationState {
@@ -7,14 +8,8 @@ interface LocationState {
 }
 
 const LoginPage: React.FC = () => {
-  const navigate = useNavigate();
   const location = useLocation();
   const { message } = (location.state as LocationState) || {};
-  
-  const handleSuccess = () => {
-    // Redirect to the dashboard after successful login
-    navigate('/dashboard');
-  };
   
   return (
     <div>
@@ -23,7 +18,7 @@ const LoginPage: React.FC = () => {
           {message}
         </div>
       )}
-      <LoginForm onLoginSuccess={handleSuccess} />
+      <LoginForm />
     </div>
   );
 };

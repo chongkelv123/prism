@@ -1,4 +1,4 @@
-// frontend/src/contexts/AuthContext.tsx - FIXED VERSION
+// frontend/src/contexts/AuthContext.tsx - FIXED RACE CONDITION VERSION
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -14,7 +14,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   user: User | null;
   isLoading: boolean;
-  login: (token: string, remember: boolean) => void;
+  login: (token: string, remember: boolean) => Promise<void>;
   logout: () => void;
   checkAuthStatus: () => void;
 }
@@ -40,12 +40,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
       
       if (!token) {
+        console.log('🚫 No token found');
         setIsAuthenticated(false);
         setUser(null);
         setIsLoading(false);
         return;
       }
 
+      console.log('🔍 Verifying existing token...');
+      
       // Verify token by calling the backend
       try {
         const response = await fetch('/api/auth/me', {
@@ -59,7 +62,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const userData = await response.json();
           setUser(userData);
           setIsAuthenticated(true);
-          console.log('✅ User authenticated:', userData);
+          console.log('✅ Token valid, user authenticated:', userData);
         } else {
           console.warn('⚠️ Token validation failed, removing invalid token');
           // Token is invalid, remove it
@@ -72,6 +75,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         console.error('❌ Auth check failed:', error);
         // If we can't reach the auth service, but we have a token, assume it's valid
         // This prevents blocking the user when the backend is temporarily unavailable
+        console.log('🔄 Backend unavailable, using token optimistically');
         setIsAuthenticated(true);
         setUser({
           id: 'temp-user',
@@ -84,49 +88,69 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const login = async (token: string, remember: boolean) => {
+  const login = async (token: string, remember: boolean): Promise<void> => {
     console.log('🔐 Logging in user with token');
     
-    // Store token
-    if (remember) {
-      localStorage.setItem('authToken', token);
-      sessionStorage.removeItem('authToken');
-    } else {
-      sessionStorage.setItem('authToken', token);
-      localStorage.removeItem('authToken');
-    }
-
-    // Try to get user data
+    // IMPORTANT: Set loading state to prevent race conditions
+    setIsLoading(true);
+    
     try {
-      const response = await fetch('/api/auth/me', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const userData = await response.json();
-        setUser(userData);
-        console.log('✅ User data loaded:', userData);
+      // Store token first
+      if (remember) {
+        localStorage.setItem('authToken', token);
+        sessionStorage.removeItem('authToken');
       } else {
-        // Even if we can't get user data, we have a valid token
+        sessionStorage.setItem('authToken', token);
+        localStorage.removeItem('authToken');
+      }
+
+      // Try to get user data
+      try {
+        const response = await fetch('/api/auth/me', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.ok) {
+          const userData = await response.json();
+          setUser(userData);
+          console.log('✅ User data loaded:', userData);
+        } else {
+          // Even if we can't get user data, we have a valid token
+          console.log('⚠️ Could not fetch user data, using minimal user info');
+          setUser({
+            id: 'temp-user',
+            email: 'user@example.com',
+            firstName: 'User'
+          });
+        }
+      } catch (error) {
+        console.warn('⚠️ Could not fetch user data, but token is valid');
         setUser({
           id: 'temp-user',
           email: 'user@example.com',
           firstName: 'User'
         });
       }
-    } catch (error) {
-      console.warn('⚠️ Could not fetch user data, but token is valid');
-      setUser({
-        id: 'temp-user',
-        email: 'user@example.com',
-        firstName: 'User'
-      });
-    }
 
-    setIsAuthenticated(true);
+      // Set authenticated state AFTER everything is ready
+      setIsAuthenticated(true);
+      console.log('✅ Authentication state updated to true');
+      
+    } catch (error) {
+      console.error('❌ Login process failed:', error);
+      // Clean up on error
+      localStorage.removeItem('authToken');
+      sessionStorage.removeItem('authToken');
+      setIsAuthenticated(false);
+      setUser(null);
+      throw error;
+    } finally {
+      // IMPORTANT: Only stop loading after authentication state is set
+      setIsLoading(false);
+    }
   };
 
   const logout = () => {

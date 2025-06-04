@@ -1,3 +1,4 @@
+// frontend/src/components/auth/LoginForm.tsx - FIXED VERSION
 import React from 'react';
 import AuthHeader from './AuthHeader';
 import FormInput from '../common/Input/FormInput';
@@ -9,7 +10,7 @@ import CenteredCard from '../layout/CenteredCard';
 import { useLoginForm } from '../../features/auth/hooks/useLoginForm';
 
 interface LoginFormProps {
-  onLoginSuccess: () => void;
+  onLoginSuccess?: () => void;
 }
 
 const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {

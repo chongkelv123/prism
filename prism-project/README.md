@@ -15,7 +15,7 @@ PRISM is a web-based API that seamlessly integrates with project management plat
 
 ## 🏗️ Simplified Architecture
 
-PRISM follows a **simplified microservices architecture** with 4 core services:
+PRISM follows a **simplified microservices architecture** with 5 core services:
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────────────┐

@@ -1,4 +1,4 @@
-// frontend/src/contexts/ConnectionsContext.tsx - IMPROVED ERROR HANDLING VERSION
+// frontend/src/contexts/ConnectionsContext.tsx - IMPROVED 401 ERROR HANDLING
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import connectionService, { Connection, ConnectionConfig, Platform } from '../services/connection.service';
 import { useAuth } from './AuthContext';
@@ -28,18 +28,20 @@ interface ConnectionsContextType {
 const ConnectionsContext = createContext<ConnectionsContextType | undefined>(undefined);
 
 export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isServiceAvailable, setIsServiceAvailable] = useState(true);
+  const [hasInitialized, setHasInitialized] = useState(false);
 
-  // Load initial data only when authenticated, with retry logic
+  // Load initial data only when authenticated, with better error handling
   useEffect(() => {
-    if (isAuthenticated && !authLoading) {
+    if (isAuthenticated && !authLoading && !hasInitialized) {
       console.log('🔄 ConnectionsProvider: User authenticated, loading connections data...');
       loadInitialDataWithRetry();
+      setHasInitialized(true);
     } else if (!isAuthenticated && !authLoading) {
       console.log('🚫 ConnectionsProvider: User not authenticated, clearing connections data');
       // Clear data when not authenticated
@@ -47,8 +49,9 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       setPlatforms([]);
       setError(null);
       setIsServiceAvailable(true);
+      setHasInitialized(false);
     }
-  }, [isAuthenticated, authLoading]);
+  }, [isAuthenticated, authLoading, hasInitialized]);
 
   const loadInitialDataWithRetry = async (retryCount = 0) => {
     const maxRetries = 2;
@@ -64,6 +67,23 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     } catch (err) {
       console.error(`❌ ConnectionsProvider: Failed to load data (attempt ${retryCount + 1}):`, err);
       
+      // Check if it's an auth error (401)
+      if (err?.response?.status === 401 || err?.isAuthError) {
+        console.error('🔒 ConnectionsProvider: Authentication error - user session may be expired');
+        // Don't retry on auth errors, and don't set service unavailable
+        // Let the auth context handle this by calling logout if needed
+        setIsServiceAvailable(false);
+        setError('Authentication expired. Please log in again.');
+        
+        // Clear local data
+        setConnections([]);
+        setPlatforms(getFallbackPlatforms());
+        
+        // Trigger logout to clear auth state and redirect
+        logout();
+        return;
+      }
+      
       // Check if it's a service unavailable error
       if (err?.response?.status === 503 || err?.code === 'ECONNREFUSED' || err?.message?.includes('Service unavailable')) {
         setIsServiceAvailable(false);
@@ -73,7 +93,7 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         setPlatforms(getFallbackPlatforms());
         setConnections([]);
       } else if (retryCount < maxRetries) {
-        // Retry after a delay
+        // Retry after a delay for other errors
         console.log(`🔄 ConnectionsProvider: Retrying in ${(retryCount + 1) * 1000}ms...`);
         setTimeout(() => {
           loadInitialDataWithRetry(retryCount + 1);
@@ -143,8 +163,8 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     } catch (err) {
       console.error('❌ ConnectionsProvider: Failed to load connections:', err);
       
-      // Check if it's an auth error vs service unavailable
-      if (err?.response?.status === 401) {
+      // Check if it's an auth error (401)
+      if (err?.response?.status === 401 || err?.isAuthError) {
         console.warn('🔒 ConnectionsProvider: Authentication required for connections');
         throw new Error('Authentication required');
       } else if (err?.response?.status === 503 || err?.code === 'ECONNREFUSED') {
@@ -152,6 +172,7 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       }
       
       // For other errors, don't throw - just use empty connections
+      console.warn('⚠️ ConnectionsProvider: Using empty connections due to error');
       setConnections([]);
     }
   };
@@ -165,8 +186,8 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     } catch (err) {
       console.error('❌ ConnectionsProvider: Failed to load platforms:', err);
       
-      // Check if it's an auth error vs service unavailable
-      if (err?.response?.status === 401) {
+      // Check if it's an auth error (401)
+      if (err?.response?.status === 401 || err?.isAuthError) {
         console.warn('🔒 ConnectionsProvider: Authentication required for platforms');
         throw new Error('Authentication required');
       } else if (err?.response?.status === 503 || err?.code === 'ECONNREFUSED') {
@@ -177,6 +198,13 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       console.warn('🌐 ConnectionsProvider: Using fallback platforms');
       setPlatforms(getFallbackPlatforms());
     }
+  };
+
+  // Helper function to handle auth errors consistently
+  const handleAuthError = (operation: string) => {
+    console.error(`🔒 ConnectionsProvider: Auth error in ${operation}`);
+    setError('Authentication expired. Please log in again.');
+    logout(); // This will redirect to login
   };
 
   const createConnection = async (connectionData: ConnectionConfig): Promise<Connection> => {
@@ -199,6 +227,12 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       setConnections(prev => [newConnection, ...prev]);
       return newConnection;
     } catch (err) {
+      // Handle auth errors
+      if (err?.response?.status === 401 || err?.isAuthError) {
+        handleAuthError('createConnection');
+        throw new Error('Authentication expired');
+      }
+      
       const errorMessage = err instanceof Error ? err.message : 'Failed to create connection';
       console.error('❌ ConnectionsProvider: Failed to create connection:', err);
       setError(errorMessage);
@@ -224,6 +258,12 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     try {
       await loadConnections();
     } catch (err) {
+      // Handle auth errors
+      if (err?.response?.status === 401 || err?.isAuthError) {
+        handleAuthError('refreshConnections');
+        throw new Error('Authentication expired');
+      }
+      
       setError(err instanceof Error ? err.message : 'Failed to refresh connections');
       throw err;
     } finally {
@@ -268,6 +308,12 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       
       return result;
     } catch (err) {
+      // Handle auth errors
+      if (err?.response?.status === 401 || err?.isAuthError) {
+        handleAuthError('testConnection');
+        return { success: false, message: 'Authentication expired' };
+      }
+      
       const errorMessage = err instanceof Error ? err.message : 'Connection test failed';
       console.error('❌ ConnectionsProvider: Connection test failed:', err);
       setError(errorMessage);
@@ -304,6 +350,12 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       
       return result;
     } catch (err) {
+      // Handle auth errors
+      if (err?.response?.status === 401 || err?.isAuthError) {
+        handleAuthError('syncConnection');
+        return { success: false, message: 'Authentication expired' };
+      }
+      
       const errorMessage = err instanceof Error ? err.message : 'Connection sync failed';
       console.error('❌ ConnectionsProvider: Connection sync failed:', err);
       setError(errorMessage);
@@ -333,6 +385,12 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       
       return result;
     } catch (err) {
+      // Handle auth errors
+      if (err?.response?.status === 401 || err?.isAuthError) {
+        handleAuthError('deleteConnection');
+        return { success: false, message: 'Authentication expired' };
+      }
+      
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete connection';
       console.error('❌ ConnectionsProvider: Failed to delete connection:', err);
       setError(errorMessage);
@@ -360,6 +418,12 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       setPlatforms(platformsData);
       return platformsData;
     } catch (err) {
+      // Handle auth errors
+      if (err?.response?.status === 401 || err?.isAuthError) {
+        handleAuthError('getPlatforms');
+        throw new Error('Authentication expired');
+      }
+      
       console.error('❌ ConnectionsProvider: Failed to get platforms:', err);
       return getFallbackPlatforms(); // Return fallback platforms
     }
@@ -380,6 +444,12 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       console.log('✅ ConnectionsProvider: Platform validation result:', result);
       return result;
     } catch (err) {
+      // Handle auth errors
+      if (err?.response?.status === 401 || err?.isAuthError) {
+        handleAuthError('validatePlatformConfig');
+        return { valid: false, message: 'Authentication expired' };
+      }
+      
       console.error('❌ ConnectionsProvider: Platform validation failed:', err);
       const errorMessage = err instanceof Error ? err.message : 'Validation failed';
       return { valid: false, message: errorMessage };
@@ -401,6 +471,12 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       console.log('✅ ConnectionsProvider: Project data loaded:', result);
       return result;
     } catch (err) {
+      // Handle auth errors
+      if (err?.response?.status === 401 || err?.isAuthError) {
+        handleAuthError('getProjectData');
+        throw new Error('Authentication expired');
+      }
+      
       console.error('❌ ConnectionsProvider: Failed to get project data:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to get project data';
       setError(errorMessage);

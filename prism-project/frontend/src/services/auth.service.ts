@@ -1,3 +1,4 @@
+// frontend/src/services/auth.service.ts - IMPROVED VERSION
 import apiClient from "./api.service";
 
 export interface AuthToken {
@@ -17,7 +18,6 @@ export interface LoginCredentials {
   password: string;
 }
 
-
 export const login = async (email: string, password: string): Promise<AuthToken> => {
     try {
         const response = await fetch('/api/auth/login', {
@@ -30,9 +30,18 @@ export const login = async (email: string, password: string): Promise<AuthToken>
             // Check if the response has valid JSON
             try {
                 const errorData = await response.json();
-                throw new Error(errorData.message || 'Invalid credentials');
+                
+                // Handle specific 401 errors for login
+                if (response.status === 401) {
+                    throw new Error('Invalid email or password');
+                }
+                
+                throw new Error(errorData.message || 'Login failed');
             } catch (parseError) {
                 // If JSON parsing fails, provide a generic error
+                if (response.status === 401) {
+                    throw new Error('Invalid email or password');
+                }
                 throw new Error('Login failed. Please try again later.');
             }
         }
@@ -76,11 +85,16 @@ export const register = async (userData: UserRegistration): Promise<{userId: str
     }
   };
 
-  export const getCurrentUser = async (): Promise<any> => {
+export const getCurrentUser = async (): Promise<any> => {
     try {
         const response = await apiClient.get('/api/auth/me');
         return response.data;
     } catch (error) {
+        // Handle 401 errors specifically for getCurrentUser
+        if (error?.response?.status === 401 || error?.isAuthError) {
+            console.warn('🔒 Auth: getCurrentUser failed due to invalid/expired token');
+            throw new Error('Authentication expired');
+        }
         throw error;
     }
 };
@@ -89,4 +103,6 @@ export const logout = (): void => {
     localStorage.removeItem('authToken');
     sessionStorage.removeItem('authToken');
     // Clear any user data in application state if needed
+    
+    console.log('🚪 Auth: User logged out, tokens cleared');
 };

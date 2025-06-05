@@ -1,7 +1,6 @@
-// frontend/src/router.tsx - IMPROVED VERSION WITH LAZY CONNECTIONS
+// frontend/src/router.tsx - FIXED VERSION (No Nested ConnectionsProvider)
 import { createBrowserRouter, Outlet } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
-import { ConnectionsProvider } from './contexts/ConnectionsContext';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -18,23 +17,15 @@ import AuthDebug from './components/debug/AuthDebug';
 const AppProviders = () => {
   return (
     <AuthProvider>
-      <Outlet />      
+      <Outlet />
+      <AuthDebug /> 
     </AuthProvider>
   );
 };
 
-// Basic protected layout without connections (fast loading)
-const BasicProtectedLayout = () => {
+// Simple protected layout without any additional providers
+const ProtectedLayout = () => {
   return <Outlet />;
-};
-
-// Protected layout WITH connections (lazy loaded)
-const ConnectionsProtectedLayout = () => {
-  return (
-    <ConnectionsProvider>
-      <Outlet />
-    </ConnectionsProvider>
-  );
 };
 
 const router = createBrowserRouter([
@@ -55,14 +46,14 @@ const router = createBrowserRouter([
         element: <RegisterPage />,
       },
       
-      // Protected routes group
+      // Protected routes group - ALL routes use the same simple layout
       {
         path: '/',
         element: <ProtectedRoute />,
         children: [
-          // Basic routes that DON'T need connections (fast loading)
           {
-            element: <BasicProtectedLayout />,
+            // Single protected layout for ALL authenticated routes
+            element: <ProtectedLayout />,
             children: [
               {
                 index: true, // This handles the root "/" path
@@ -76,16 +67,9 @@ const router = createBrowserRouter([
                 path: 'templates',
                 element: <TemplatesPage />,
               },
-            ],
-          },
-          
-          // Routes that DO need connections (lazy loaded)
-          {
-            element: <ConnectionsProtectedLayout />,
-            children: [
               {
                 path: 'connections',
-                element: <ConnectionsPage />,
+                element: <ConnectionsPage />, // ConnectionsProvider will be inside this component
               },
               {
                 path: 'reports',

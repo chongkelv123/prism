@@ -1,11 +1,11 @@
-// frontend/src/pages/ConnectionsPage.tsx - UPDATED WITH SERVICE BANNER
+// frontend/src/pages/ConnectionsPage.tsx - FIXED VERSION (Internal ConnectionsProvider)
 import React, { useState, useCallback } from 'react';
+import { ConnectionsProvider, useConnections } from '../contexts/ConnectionsContext';
 import MainLayout from '../components/layout/MainLayout';
 import ConnectionsHeader from '../components/feature-specific/connections/ConnectionsHeader';
 import ConnectionsList from '../components/feature-specific/connections/ConnectionsList';
 import AddConnectionModal from '../components/feature-specific/connections/AddConnectionModal';
 import ServiceAvailabilityBanner from '../components/common/ServiceAvailabilityBanner';
-import { useConnections, type Connection } from '../contexts/ConnectionsContext';
 
 interface ConnectionConfig {
   name: string;
@@ -13,7 +13,8 @@ interface ConnectionConfig {
   config: Record<string, any>;
 }
 
-const ConnectionsPage: React.FC = () => {
+// Internal component that uses ConnectionsContext
+const ConnectionsPageContent: React.FC = () => {
   const { 
     connections, 
     isLoading,
@@ -51,10 +52,8 @@ const ConnectionsPage: React.FC = () => {
     try {
       const result = await testConnection(connectionId);
       if (result.success) {
-        // Success notification could be shown here
         console.log('Connection test successful');
       } else {
-        // Error notification could be shown here
         console.error('Connection test failed:', result.message);
       }
     } catch (error) {
@@ -152,6 +151,17 @@ const ConnectionsPage: React.FC = () => {
         )}
       </div>
     </MainLayout>
+  );
+};
+
+// Main component that provides ConnectionsProvider only when needed
+const ConnectionsPage: React.FC = () => {
+  console.log('🔄 ConnectionsPage: Rendering with internal ConnectionsProvider');
+  
+  return (
+    <ConnectionsProvider>
+      <ConnectionsPageContent />
+    </ConnectionsProvider>
   );
 };
 

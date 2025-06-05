@@ -33,7 +33,11 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
   const [testResult, setTestResult] = useState<{valid: boolean, message: string} | null>(null);
 
   const handleChange = (field: keyof JiraConfig, value: string) => {
-    setConfig(prev => ({ ...prev, [field]: value }));
+    let newValue = value;
+    if (field === 'domain' || field === 'email' || field === 'apiToken' || field === 'projectKey') {
+      newValue = value.trim();
+    }
+    setConfig(prev => ({ ...prev, [field]: newValue }));
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: undefined }));
     }
@@ -80,12 +84,12 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
     setErrors({});
     
     // Check required fields for testing
-    if (!config.domain || !config.email || !config.apiToken || !config.projectKey) {
+    if (!config.domain.trim() || !config.email.trim() || !config.apiToken.trim() || !config.projectKey.trim()) {
       setErrors({
-        domain: !config.domain ? 'Domain is required for testing' : undefined,
-        email: !config.email ? 'Email is required for testing' : undefined,
-        apiToken: !config.apiToken ? 'API token is required for testing' : undefined,
-        projectKey: !config.projectKey ? 'Project key is required for testing' : undefined
+        domain: !config.domain.trim() ? 'Domain is required for testing' : undefined,
+        email: !config.email.trim() ? 'Email is required for testing' : undefined,
+        apiToken: !config.apiToken.trim() ? 'API token is required for testing' : undefined,
+        projectKey: !config.projectKey.trim() ? 'Project key is required for testing' : undefined
       });
       return;
     }
@@ -98,10 +102,10 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
       
       // Prepare config for validation
       const validationConfig = {
-        domain: config.domain,
-        email: config.email,
-        apiToken: config.apiToken,
-        projectKey: config.projectKey
+        domain: config.domain.trim(),
+        email: config.email.trim(),
+        apiToken: config.apiToken.trim(),
+        projectKey: config.projectKey.trim()
       };
       
       // Call real backend API to validate Jira configuration
@@ -144,13 +148,13 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
 
     // Submit the real configuration to backend
     onSubmit({
-      name: config.name,
+      name: config.name.trim(),
       platform: 'jira',
       config: {
-        domain: config.domain,
-        email: config.email,
-        apiToken: config.apiToken,
-        projectKey: config.projectKey
+        domain: config.domain.trim(),
+        email: config.email.trim(),
+        apiToken: config.apiToken.trim(),
+        projectKey: config.projectKey.trim()
       }
     });
   };

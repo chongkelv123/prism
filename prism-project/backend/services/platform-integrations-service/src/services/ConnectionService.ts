@@ -1,3 +1,4 @@
+// backend/services/platform-integrations-service/src/services/ConnectionService.ts
 import { Connection, IConnection } from '../models/Connection';
 import { ClientFactory, BaseClient, PlatformConnection } from '../clients/BaseClient';
 import logger from '../utils/logger';
@@ -39,7 +40,7 @@ export class ConnectionService {
         userId,
         name: connectionData.name,
         platform: connectionData.platform,
-        config: connectionData.config, // This will be encrypted automatically
+        config: connectionData.config,
         status: 'connected',
         projectCount,
         lastSync: new Date()
@@ -108,6 +109,7 @@ export class ConnectionService {
         const connection = await this.getConnection(userId, connectionId);
         if (connection) {
           connection.status = 'error';
+          // Fix: Safe access to error message
           connection.lastSyncError = error instanceof Error ? error.message : 'Unknown error';
           await connection.save();
         }
@@ -161,6 +163,7 @@ export class ConnectionService {
         const connection = await this.getConnection(userId, connectionId);
         if (connection) {
           connection.status = 'error';
+          // Fix: Safe access to error message
           connection.lastSyncError = error instanceof Error ? error.message : 'Sync failed';
           await connection.save();
         }

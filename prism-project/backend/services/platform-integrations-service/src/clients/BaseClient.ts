@@ -1,4 +1,5 @@
 // backend/services/platform-integrations-service/src/clients/BaseClient.ts
+// FIXED VERSION with proper headers and credential trimming
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import logger from '../utils/logger';
 
@@ -94,7 +95,7 @@ export abstract class BaseClient {
   abstract getProjectMetrics(projectId: string): Promise<Metric[]>;
 }
 
-// Monday.com Client
+// Monday.com Client - FIXED
 export class MondayClient extends BaseClient {
   private get apiKey(): string {
     return this.connection.config.apiKey;
@@ -107,16 +108,29 @@ export class MondayClient extends BaseClient {
   constructor(connection: PlatformConnection) {
     super(connection);
     this.http.defaults.baseURL = 'https://api.monday.com/v2';
-    this.http.defaults.headers['Authorization'] = this.apiKey;
+    
+    // FIX: Use headers.common and trim the API key
+    this.http.defaults.headers.common['Authorization'] = `Bearer ${this.apiKey.trim()}`;
+    
+    logger.info('Monday.com client initialized with API key');
   }
 
   async testConnection(): Promise<boolean> {
     try {
+      logger.info('Testing Monday.com connection...');
       const query = `query { me { name email } }`;
       const response = await this.http.post('', { query });
-      return !!response.data?.data?.me;
+      
+      const isValid = !!response.data?.data?.me;
+      logger.info(`Monday.com connection test result: ${isValid ? 'SUCCESS' : 'FAILED'}`);
+      
+      if (isValid) {
+        logger.info(`Connected as: ${response.data.data.me.name} (${response.data.data.me.email})`);
+      }
+      
+      return isValid;
     } catch (error) {
-      logger.error('Monday.com connection test failed:', error);
+      logger.error('Monday.com connection test failed:', error.response?.data || error.message);
       return false;
     }
   }
@@ -189,10 +203,10 @@ export class MondayClient extends BaseClient {
   }
 }
 
-// Jira Client
+// Jira Client - FIXED
 export class JiraClient extends BaseClient {
   private get domain(): string {
-    return this.connection.config.domain.replace(/^https?:\/\//, '');
+    return this.connection.config.domain.replace(/^https?:\/\//, '').trim();
   }
 
   private get email(): string {
@@ -209,18 +223,40 @@ export class JiraClient extends BaseClient {
 
   constructor(connection: PlatformConnection) {
     super(connection);
+    
+    // FIX: Trim domain and use proper URL construction
     this.http.defaults.baseURL = `https://${this.domain}/rest/api/3`;
     
-    const auth = Buffer.from(`${this.email}:${this.apiToken}`).toString('base64');
-    this.http.defaults.headers['Authorization'] = `Basic ${auth}`;
+    // FIX: Trim email and apiToken, use headers.common
+    const auth = Buffer.from(`${this.email.trim()}:${this.apiToken.trim()}`).toString('base64');
+    this.http.defaults.headers.common['Authorization'] = `Basic ${auth}`;
+    
+    logger.info(`Jira client initialized for domain: ${this.domain}`);
+    logger.info(`Auth header created for user: ${this.email.trim()}`);
   }
 
   async testConnection(): Promise<boolean> {
     try {
+      logger.info('Testing Jira connection...');
+      logger.info(`Connecting to: ${this.http.defaults.baseURL}/myself`);
+      
       const response = await this.http.get('/myself');
-      return !!response.data?.emailAddress;
+      const isValid = !!response.data?.emailAddress;
+      
+      logger.info(`Jira connection test result: ${isValid ? 'SUCCESS' : 'FAILED'}`);
+      
+      if (isValid) {
+        logger.info(`Connected as: ${response.data.displayName} (${response.data.emailAddress})`);
+      }
+      
+      return isValid;
     } catch (error) {
-      logger.error('Jira connection test failed:', error);
+      logger.error('Jira connection test failed:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message
+      });
       return false;
     }
   }
@@ -298,10 +334,10 @@ export class JiraClient extends BaseClient {
   }
 }
 
-// TROFOS Client
+// TROFOS Client - FIXED
 export class TrofosClient extends BaseClient {
   private get serverUrl(): string {
-    return this.connection.config.serverUrl.replace(/\/$/, '');
+    return this.connection.config.serverUrl.replace(/\/$/, '').trim();
   }
 
   private get apiKey(): string {
@@ -314,12 +350,19 @@ export class TrofosClient extends BaseClient {
 
   constructor(connection: PlatformConnection) {
     super(connection);
+    
+    // FIX: Proper URL handling and trim apiKey, use headers.common
     this.http.defaults.baseURL = `${this.serverUrl}/v1`;
-    this.http.defaults.headers['Authorization'] = `Bearer ${this.apiKey}`;
+    this.http.defaults.headers.common['Authorization'] = `Bearer ${this.apiKey.trim()}`;
+    
+    logger.info(`TROFOS client initialized for server: ${this.serverUrl}`);
   }
 
   async testConnection(): Promise<boolean> {
     try {
+      logger.info('Testing TROFOS connection...');
+      logger.info(`Connecting to: ${this.http.defaults.baseURL}/project`);
+      
       // Test with a simple project list request
       const response = await this.http.post('/project', {
         pageNum: 1,
@@ -327,9 +370,18 @@ export class TrofosClient extends BaseClient {
         sort: 'name',
         direction: 'ASC'
       });
-      return response.status === 200;
+      
+      const isValid = response.status === 200;
+      logger.info(`TROFOS connection test result: ${isValid ? 'SUCCESS' : 'FAILED'}`);
+      
+      return isValid;
     } catch (error) {
-      logger.error('TROFOS connection test failed:', error);
+      logger.error('TROFOS connection test failed:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message
+      });
       return false;
     }
   }

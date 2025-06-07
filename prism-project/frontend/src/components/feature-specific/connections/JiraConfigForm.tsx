@@ -1,6 +1,7 @@
-// frontend/src/components/feature-specific/connections/JiraConfigForm.tsx - FIXED ERROR HANDLING
+// frontend/src/components/feature-specific/connections/JiraConfigForm.tsx
+// COMPLETE FIXED VERSION - READY TO REPLACE
 import React, { useState } from 'react';
-import { Eye, EyeOff, ExternalLink, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+import { Eye, EyeOff, ExternalLink, AlertCircle } from 'lucide-react';
 import { useConnections } from '../../../contexts/ConnectionsContext';
 
 interface JiraConfigFormProps {
@@ -44,26 +45,6 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
     }
   };
 
-  // Domain normalization helper
-  const normalizeDomain = (domain: string): string => {
-    if (!domain) return '';
-    
-    let normalized = domain.toLowerCase().trim();
-    
-    // Remove protocol
-    normalized = normalized.replace(/^https?:\/\//, '');
-    
-    // Remove trailing slashes and paths
-    normalized = normalized.split('/')[0];
-    
-    // If it doesn't contain a dot and doesn't end with .atlassian.net, assume it's a cloud subdomain
-    if (!normalized.includes('.') && !normalized.endsWith('.atlassian.net')) {
-      normalized = `${normalized}.atlassian.net`;
-    }
-    
-    return normalized;
-  };
-
   const validateForm = (): boolean => {
     const newErrors: Partial<JiraConfig> = {};
     
@@ -71,10 +52,9 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
       newErrors.name = 'Connection name is required';
     }
     
-    const normalizedDomain = normalizeDomain(config.domain);
     if (!config.domain.trim()) {
       newErrors.domain = 'Jira domain is required';
-    } else if (!normalizedDomain || (!normalizedDomain.includes('.atlassian.net') && !normalizedDomain.includes('.'))) {
+    } else if (!config.domain.includes('.atlassian.net') && !config.domain.includes('http')) {
       newErrors.domain = 'Please enter a valid Jira domain (e.g., company.atlassian.net)';
     }
     
@@ -90,8 +70,6 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
     
     if (!config.projectKey.trim()) {
       newErrors.projectKey = 'Project key is required';
-    } else if (!/^[A-Z]{1,10}$/.test(config.projectKey.toUpperCase())) {
-      newErrors.projectKey = 'Project key should be 1-10 uppercase letters (e.g., PRISM, DEV)';
     }
 
     setErrors(newErrors);
@@ -99,40 +77,25 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
   };
 
   const handleTestConnection = async () => {
+    console.log('🔴 handleTestConnection called with config:', {
+      domain: config.domain,
+      email: config.email,
+      apiToken: config.apiToken ? `${config.apiToken.substring(0, 6)}...` : 'MISSING',
+      projectKey: config.projectKey
+    });
+
     // Clear previous errors
     setErrors({});
     
-    // Validate required fields before testing
-    const normalizedDomain = normalizeDomain(config.domain);
-    const requiredFields = {
-      domain: config.domain,
-      email: config.email,
-      apiToken: config.apiToken,
-      projectKey: config.projectKey
-    };
-    
-    const missingFields = Object.entries(requiredFields)
-      .filter(([_, value]) => !value?.trim())
-      .map(([field, _]) => field);
-    
-    if (missingFields.length > 0) {
+    // Check required fields for testing
+    if (!config.domain || !config.email || !config.apiToken || !config.projectKey) {
       const fieldErrors: Partial<JiraConfig> = {};
-      missingFields.forEach(field => {
-        fieldErrors[field as keyof JiraConfig] = `${field.charAt(0).toUpperCase() + field.slice(1)} is required for testing`;
-      });
+      if (!config.domain) fieldErrors.domain = 'Domain is required for testing';
+      if (!config.email) fieldErrors.email = 'Email is required for testing';
+      if (!config.apiToken) fieldErrors.apiToken = 'API token is required for testing';
+      if (!config.projectKey) fieldErrors.projectKey = 'Project key is required for testing';
+      
       setErrors(fieldErrors);
-      return;
-    }
-
-    // Validate domain format
-    if (!normalizedDomain || (!normalizedDomain.includes('.atlassian.net') && !normalizedDomain.includes('.'))) {
-      setErrors({ domain: 'Please enter a valid Jira domain' });
-      return;
-    }
-
-    // Validate email format
-    if (!/\S+@\S+\.\S+/.test(config.email)) {
-      setErrors({ email: 'Please enter a valid email address' });
       return;
     }
 
@@ -142,21 +105,28 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
     try {
       console.log('🔄 Testing Jira connection with backend...', {
         domain: config.domain,
-        normalizedDomain,
+        normalizedDomain: config.domain.replace(/^https?:\/\//, ''),
         email: config.email,
         projectKey: config.projectKey
       });
       
-      // Prepare config for validation - use normalized domain
-      const validationConfig = {
-        domain: normalizedDomain, // Use normalized domain
+      // FIXED: Prepare config for validation - ensure all fields are included
+      const testConfig = {
+        domain: config.domain.trim(),
         email: config.email.trim(),
-        apiToken: config.apiToken.trim(),
-        projectKey: config.projectKey.trim().toUpperCase()
+        apiToken: config.apiToken.trim(),  // ← **CRITICAL: Don't forget this!**
+        projectKey: config.projectKey.trim()
       };
+
+      console.log('🔧 Test config prepared:', {
+        domain: testConfig.domain,
+        email: testConfig.email,
+        apiToken: testConfig.apiToken ? `${testConfig.apiToken.substring(0, 6)}...` : 'MISSING',
+        projectKey: testConfig.projectKey
+      });
       
       // Call real backend API to validate Jira configuration
-      const result = await validatePlatformConfig('jira', validationConfig);
+      const result = await validatePlatformConfig('jira', testConfig);
       
       console.log('✅ Backend validation result:', result);
       
@@ -164,23 +134,9 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
       setConnectionTested(result.valid);
       
       if (!result.valid) {
-        // Show error on the most relevant field
-        if (result.message.includes('domain') || result.message.includes('resolve') || result.message.includes('not found')) {
-          setErrors({ domain: result.message });
-        } else if (result.message.includes('email') || result.message.includes('token') || result.message.includes('credentials')) {
-          setErrors({ apiToken: result.message });
-        } else if (result.message.includes('project') || result.message.includes('key')) {
-          setErrors({ projectKey: result.message });
-        } else {
-          setErrors({ apiToken: result.message });
-        }
+        setErrors({ apiToken: result.message });
       } else {
-        // Clear all errors on success
         setErrors({});
-        // Update domain with normalized value if validation was successful
-        if (normalizedDomain !== config.domain) {
-          setConfig(prev => ({ ...prev, domain: normalizedDomain }));
-        }
       }
     } catch (error) {
       console.error('❌ Connection test failed:', error);
@@ -207,18 +163,28 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
       return;
     }
 
-    // Submit with normalized domain
-    const normalizedDomain = normalizeDomain(config.domain);
-    onSubmit({
+    // Submit the real configuration to backend
+    const submitConfig = {
       name: config.name,
       platform: 'jira',
       config: {
-        domain: normalizedDomain,
+        domain: config.domain.trim(),
         email: config.email.trim(),
-        apiToken: config.apiToken.trim(),
-        projectKey: config.projectKey.trim().toUpperCase()
+        apiToken: config.apiToken.trim(),  // ← **CRITICAL: Include API token!**
+        projectKey: config.projectKey.trim()
+      }
+    };
+
+    console.log('🚀 Submitting Jira connection config:', {
+      name: submitConfig.name,
+      platform: submitConfig.platform,
+      config: {
+        ...submitConfig.config,
+        apiToken: submitConfig.config.apiToken ? `${submitConfig.config.apiToken.substring(0, 6)}...` : 'MISSING'
       }
     });
+
+    onSubmit(submitConfig);
   };
 
   return (
@@ -271,14 +237,9 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
         {errors.domain && (
           <p className="mt-1 text-sm text-red-600">{errors.domain}</p>
         )}
-        <div className="mt-1 text-sm text-gray-500">
-          <p>Examples: company.atlassian.net, yourcompany.atlassian.net</p>
-          {config.domain && normalizeDomain(config.domain) !== config.domain && (
-            <p className="text-blue-600 mt-1">
-              ℹ️ Will be normalized to: {normalizeDomain(config.domain)}
-            </p>
-          )}
-        </div>
+        <p className="mt-1 text-sm text-gray-500">
+          Your Jira Cloud domain (without https://)
+        </p>
       </div>
 
       {/* Email */}
@@ -379,38 +340,38 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
         </div>
         
         {testResult && (
-          <div className={`flex items-start ${testResult.valid ? 'text-green-600' : 'text-red-600'}`}>
-            <div className="mr-2 mt-0.5">
+          <div className={`flex items-center ${testResult.valid ? 'text-green-600' : 'text-red-600'}`}>
+            <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
               {testResult.valid ? (
-                <CheckCircle size={16} />
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
               ) : (
-                <XCircle size={16} />
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
               )}
-            </div>
-            <div className="flex-1">
-              <span className="text-sm font-medium">
-                {testResult.valid ? 'Success!' : 'Connection Failed'}
-              </span>
-              <p className="text-sm mt-1">{testResult.message}</p>
-              {testResult.valid && (
-                <p className="text-xs text-green-500 mt-1">
-                  ✓ Authentication verified
-                  ✓ Project access confirmed
-                </p>
-              )}
-            </div>
+            </svg>
+            <span className="text-sm">{testResult.message}</span>
           </div>
         )}
         
         {!testResult && (
           <div className="flex items-start text-gray-500">
             <AlertCircle size={16} className="mr-2 mt-0.5 flex-shrink-0" />
-            <div className="text-sm">
-              <p className="font-medium mb-1">Please test your connection</p>
-              <p>This will verify your credentials and confirm access to the specified project.</p>
-            </div>
+            <span className="text-sm">
+              Please test your connection to verify the credentials and project access.
+            </span>
           </div>
         )}
+      </div>
+
+      {/* Debug Information */}
+      <div className="bg-gray-50 rounded-lg p-4">
+        <h5 className="font-medium text-gray-900 mb-2">Debug Information</h5>
+        <div className="text-sm text-gray-600 space-y-1">
+          <p>Domain: {config.domain || 'Not set'}</p>
+          <p>Email: {config.email || 'Not set'}</p>
+          <p>API Token: {config.apiToken ? `${config.apiToken.substring(0, 6)}...` : 'Not set'}</p>
+          <p>Project Key: {config.projectKey || 'Not set'}</p>
+          <p>Connection Tested: {connectionTested ? '✅ Yes' : '❌ No'}</p>
+        </div>
       </div>
 
       {/* Jira Integration Details */}

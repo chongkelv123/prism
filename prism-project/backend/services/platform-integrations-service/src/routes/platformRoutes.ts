@@ -1,13 +1,315 @@
 // backend/services/platform-integrations-service/src/routes/platformRoutes.ts
+// ENHANCED VERSION with proper validation and axios import
 import { Router } from 'express';
+import axios from 'axios'; // IMPORTANT: Add this import
 import { authenticateJWT } from '../middleware/auth';
-import { ClientFactory, PlatformConnection } from '../clients/BaseClient';
 import logger from '../utils/logger';
 
 const router = Router();
 
 // Apply authentication to all routes
 router.use(authenticateJWT);
+
+// Enhanced Jira validation function
+async function validateJiraConnection(config: any): Promise<{valid: boolean, message: string, details?: any}> {
+  console.log('🧪 Testing Jira connection to', `https://${config.domain}/rest/api/3...`);
+  console.log('🔧 Created auth header for user:', config.email);
+  
+  try {
+    // Step 1: Validate input parameters
+    console.log('🔍 Step 0: Validating input parameters...');
+    
+    if (!config.domain || !config.email || !config.apiToken || !config.projectKey) {
+      const missing = [];
+      if (!config.domain) missing.push('domain');
+      if (!config.email) missing.push('email');
+      if (!config.apiToken) missing.push('apiToken');
+      if (!config.projectKey) missing.push('projectKey');
+      
+      const error = `Missing required parameters: ${missing.join(', ')}`;
+      console.error('❌', error);
+      return { valid: false, message: error };
+    }
+    
+    // Clean and trim all inputs
+    const cleanDomain = config.domain.replace(/^https?:\/\//, '').trim();
+    const cleanEmail = config.email.trim();
+    const cleanApiToken = config.apiToken.trim();
+    const cleanProjectKey = config.projectKey.trim();
+    
+    console.log('🔧 Using cleaned domain:', cleanDomain);
+    console.log('🔧 Using email:', cleanEmail);
+    console.log('🔧 Using project key:', cleanProjectKey);
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      const error = 'Invalid email format';
+      console.error('❌', error);
+      return { valid: false, message: error };
+    }
+    
+    // Validate API token (should be a reasonable length)
+    if (cleanApiToken.length < 10) {
+      const error = 'API token appears to be too short';
+      console.error('❌', error);
+      return { valid: false, message: error };
+    }
+    
+    // Create authentication header
+    const auth = Buffer.from(`${cleanEmail}:${cleanApiToken}`).toString('base64');
+    console.log('🔑 Auth header created (first 30 chars):', `Basic ${auth}`.substring(0, 30) + '...');
+    
+    // Create axios instance with proper configuration
+    const axiosConfig = {
+      timeout: 30000,
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'PRISM-Integration/1.0'
+      }
+    };
+    
+    // Step 1: Test authentication by calling /myself
+    console.log('🔍 Step 1: Testing Jira authentication...');
+    const authUrl = `https://${cleanDomain}/rest/api/3/myself`;
+    console.log('🌐 Auth URL:', authUrl);
+    
+    let authResponse;
+    try {
+      authResponse = await axios.get(authUrl, axiosConfig);
+      console.log('✅ Authentication successful! Response status:', authResponse.status);
+      console.log('👤 Logged in as:', authResponse.data.displayName, `(${authResponse.data.emailAddress})`);
+    } catch (authError: any) {
+      console.error('❌ Authentication failed:', authError.response?.status, authError.response?.statusText);
+      console.error('❌ Auth error details:', authError.response?.data);
+      
+      if (authError.response?.status === 401) {
+        return { 
+          valid: false, 
+          message: 'Invalid email or API token. Please check your credentials.',
+          details: {
+            status: authError.response.status,
+            error: authError.response.data
+          }
+        };
+      } else if (authError.response?.status === 403) {
+        return { 
+          valid: false, 
+          message: 'Access forbidden. Please check your Jira permissions.',
+          details: {
+            status: authError.response.status,
+            error: authError.response.data
+          }
+        };
+      } else if (authError.code === 'ENOTFOUND') {
+        return { 
+          valid: false, 
+          message: `Domain "${cleanDomain}" not found. Please check your Jira domain.`,
+          details: {
+            code: authError.code,
+            hostname: authError.hostname
+          }
+        };
+      } else {
+        return { 
+          valid: false, 
+          message: `Connection failed: ${authError.message}`,
+          details: {
+            code: authError.code,
+            status: authError.response?.status
+          }
+        };
+      }
+    }
+    
+    // Step 2: Test access to the specific project
+    console.log('🔍 Step 2: Testing access to project "' + cleanProjectKey + '"...');
+    const projectUrl = `https://${cleanDomain}/rest/api/3/project/${cleanProjectKey}`;
+    console.log('🌐 Project URL:', projectUrl);
+    
+    let projectResponse;
+    try {
+      projectResponse = await axios.get(projectUrl, axiosConfig);
+      console.log('✅ Project access successful! Response status:', projectResponse.status);
+      console.log('📁 Found project:', `"${projectResponse.data.name}" (${projectResponse.data.key})`);
+    } catch (projectError: any) {
+      console.error('❌ Project access failed:', projectError.response?.status, projectError.response?.statusText);
+      console.error('❌ Project error details:', projectError.response?.data);
+      
+      if (projectError.response?.status === 404) {
+        return { 
+          valid: false, 
+          message: `Project "${cleanProjectKey}" not found. Please check the project key.`,
+          details: {
+            status: projectError.response.status,
+            projectKey: cleanProjectKey
+          }
+        };
+      } else if (projectError.response?.status === 403) {
+        return { 
+          valid: false, 
+          message: `No access to project "${cleanProjectKey}". Please check your permissions.`,
+          details: {
+            status: projectError.response.status,
+            projectKey: cleanProjectKey
+          }
+        };
+      } else {
+        return { 
+          valid: false, 
+          message: `Failed to access project: ${projectError.message}`,
+          details: {
+            code: projectError.code,
+            status: projectError.response?.status
+          }
+        };
+      }
+    }
+    
+    console.log('🎉 All Jira connection tests passed!');
+    
+    return { 
+      valid: true, 
+      message: 'Connection successful! Your credentials are working correctly.',
+      details: {
+        user: authResponse.data.displayName,
+        email: authResponse.data.emailAddress,
+        project: projectResponse.data.name,
+        projectKey: projectResponse.data.key
+      }
+    };
+    
+  } catch (error: any) {
+    console.error('❌ Unexpected error during Jira validation:', error);
+    return { 
+      valid: false, 
+      message: `Unexpected error: ${error.message}`,
+      details: {
+        error: error.message,
+        stack: error.stack
+      }
+    };
+  }
+}
+
+// Enhanced Monday.com validation function
+async function validateMondayConnection(config: any): Promise<{valid: boolean, message: string, details?: any}> {
+  console.log('🧪 Testing Monday.com connection...');
+  
+  try {
+    if (!config.apiKey) {
+      return { valid: false, message: 'API Key is required' };
+    }
+    
+    const cleanApiKey = config.apiKey.trim();
+    console.log('🔧 Using API key (first 10 chars):', cleanApiKey.substring(0, 10) + '...');
+    
+    const axiosConfig = {
+      timeout: 30000,
+      headers: {
+        'Authorization': `Bearer ${cleanApiKey}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'PRISM-Integration/1.0'
+      }
+    };
+    
+    const query = `query { me { name email } }`;
+    const response = await axios.post('https://api.monday.com/v2', { query }, axiosConfig);
+    
+    if (response.data?.data?.me) {
+      console.log('✅ Monday.com authentication successful!');
+      console.log('👤 Logged in as:', response.data.data.me.name, `(${response.data.data.me.email})`);
+      
+      return {
+        valid: true,
+        message: 'Connection successful! Your Monday.com API key is working correctly.',
+        details: {
+          user: response.data.data.me.name,
+          email: response.data.data.me.email
+        }
+      };
+    } else {
+      return { valid: false, message: 'Invalid API response from Monday.com' };
+    }
+    
+  } catch (error: any) {
+    console.error('❌ Monday.com connection test failed:', error.response?.data || error.message);
+    
+    if (error.response?.status === 401) {
+      return { valid: false, message: 'Invalid API key. Please check your Monday.com API key.' };
+    } else {
+      return { valid: false, message: `Connection failed: ${error.message}` };
+    }
+  }
+}
+
+// Enhanced TROFOS validation function
+async function validateTrofosConnection(config: any): Promise<{valid: boolean, message: string, details?: any}> {
+  console.log('🧪 Testing TROFOS connection...');
+  
+  try {
+    if (!config.serverUrl || !config.apiKey || !config.projectId) {
+      const missing = [];
+      if (!config.serverUrl) missing.push('serverUrl');
+      if (!config.apiKey) missing.push('apiKey');
+      if (!config.projectId) missing.push('projectId');
+      
+      return { valid: false, message: `Missing required parameters: ${missing.join(', ')}` };
+    }
+    
+    const cleanServerUrl = config.serverUrl.replace(/\/$/, '').trim();
+    const cleanApiKey = config.apiKey.trim();
+    const cleanProjectId = config.projectId.trim();
+    
+    console.log('🔧 Using server URL:', cleanServerUrl);
+    console.log('🔧 Using project ID:', cleanProjectId);
+    
+    const axiosConfig = {
+      timeout: 30000,
+      headers: {
+        'Authorization': `Bearer ${cleanApiKey}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'PRISM-Integration/1.0'
+      }
+    };
+    
+    // Test with a simple project list request
+    const response = await axios.post(`${cleanServerUrl}/v1/project`, {
+      pageNum: 1,
+      pageSize: 1,
+      sort: 'name',
+      direction: 'ASC'
+    }, axiosConfig);
+    
+    if (response.status === 200) {
+      console.log('✅ TROFOS connection successful!');
+      
+      return {
+        valid: true,
+        message: 'Connection successful! Your TROFOS credentials are working correctly.',
+        details: {
+          serverUrl: cleanServerUrl,
+          projectId: cleanProjectId
+        }
+      };
+    } else {
+      return { valid: false, message: 'Unexpected response from TROFOS server' };
+    }
+    
+  } catch (error: any) {
+    console.error('❌ TROFOS connection test failed:', error.response?.data || error.message);
+    
+    if (error.response?.status === 401) {
+      return { valid: false, message: 'Invalid API key. Please check your TROFOS API key.' };
+    } else if (error.code === 'ENOTFOUND') {
+      return { valid: false, message: 'Server not found. Please check your TROFOS server URL.' };
+    } else {
+      return { valid: false, message: `Connection failed: ${error.message}` };
+    }
+  }
+}
 
 // Get supported platforms
 router.get('/', (req, res) => {
@@ -54,34 +356,14 @@ router.get('/', (req, res) => {
   res.json(platforms);
 });
 
-// Utility function to normalize Jira domain
-function normalizeJiraDomain(domain: string): string {
-  if (!domain) return '';
-  
-  // Remove any protocol prefix
-  let normalized = domain.replace(/^https?:\/\//, '');
-  
-  // Remove trailing slashes and paths
-  normalized = normalized.split('/')[0];
-  
-  // Ensure it ends with .atlassian.net for cloud instances
-  if (!normalized.includes('.') && !normalized.endsWith('.atlassian.net')) {
-    normalized = `${normalized}.atlassian.net`;
-  }
-  
-  return normalized.trim();
-}
-
-// Validate platform configuration with REAL API testing
+// Validate platform configuration
 router.post('/:platformId/validate', async (req, res) => {
   try {
     const { platformId } = req.params;
     const { config } = req.body;
 
-    logger.info(`Validating configuration for platform: ${platformId}`, {
-      platformId,
-      configKeys: Object.keys(config || {})
-    });
+    console.log(`🔍 Validating configuration for platform: ${platformId}`);
+    console.log('📝 Config keys provided:', Object.keys(config || {}));
 
     if (!config) {
       return res.status(400).json({ 
@@ -90,289 +372,39 @@ router.post('/:platformId/validate', async (req, res) => {
       });
     }
 
-    // Platform-specific validation with REAL API testing
+    let result;
+
     switch (platformId) {
       case 'monday':
-        return await validateMondayConfig(config, res);
+        result = await validateMondayConnection(config);
+        break;
         
       case 'jira':
-        return await validateJiraConfig(config, res);
+        result = await validateJiraConnection(config);
+        break;
         
       case 'trofos':
-        return await validateTrofosConfig(config, res);
+        result = await validateTrofosConnection(config);
+        break;
         
       default:
-        return res.status(400).json({
-          valid: false,
-          message: 'Unsupported platform'
-        });
+        result = { valid: false, message: 'Unsupported platform' };
     }
-  } catch (error) {
-    logger.error('Platform validation error:', error);
+
+    console.log(`📊 Platform validation result for ${platformId}:`, result.valid ? 'VALID' : 'INVALID');
+    if (!result.valid) {
+      console.log('❌ Validation error:', result.message);
+    }
     
-    // Return specific error message instead of generic one
-    const errorMessage = error instanceof Error 
-      ? error.message 
-      : 'Validation failed due to unexpected error';
-      
+    res.json(result);
+  } catch (error: any) {
+    console.error('💥 Platform validation error:', error);
     res.status(500).json({ 
       valid: false, 
-      message: errorMessage
+      message: 'Validation failed due to server error',
+      details: error.message
     });
   }
 });
-
-// Monday.com validation with real API test
-async function validateMondayConfig(config: any, res: any) {
-  // Basic field validation
-  if (!config.apiKey?.trim()) {
-    return res.json({
-      valid: false,
-      message: 'API Key is required'
-    });
-  }
-
-  try {
-    // Create temporary connection for testing
-    const tempConnection: PlatformConnection = {
-      id: 'temp-monday',
-      name: 'Test Connection',
-      platform: 'monday',
-      config: config,
-      status: 'disconnected'
-    };
-
-    const client = ClientFactory.createClient(tempConnection);
-    const isValid = await client.testConnection();
-
-    if (isValid) {
-      return res.json({
-        valid: true,
-        message: 'Monday.com connection successful'
-      });
-    } else {
-      return res.json({
-        valid: false,
-        message: 'Invalid API key or insufficient permissions'
-      });
-    }
-  } catch (error: any) {
-    logger.error('Monday.com validation failed:', error);
-    
-    let errorMessage = 'Connection test failed';
-    if (error?.response?.status === 401) {
-      errorMessage = 'Invalid API key';
-    } else if (error?.response?.status === 403) {
-      errorMessage = 'API key does not have sufficient permissions';
-    } else if (error?.code === 'ENOTFOUND' || error?.code === 'ECONNREFUSED') {
-      errorMessage = 'Cannot reach Monday.com API. Please check your internet connection';
-    }
-
-    return res.json({
-      valid: false,
-      message: errorMessage
-    });
-  }
-}
-
-// Jira validation with real API test
-async function validateJiraConfig(config: any, res: any) {
-  // Basic field validation
-  const requiredFields = ['domain', 'email', 'apiToken', 'projectKey'];
-  const missingFields = requiredFields.filter(field => !config[field]?.trim());
-  
-  if (missingFields.length > 0) {
-    return res.json({
-      valid: false,
-      message: `Missing required fields: ${missingFields.join(', ')}`
-    });
-  }
-
-  // Normalize and validate domain
-  const normalizedDomain = normalizeJiraDomain(config.domain);
-  if (!normalizedDomain) {
-    return res.json({
-      valid: false,
-      message: 'Invalid Jira domain format'
-    });
-  }
-
-  // Validate email format
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(config.email)) {
-    return res.json({
-      valid: false,
-      message: 'Invalid email address format'
-    });
-  }
-
-  try {
-    // Create temporary connection for testing with normalized domain
-    const tempConnection: PlatformConnection = {
-      id: 'temp-jira',
-      name: 'Test Connection',
-      platform: 'jira',
-      config: {
-        ...config,
-        domain: normalizedDomain // Use normalized domain
-      },
-      status: 'disconnected'
-    };
-
-    logger.info('Testing Jira connection with normalized domain:', { 
-      originalDomain: config.domain,
-      normalizedDomain,
-      email: config.email,
-      projectKey: config.projectKey 
-    });
-
-    const client = ClientFactory.createClient(tempConnection);
-    const isValid = await client.testConnection();
-
-    if (isValid) {
-      // Additional validation: try to access the specific project
-      try {
-        await client.getProject(config.projectKey);
-        return res.json({
-          valid: true,
-          message: `Successfully connected to Jira project ${config.projectKey}`
-        });
-      } catch (projectError: any) {
-        logger.warn('Jira connection valid but project not accessible:', projectError);
-        
-        if (projectError?.response?.status === 404) {
-          return res.json({
-            valid: false,
-            message: `Project '${config.projectKey}' not found or not accessible`
-          });
-        } else if (projectError?.response?.status === 403) {
-          return res.json({
-            valid: false,
-            message: `No permission to access project '${config.projectKey}'`
-          });
-        } else {
-          // Connection works but project access failed for other reasons
-          return res.json({
-            valid: true,
-            message: 'Jira connection successful (project access verification failed)'
-          });
-        }
-      }
-    } else {
-      return res.json({
-        valid: false,
-        message: 'Invalid credentials or domain'
-      });
-    }
-  } catch (error: any) {
-    logger.error('Jira validation failed:', error);
-    
-    let errorMessage = 'Connection test failed';
-    
-    if (error?.response?.status === 401) {
-      errorMessage = 'Invalid email or API token';
-    } else if (error?.response?.status === 403) {
-      errorMessage = 'API token does not have sufficient permissions';
-    } else if (error?.response?.status === 404) {
-      errorMessage = 'Jira instance not found. Please check your domain';
-    } else if (error?.code === 'ENOTFOUND') {
-      errorMessage = `Cannot resolve domain '${normalizedDomain}'. Please check your Jira domain`;
-    } else if (error?.code === 'ECONNREFUSED') {
-      errorMessage = 'Connection refused. Please check your domain and internet connection';
-    } else if (error?.message?.includes('certificate')) {
-      errorMessage = 'SSL certificate error. Please verify your Jira domain';
-    }
-
-    return res.json({
-      valid: false,
-      message: errorMessage
-    });
-  }
-}
-
-// TROFOS validation with real API test
-async function validateTrofosConfig(config: any, res: any) {
-  // Basic field validation
-  const requiredFields = ['serverUrl', 'apiKey', 'projectId'];
-  const missingFields = requiredFields.filter(field => !config[field]?.trim());
-  
-  if (missingFields.length > 0) {
-    return res.json({
-      valid: false,
-      message: `Missing required fields: ${missingFields.join(', ')}`
-    });
-  }
-
-  // Validate URL format
-  try {
-    new URL(config.serverUrl);
-  } catch {
-    return res.json({
-      valid: false,
-      message: 'Invalid server URL format. Please include http:// or https://'
-    });
-  }
-
-  try {
-    // Create temporary connection for testing
-    const tempConnection: PlatformConnection = {
-      id: 'temp-trofos',
-      name: 'Test Connection',
-      platform: 'trofos',
-      config: config,
-      status: 'disconnected'
-    };
-
-    const client = ClientFactory.createClient(tempConnection);
-    const isValid = await client.testConnection();
-
-    if (isValid) {
-      // Try to access the specific project
-      try {
-        await client.getProject(config.projectId);
-        return res.json({
-          valid: true,
-          message: `Successfully connected to TROFOS project ${config.projectId}`
-        });
-      } catch (projectError: any) {
-        logger.warn('TROFOS connection valid but project not accessible:', projectError);
-        
-        if (projectError?.response?.status === 404) {
-          return res.json({
-            valid: false,
-            message: `Project '${config.projectId}' not found`
-          });
-        } else {
-          return res.json({
-            valid: true,
-            message: 'TROFOS connection successful (project verification failed)'
-          });
-        }
-      }
-    } else {
-      return res.json({
-        valid: false,
-        message: 'Invalid API key or server URL'
-      });
-    }
-  } catch (error: any) {
-    logger.error('TROFOS validation failed:', error);
-    
-    let errorMessage = 'Connection test failed';
-    
-    if (error?.response?.status === 401) {
-      errorMessage = 'Invalid API key';
-    } else if (error?.response?.status === 403) {
-      errorMessage = 'API key does not have sufficient permissions';
-    } else if (error?.code === 'ENOTFOUND' || error?.code === 'ECONNREFUSED') {
-      errorMessage = 'Cannot reach TROFOS server. Please check your server URL';
-    }
-
-    return res.json({
-      valid: false,
-      message: errorMessage
-    });
-  }
-}
 
 export default router;

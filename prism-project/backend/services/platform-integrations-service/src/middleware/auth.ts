@@ -20,7 +20,7 @@ interface JWTPayload {
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
-export const authenticateToken = (
+export const authenticateJWT = (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
@@ -164,4 +164,4 @@ export const optionalAuth = (
   }
 };
 
-export default authenticateToken;
+export default authenticateJWT;

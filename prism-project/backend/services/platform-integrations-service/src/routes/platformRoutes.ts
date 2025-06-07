@@ -1,6 +1,6 @@
 // backend/services/platform-integrations-service/src/routes/platformRoutes.ts
 import { Router, Request, Response } from 'express';
-import authenticateToken from '../middleware/auth';
+import authenticateJWT from '../middleware/auth';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -20,7 +20,7 @@ interface JiraConfig {
 const router = Router();
 
 // Apply authentication middleware to all platform routes
-router.use(authenticateToken);
+router.use(authenticateJWT);
 
 // Validate Jira configuration
 const validateJiraConfig = async (config: JiraConfig): Promise<{ valid: boolean; message: string }> => {

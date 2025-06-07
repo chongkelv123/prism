@@ -1,240 +1,241 @@
 // backend/services/platform-integrations-service/src/routes/platformRoutes.ts
-import { Router } from 'express';
-import { authenticateJWT } from '../middleware/auth';
-import logger from '../utils/logger';
-import axios from 'axios';
+import { Router, Request, Response } from 'express';
+import authenticateToken from '../middleware/auth';
+
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string;
+    email: string;
+    name: string;
+  };
+}
+
+interface JiraConfig {
+  domain: string;
+  email: string;
+  apiToken: string;
+  projectKey: string;
+}
 
 const router = Router();
 
-// Apply authentication to all routes
-router.use(authenticateJWT);
+// Apply authentication middleware to all platform routes
+router.use(authenticateToken);
 
-// Get supported platforms
-router.get('/', (req, res) => {
-  logger.info('Getting supported platforms');
-  
-  const platforms = [
-    {
-      id: 'monday',
-      name: 'Monday.com',
-      description: 'Connect to your Monday.com workspace to sync boards, items, and project data.',
-      icon: '📊',
-      configFields: [
-        { name: 'apiKey', label: 'API Key', type: 'password', required: true }
-      ],
-      features: ['Boards & Items', 'Status Updates', 'Team Members', 'Time Tracking']
-    },
-    {
-      id: 'jira',
-      name: 'Jira',
-      description: 'Integrate with Jira to pull issues, sprints, and project metrics.',
-      icon: '🔄',
-      configFields: [
-        { name: 'domain', label: 'Jira Domain', type: 'text', required: true, placeholder: 'company.atlassian.net' },
-        { name: 'email', label: 'Email', type: 'email', required: true },
-        { name: 'apiToken', label: 'API Token', type: 'password', required: true },
-        { name: 'projectKey', label: 'Project Key', type: 'text', required: true, placeholder: 'PRISM' }
-      ],
-      features: ['Issues & Epics', 'Sprint Data', 'Story Points', 'Workflow Status']
-    },
-    {
-      id: 'trofos',
-      name: 'TROFOS',
-      description: 'Connect to TROFOS for comprehensive project and resource management data.',
-      icon: '📈',
-      configFields: [
-        { name: 'serverUrl', label: 'Server URL', type: 'url', required: true, placeholder: 'https://your-trofos-server.com' },
-        { name: 'apiKey', label: 'API Key', type: 'password', required: true },
-        { name: 'projectId', label: 'Project ID', type: 'text', required: true }
-      ],
-      features: ['Project Metrics', 'Resource Allocation', 'Backlog Items', 'Sprint Progress']
+// Validate Jira configuration
+const validateJiraConfig = async (config: JiraConfig): Promise<{ valid: boolean; message: string }> => {
+  try {
+    console.log('Validating configuration for platform: jira');
+    
+    // 1. Required Fields Check
+    const requiredFields = ['domain', 'email', 'apiToken', 'projectKey'];
+    const missingFields = requiredFields.filter(field => !config[field as keyof JiraConfig]?.trim());
+    
+    if (missingFields.length > 0) {
+      const message = `Missing required fields: ${missingFields.join(', ')}`;
+      console.warn('Validation failed - missing fields:', missingFields);
+      return { valid: false, message };
     }
-  ];
 
-  res.json(platforms);
-});
+    // 2. Domain Normalization
+    let normalizedDomain = config.domain.trim();
+    
+    // Remove protocol if present
+    normalizedDomain = normalizedDomain.replace(/^https?:\/\//, '');
+    
+    // Remove trailing slashes and paths
+    normalizedDomain = normalizedDomain.split('/')[0];
+    
+    // Validate domain format
+    if (!normalizedDomain.includes('.')) {
+      return { 
+        valid: false, 
+        message: 'Invalid domain format. Please provide a complete domain (e.g., company.atlassian.net)' 
+      };
+    }
 
-// Validate platform configuration
-router.post('/:platformId/validate', async (req, res) => {
+    console.log('Using normalized domain:', normalizedDomain);
+
+    // 3. Constructing the Authorization header (Basic Auth)
+    const email = config.email.trim();
+    const apiToken = config.apiToken.trim();
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return { valid: false, message: 'Invalid email format' };
+    }
+
+    // Create Basic Auth header
+    const credentials = Buffer.from(`${email}:${apiToken}`).toString('base64');
+    const authHeader = `Basic ${credentials}`;
+    
+    console.log('Testing Jira connection with Basic Auth for:', email);
+
+    // 4. Jira API Call (/myself)
+    const axios = require('axios');
+    
+    const response = await axios.get(`https://${normalizedDomain}/rest/api/3/myself`, {
+      headers: {
+        'Authorization': authHeader,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      timeout: 10000, // 10 second timeout
+    });
+
+    // 5. Evaluating the Response
+    if (response.data && response.data.emailAddress) {
+      console.log('Jira connection successful for user:', response.data.emailAddress);
+      return { valid: true, message: 'Jira connection successful' };
+    } else {
+      console.warn('Unexpected response format from Jira:', response.data);
+      return { valid: false, message: 'Unexpected response from Jira API' };
+    }
+
+  } catch (error: any) {
+    console.error('Jira validation error:', error.message);
+    
+    if (error.response) {
+      const status = error.response.status;
+      
+      switch (status) {
+        case 401:
+          return { valid: false, message: 'Invalid email or API token' };
+        case 403:
+          return { valid: false, message: 'API token does not have sufficient permissions' };
+        case 404:
+          return { valid: false, message: 'Jira instance not found. Please check your domain.' };
+        case 429:
+          return { valid: false, message: 'Rate limited. Please try again in a moment.' };
+        default:
+          return { valid: false, message: `Jira API error (${status}): ${error.response.data?.message || 'Unknown error'}` };
+      }
+    }
+    
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      return { valid: false, message: 'Cannot reach Jira instance. Please check your domain.' };
+    }
+    
+    if (error.code === 'ETIMEDOUT') {
+      return { valid: false, message: 'Connection timeout. Please try again.' };
+    }
+    
+    return { valid: false, message: 'Connection test failed. Please check your configuration.' };
+  }
+};
+
+// POST /api/platforms/:platformId/validate
+router.post('/:platformId/validate', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { platformId } = req.params;
     const { config } = req.body;
 
-    logger.info(`Validating configuration for platform: ${platformId}`);
+    console.log(`Validation request for platform: ${platformId} by user: ${req.user?.email}`);
 
     if (!config) {
-      return res.status(400).json({ 
-        valid: false, 
-        message: 'Configuration is required' 
+      return res.status(400).json({
+        valid: false,
+        message: 'Configuration is required',
       });
     }
 
-    let isValid = true;
-    let message = 'Configuration is valid';
+    let result;
 
-    switch (platformId) {
-      case 'monday':
-        const mondayResult = await validateMondayConfig(config);
-        isValid = mondayResult.valid;
-        message = mondayResult.message;
-        break;
-        
+    switch (platformId.toLowerCase()) {
       case 'jira':
-        const jiraResult = await validateJiraConfig(config);
-        isValid = jiraResult.valid;
-        message = jiraResult.message;
+        result = await validateJiraConfig(config);
         break;
-        
-      case 'trofos':
-        const trofosResult = await validateTrofosConfig(config);
-        isValid = trofosResult.valid;
-        message = trofosResult.message;
+      
+      // Add other platforms here as needed
+      case 'github':
+        result = { valid: false, message: 'GitHub integration not yet implemented' };
         break;
-        
+      
+      case 'slack':
+        result = { valid: false, message: 'Slack integration not yet implemented' };
+        break;
+      
       default:
-        isValid = false;
-        message = 'Unsupported platform';
+        return res.status(400).json({
+          valid: false,
+          message: `Unsupported platform: ${platformId}`,
+        });
     }
 
-    logger.info(`Platform validation result for ${platformId}: ${isValid ? 'valid' : 'invalid'}`);
-    res.json({ valid: isValid, message });
-  } catch (error) {
-    logger.error('Platform validation error:', error);
-    res.status(500).json({ 
-      valid: false, 
-      message: 'Validation failed' 
+    console.log(`Validation result for ${platformId}:`, { valid: result.valid, hasMessage: !!result.message });
+
+    res.json(result);
+
+  } catch (error: any) {
+    console.error('Platform validation error:', error);
+    
+    res.status(500).json({
+      valid: false,
+      message: 'Internal server error during validation',
     });
   }
 });
 
-// Monday.com validation function
-async function validateMondayConfig(config: any): Promise<{ valid: boolean; message: string }> {
-  if (!config.apiKey) {
-    return { valid: false, message: 'API Key is required' };
-  }
+// GET /api/platforms (list available platforms)
+router.get('/', (req: AuthenticatedRequest, res: Response) => {
+  const platforms = [
+    {
+      id: 'jira',
+      name: 'Jira',
+      description: 'Sync issues, epics, and sprint data from Jira Cloud',
+      supported: true,
+      configFields: ['domain', 'email', 'apiToken', 'projectKey'],
+    },
+    {
+      id: 'github',
+      name: 'GitHub',
+      description: 'Sync repositories, issues, and pull requests',
+      supported: false,
+      configFields: ['token', 'organization', 'repository'],
+    },
+    {
+      id: 'slack',
+      name: 'Slack',
+      description: 'Send notifications and sync team communication',
+      supported: false,
+      configFields: ['webhookUrl', 'channel'],
+    },
+  ];
 
-  try {
-    const query = `query { me { name email } }`;
-    const response = await axios.post('https://api.monday.com/v2', 
-      { query },
-      {
-        headers: {
-          'Authorization': config.apiKey,
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
-      }
-    );
+  res.json({ platforms });
+});
 
-    if (response.data?.data?.me) {
-      return { valid: true, message: 'Monday.com connection successful' };
-    } else {
-      return { valid: false, message: 'Invalid response from Monday.com API' };
-    }
-  } catch (error) {
-    logger.error('Monday.com validation failed:', error);
-    
-    let errorMessage = 'Connection test failed';
-    
-    // Fix: Use type guard for Axios errors
-    if (axios.isAxiosError(error)) {
-      if (error.response?.status === 401) {
-        errorMessage = 'Invalid API key';
-      } else if (error.response?.status === 403) {
-        errorMessage = 'API key does not have sufficient permissions';
-      }
-    }
-    
-    return { valid: false, message: errorMessage };
-  }
-}
+// GET /api/platforms/:platformId (get platform details)
+router.get('/:platformId', (req: AuthenticatedRequest, res: Response) => {
+  const { platformId } = req.params;
+  
+  const platformDetails: Record<string, any> = {
+    jira: {
+      id: 'jira',
+      name: 'Jira',
+      description: 'Sync issues, epics, and sprint data from Jira Cloud',
+      supported: true,
+      configFields: [
+        { name: 'domain', label: 'Jira Domain', type: 'text', placeholder: 'company.atlassian.net', required: true },
+        { name: 'email', label: 'Email', type: 'email', placeholder: 'your-email@company.com', required: true },
+        { name: 'apiToken', label: 'API Token', type: 'password', placeholder: 'Your Jira API token', required: true },
+        { name: 'projectKey', label: 'Project Key', type: 'text', placeholder: 'PROJ', required: true },
+      ],
+      documentation: 'https://developer.atlassian.com/cloud/jira/platform/rest/v3/',
+    },
+  };
 
-// Jira validation function  
-async function validateJiraConfig(config: any): Promise<{ valid: boolean; message: string }> {
-  if (!config.domain || !config.email || !config.apiToken || !config.projectKey) {
-    return { valid: false, message: 'Domain, email, API token, and project key are required' };
-  }
-
-  try {
-    const normalizedDomain = config.domain.replace(/^https?:\/\//, '');
-    const auth = Buffer.from(`${config.email}:${config.apiToken}`).toString('base64');
-    
-    const userResponse = await axios.get(`https://${normalizedDomain}/rest/api/3/myself`, {
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json'
-      },
-      timeout: 10000
+  const platform = platformDetails[platformId.toLowerCase()];
+  
+  if (!platform) {
+    return res.status(404).json({
+      error: 'Platform not found',
+      message: `Platform '${platformId}' is not supported`,
     });
-
-    if (userResponse.data?.emailAddress) {
-      return { valid: true, message: 'Jira connection successful' };
-    } else {
-      return { valid: false, message: 'Invalid authentication response' };
-    }
-  } catch (error) {
-    logger.error('Jira validation failed:', error);
-    
-    let errorMessage = 'Connection test failed';
-    
-    // Fix: Use type guard for Axios errors
-    if (axios.isAxiosError(error)) {
-      if (error.response?.status === 401) {
-        errorMessage = 'Invalid email or API token';
-      } else if (error.response?.status === 403) {
-        errorMessage = 'API token does not have sufficient permissions';
-      } else if (error.response?.status === 404) {
-        errorMessage = 'Jira instance not found';
-      }
-    }
-    
-    return { valid: false, message: errorMessage };
-  }
-}
-
-// TROFOS validation function
-async function validateTrofosConfig(config: any): Promise<{ valid: boolean; message: string }> {
-  if (!config.serverUrl || !config.apiKey || !config.projectId) {
-    return { valid: false, message: 'Server URL, API key, and project ID are required' };
   }
 
-  try {
-    const serverUrl = config.serverUrl.replace(/\/$/, '');
-    
-    const response = await axios.post(`${serverUrl}/v1/project`, {
-      pageNum: 1,
-      pageSize: 1,
-      sort: 'name',
-      direction: 'ASC'
-    }, {
-      headers: {
-        'Authorization': `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      timeout: 10000
-    });
-
-    if (response.status === 200) {
-      return { valid: true, message: 'TROFOS connection successful' };
-    } else {
-      return { valid: false, message: 'Unexpected response from TROFOS server' };
-    }
-  } catch (error) {
-    logger.error('TROFOS validation failed:', error);
-    
-    let errorMessage = 'Connection test failed';
-    
-    // Fix: Use type guard for Axios errors
-    if (axios.isAxiosError(error)) {
-      if (error.response?.status === 401) {
-        errorMessage = 'Invalid API key';
-      } else if (error.response?.status === 403) {
-        errorMessage = 'API key does not have sufficient permissions';
-      }
-    }
-    
-    return { valid: false, message: errorMessage };
-  }
-}
+  res.json(platform);
+});
 
 export default router;

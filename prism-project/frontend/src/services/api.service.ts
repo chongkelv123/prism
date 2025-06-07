@@ -1,54 +1,102 @@
-// frontend/src/services/api.service.ts - FIXED VERSION (No automatic redirect)
-import axios from 'axios';
+// frontend/src/services/api.service.ts
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 
-// Get API URL from environment variables
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+class ApiService {
+  private client: AxiosInstance;
 
-// Create axios instance with common configuration
-const apiClient = axios.create({
-  baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+  constructor() {
+    this.client = axios.create({
+      baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:3000',
+      timeout: 10000,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
 
-// Request interceptor to add authentication token
-apiClient.interceptors.request.use(
-  (config) => {
+    // Request interceptor to add authentication token
+    this.client.interceptors.request.use(
+      (config) => {
+        // Get token from localStorage or sessionStorage
+        const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+        
+        if (token) {
+          config.headers['Authorization'] = `Bearer ${token}`;
+          console.debug('Adding Authorization header to request:', config.url);
+        } else {
+          console.warn('No auth token found for request:', config.url);
+        }
+        
+        return config;
+      },
+      (error) => {
+        console.error('Request interceptor error:', error);
+        return Promise.reject(error);
+      }
+    );
+
+    // Response interceptor to handle auth errors
+    this.client.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.response?.status === 401) {
+          console.warn('401 Unauthorized - clearing auth token');
+          // Clear stored tokens
+          localStorage.removeItem('authToken');
+          sessionStorage.removeItem('authToken');
+          
+          // Dispatch custom event to notify auth context
+          window.dispatchEvent(new CustomEvent('auth-expired'));
+        }
+        return Promise.reject(error);
+      }
+    );
+  }
+
+  // Generic request method
+  async request<T = any>(config: AxiosRequestConfig): Promise<T> {
+    try {
+      const response: AxiosResponse<T> = await this.client.request(config);
+      return response.data;
+    } catch (error) {
+      console.error('API request failed:', error);
+      throw error;
+    }
+  }
+
+  // Convenience methods
+  async get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    return this.request<T>({ ...config, method: 'GET', url });
+  }
+
+  async post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    return this.request<T>({ ...config, method: 'POST', url, data });
+  }
+
+  async put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    return this.request<T>({ ...config, method: 'PUT', url, data });
+  }
+
+  async delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    return this.request<T>({ ...config, method: 'DELETE', url });
+  }
+
+  // Method to check if user is authenticated (has valid token)
+  isAuthenticated(): boolean {
     const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
+    return !!token;
   }
-);
 
-// Response interceptor to handle common errors - FIXED VERSION
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    // Handle 401 Unauthorized errors (expired or invalid token)
-    if (error.response && error.response.status === 401) {
-      console.warn('🔒 API: 401 Unauthorized - Token may be invalid or expired');
-      
-      // Clear stored tokens
-      localStorage.removeItem('authToken');
-      sessionStorage.removeItem('authToken');
-      
-      // ⚠️ IMPORTANT: Do NOT automatically redirect here!
-      // Let individual components/contexts handle 401 errors appropriately
-      // Some contexts (like ConnectionsProvider) should handle 401s gracefully
-      // Only login-specific operations should trigger redirects
-      
-      // Add a custom property to the error to indicate auth failure
-      error.isAuthError = true;
-    }
-    
-    return Promise.reject(error);
+  // Method to manually set authorization header (for testing)
+  setAuthToken(token: string): void {
+    localStorage.setItem('authToken', token);
   }
-);
 
-export default apiClient;
+  // Method to clear auth token
+  clearAuthToken(): void {
+    localStorage.removeItem('authToken');
+    sessionStorage.removeItem('authToken');
+  }
+}
+
+export const apiClient = new ApiService();
+export default ApiService;

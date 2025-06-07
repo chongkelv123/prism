@@ -13,6 +13,11 @@ export default defineConfig({
       }
     }
   },
+  // Ensure environment variables are properly typed
+  define: {
+    // This is for compatibility with some libraries that might check for process.env.NODE_ENV
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development')
+  },
   test: {
     globals: true,
     environment: 'jsdom',

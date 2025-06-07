@@ -1,28 +1,38 @@
-// backend/services/platform-integrations-service/src/routes/connectionRoutes.ts
-import { Router } from 'express';
+// src/routes/connectionRoutes.ts
+
+import { Router, Request, Response } from 'express';
 import { ConnectionService } from '../services/ConnectionService';
 import { authenticateJWT } from '../middleware/auth';
 import logger from '../utils/logger';
 
+/**
+ * Extend Express’s Request so that `req.user?.userId` is known to TypeScript.
+ * Your JWT middleware attaches `{ userId: string }` on req.user.
+ */
+interface AuthRequest extends Request {
+  user?: { userId: string };
+}
+
 const router = Router();
 const connectionService = new ConnectionService();
 
-// Apply authentication to all routes
+// All routes require a valid JWT
 router.use(authenticateJWT);
 
-// Create a new connection
-router.post('/', async (req, res) => {
+/**
+ * Create a new connection
+ */
+router.post('/', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
+    const { name, platform, config } = req.body;
+
     if (!userId) {
       return res.status(401).json({ message: 'User ID required' });
     }
-
-    const { name, platform, config } = req.body;
-
     if (!name || !platform || !config) {
-      return res.status(400).json({ 
-        message: 'Name, platform, and config are required' 
+      return res.status(400).json({
+        message: 'Name, platform, and config are required'
       });
     }
 
@@ -32,7 +42,7 @@ router.post('/', async (req, res) => {
       config
     });
 
-    // Return connection without sensitive config data
+    // Strip out sensitive config before returning
     const safeConnection = {
       id: connection.id,
       name: connection.name,
@@ -51,8 +61,10 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Get all connections for user
-router.get('/', async (req, res) => {
+/**
+ * List all connections for the authenticated user
+ */
+router.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     if (!userId) {
@@ -60,8 +72,6 @@ router.get('/', async (req, res) => {
     }
 
     const connections = await connectionService.getConnections(userId);
-    
-    // Return connections without sensitive config data
     const safeConnections = connections.map(conn => ({
       id: conn.id,
       name: conn.name,
@@ -80,8 +90,10 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get specific connection
-router.get('/:connectionId', async (req, res) => {
+/**
+ * Get details of a single connection
+ */
+router.get('/:connectionId', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const { connectionId } = req.params;
@@ -95,7 +107,6 @@ router.get('/:connectionId', async (req, res) => {
       return res.status(404).json({ message: 'Connection not found' });
     }
 
-    // Return connection without sensitive config data
     const safeConnection = {
       id: connection.id,
       name: connection.name,
@@ -114,8 +125,10 @@ router.get('/:connectionId', async (req, res) => {
   }
 });
 
-// Test connection
-router.post('/:connectionId/test', async (req, res) => {
+/**
+ * Test (validate) a connection’s credentials
+ */
+router.post('/:connectionId/test', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const { connectionId } = req.params;
@@ -125,8 +138,7 @@ router.post('/:connectionId/test', async (req, res) => {
     }
 
     const isConnected = await connectionService.testConnection(userId, connectionId);
-    
-    res.json({ 
+    res.json({
       success: isConnected,
       status: isConnected ? 'connected' : 'error',
       message: isConnected ? 'Connection successful' : 'Connection failed'
@@ -138,8 +150,10 @@ router.post('/:connectionId/test', async (req, res) => {
   }
 });
 
-// Sync connection
-router.post('/:connectionId/sync', async (req, res) => {
+/**
+ * Kick off a sync of the connection’s data
+ */
+router.post('/:connectionId/sync', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const { connectionId } = req.params;
@@ -149,11 +163,7 @@ router.post('/:connectionId/sync', async (req, res) => {
     }
 
     await connectionService.syncConnection(userId, connectionId);
-    
-    res.json({ 
-      success: true,
-      message: 'Connection synced successfully' 
-    });
+    res.json({ success: true, message: 'Sync started' });
   } catch (error) {
     logger.error('Sync connection error:', error);
     const message = error instanceof Error ? error.message : 'Connection sync failed';
@@ -161,8 +171,10 @@ router.post('/:connectionId/sync', async (req, res) => {
   }
 });
 
-// Delete connection
-router.delete('/:connectionId', async (req, res) => {
+/**
+ * Delete a connection
+ */
+router.delete('/:connectionId', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const { connectionId } = req.params;
@@ -172,11 +184,7 @@ router.delete('/:connectionId', async (req, res) => {
     }
 
     await connectionService.deleteConnection(userId, connectionId);
-    
-    res.json({ 
-      success: true,
-      message: 'Connection deleted successfully' 
-    });
+    res.json({ success: true, message: 'Connection deleted successfully' });
   } catch (error) {
     logger.error('Delete connection error:', error);
     const message = error instanceof Error ? error.message : 'Failed to delete connection';
@@ -184,8 +192,10 @@ router.delete('/:connectionId', async (req, res) => {
   }
 });
 
-// Get project data from connection
-router.get('/:connectionId/projects', async (req, res) => {
+/**
+ * Get project data via query parameter `?projectId=...`
+ */
+router.get('/:connectionId/projects', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const { connectionId } = req.params;
@@ -196,11 +206,10 @@ router.get('/:connectionId/projects', async (req, res) => {
     }
 
     const projectData = await connectionService.getProjectData(
-      userId, 
-      connectionId, 
+      userId,
+      connectionId,
       projectId as string
     );
-    
     res.json(projectData);
   } catch (error) {
     logger.error('Get project data error:', error);

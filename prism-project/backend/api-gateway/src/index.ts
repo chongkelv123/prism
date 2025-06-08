@@ -1,9 +1,10 @@
-// backend/api-gateway/src/index.ts - SIMPLIFIED FIX
+// backend/api-gateway/src/index.ts - ADD JIRA PROXY ROUTE
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import proxy from 'express-http-proxy';
 import dotenv from 'dotenv';
+import jiraProxy from './routes/jiraProxy'; // ADD THIS LINE
 
 dotenv.config();
 
@@ -19,6 +20,9 @@ app.use(express.json());
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://localhost:4000';
 const REPORT_SERVICE_URL = process.env.REPORT_SERVICE_URL || 'http://localhost:4002';
 const PLATFORM_INTEGRATIONS_SERVICE_URL = process.env.PLATFORM_INTEGRATIONS_SERVICE_URL || 'http://localhost:4005';
+
+// ADD JIRA PROXY ROUTE - INSERT THIS BEFORE OTHER ROUTES
+app.use('/api/jira-proxy', jiraProxy);
 
 // Enhanced error handling for proxy
 const createProxyOptions = (serviceUrl: string, serviceName: string) => ({
@@ -47,7 +51,8 @@ app.get('/health', (req, res) => {
     services: {
       auth: AUTH_SERVICE_URL,
       platformIntegrations: PLATFORM_INTEGRATIONS_SERVICE_URL,
-      reportGeneration: REPORT_SERVICE_URL
+      reportGeneration: REPORT_SERVICE_URL,
+      jiraProxy: 'enabled' // ADD THIS LINE
     }
   });
 });
@@ -85,7 +90,7 @@ app.use('/api/connections', proxy(PLATFORM_INTEGRATIONS_SERVICE_URL, {
   }
 }));
 
-// NEW: Platform integrations general routes
+// Platform integrations general routes
 app.use('/api/platform-integrations', proxy(PLATFORM_INTEGRATIONS_SERVICE_URL, {
   ...createProxyOptions(PLATFORM_INTEGRATIONS_SERVICE_URL, 'platform-integrations-service'),
   proxyReqPathResolver: (req) => {
@@ -133,6 +138,7 @@ app.use('/api/*', (req, res) => {
       'GET /api/auth/me',
       'POST /api/auth/login', 
       'POST /api/auth/register',
+      'POST /api/jira-proxy/test-connection', // ADD THIS LINE
       'GET /api/platforms',
       'POST /api/platforms/:platformId/validate',
       'GET /api/connections',
@@ -150,6 +156,7 @@ app.listen(PORT, () => {
   console.log(`Health check: http://localhost:${PORT}/health`);
   console.log(`Service routes:`);
   console.log(`  - Auth: /api/auth/* -> ${AUTH_SERVICE_URL}`);
+  console.log(`  - Jira Proxy: /api/jira-proxy/* -> Direct proxy`); // ADD THIS LINE
   console.log(`  - Platforms: /api/platforms/* -> ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);
   console.log(`  - Connections: /api/connections/* -> ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);
   console.log(`  - Platform Integrations: /api/platform-integrations/* -> ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);

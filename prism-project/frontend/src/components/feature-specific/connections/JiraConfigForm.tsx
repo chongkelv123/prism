@@ -1,7 +1,6 @@
-// frontend/src/components/feature-specific/connections/JiraConfigForm.tsx - UPDATED TO USE SIMPLE CONNECTION
+// frontend/src/components/feature-specific/connections/JiraConfigForm.tsx - COMPLETE SIMPLE VERSION
 import React, { useState } from 'react';
 import { Eye, EyeOff, ExternalLink, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
-import { simpleJiraService, type JiraCredentials, type JiraTestStep } from '../../../services/simpleJira.service';
 
 interface JiraConfigFormProps {
   onSubmit: (data: any) => void;
@@ -19,7 +18,7 @@ interface JiraConfig {
 
 const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSubmitting }) => {
   const [config, setConfig] = useState<JiraConfig>({
-    name: '',
+    name: 'PRISM Jira Connection',
     domain: 'chongkelv.atlassian.net',
     email: 'chongkelv@gmail.com',
     apiToken: '',
@@ -28,21 +27,18 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
   
   const [showApiToken, setShowApiToken] = useState(false);
   const [errors, setErrors] = useState<Partial<JiraConfig>>({});
-  const [isTestingConnection, setIsTestingConnection] = useState(false);
-  const [connectionTested, setConnectionTested] = useState(false);
-  const [testResults, setTestResults] = useState<JiraTestStep[]>([]);
-  const [testError, setTestError] = useState<string | null>(null);
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testMessage, setTestMessage] = useState<string>('');
 
   const handleChange = (field: keyof JiraConfig, value: string) => {
     setConfig(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: undefined }));
     }
-    // Reset connection test when credentials change
-    if (field === 'domain' || field === 'email' || field === 'apiToken' || field === 'projectKey') {
-      setConnectionTested(false);
-      setTestResults([]);
-      setTestError(null);
+    // Reset test when credentials change
+    if (field !== 'name' && testStatus !== 'idle') {
+      setTestStatus('idle');
+      setTestMessage('');
     }
   };
 
@@ -80,83 +76,101 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
       return;
     }
 
-    setIsTestingConnection(true);
-    setTestError(null);
-    setTestResults([]);
+    setTestStatus('testing');
+    setTestMessage('Testing connection...');
     
     try {
-      console.log('🔄 Testing Jira connection using simple service...');
+      console.log('🔄 Testing Jira connection...');
       
-      const result = await simpleJiraService.testConnection({
-        email: config.email.trim(),
-        apiToken: config.apiToken.trim(),
-        domain: config.domain.trim(),
-        projectKey: config.projectKey.trim().toUpperCase()
+      const response = await fetch('/api/jira-proxy/test-connection', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: config.email.trim(),
+          apiToken: config.apiToken.trim(),
+          domain: config.domain.trim(),
+          projectKey: config.projectKey.trim().toUpperCase()
+        })
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: Connection failed`);
+      }
+
+      const result = await response.json();
       
-      console.log('✅ Simple Jira service result:', result);
-      
-      setTestResults(result.steps);
-      setConnectionTested(result.success);
-      
-      if (!result.success && result.error) {
-        setTestError(result.error);
-        setErrors({ apiToken: result.error });
-      } else {
+      if (result.success) {
+        setTestStatus('success');
+        setTestMessage('Connection successful! Ready to create connection.');
         setErrors({});
+      } else {
+        setTestStatus('error');
+        setTestMessage(result.error || 'Connection test failed');
+        setErrors({ apiToken: result.error || 'Connection test failed' });
       }
     } catch (error) {
-      console.error('❌ Jira connection test failed:', error);
-      
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : 'Failed to test connection. Please check your network and try again.';
-      
+      console.error('❌ Connection test failed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Connection test failed';
+      setTestStatus('error');
+      setTestMessage(errorMessage);
       setErrors({ apiToken: errorMessage });
-      setTestError(errorMessage);
-      setConnectionTested(false);
-    } finally {
-      setIsTestingConnection(false);
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!validateForm()) return;
+    console.log('🔄 JiraConfigForm: Form submitted');
     
-    if (!connectionTested) {
+    if (!validateForm()) {
+      console.log('❌ Form validation failed');
+      return;
+    }
+    
+    if (testStatus !== 'success') {
+      console.log('❌ Connection not tested');
       setErrors({ apiToken: 'Please test the connection before submitting' });
       return;
     }
 
-    // Submit the configuration using the same format as before
-    onSubmit({
+    console.log('✅ Creating connection...');
+    
+    // Create connection data
+    const connectionData = {
       name: config.name.trim(),
-      platform: 'jira',
+      platform: 'jira' as const,
       config: {
         domain: config.domain.trim(),
         email: config.email.trim(),
         apiToken: config.apiToken.trim(),
         projectKey: config.projectKey.trim().toUpperCase()
       }
-    });
+    };
+    
+    console.log('📦 Connection data prepared');
+    
+    // Call parent's onSubmit - this should NOT cause redirects
+    onSubmit(connectionData);
   };
 
-  const getStatusIcon = (status: JiraTestStep['status']) => {
-    switch (status) {
+  const getTestStatusIcon = () => {
+    switch (testStatus) {
       case 'success':
         return <CheckCircle size={16} className="text-green-500" />;
       case 'error':
         return <AlertCircle size={16} className="text-red-500" />;
-      case 'pending':
+      case 'testing':
         return <RefreshCw size={16} className="text-blue-500 animate-spin" />;
       default:
-        return <div className="w-4 h-4 border border-gray-300 rounded-full" />;
+        return null;
     }
   };
 
   const isFormValid = config.name && config.email && config.apiToken && config.domain && config.projectKey;
+  const canTest = isFormValid && testStatus !== 'testing';
+  const canSubmit = testStatus === 'success' && !isSubmitting;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -168,7 +182,7 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
           Connect to Jira
         </h3>
         <p className="text-gray-600">
-          Enter your Jira Cloud credentials (using simple, reliable connection method)
+          Enter your Jira Cloud credentials (same approach as your PowerShell script)
         </p>
       </div>
 
@@ -181,7 +195,7 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
           type="text"
           value={config.name}
           onChange={(e) => handleChange('name', e.target.value)}
-          placeholder="e.g., Jira PRISM Project"
+          placeholder="PRISM Jira Connection"
           className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
             errors.name ? 'border-red-500' : 'border-gray-300'
           }`}
@@ -189,28 +203,6 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
         {errors.name && (
           <p className="mt-1 text-sm text-red-600">{errors.name}</p>
         )}
-      </div>
-
-      {/* Jira Domain */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Jira Domain
-        </label>
-        <input
-          type="text"
-          value={config.domain}
-          onChange={(e) => handleChange('domain', e.target.value)}
-          placeholder="chongkelv.atlassian.net"
-          className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-            errors.domain ? 'border-red-500' : 'border-gray-300'
-          }`}
-        />
-        {errors.domain && (
-          <p className="mt-1 text-sm text-red-600">{errors.domain}</p>
-        )}
-        <p className="mt-1 text-sm text-gray-500">
-          Your Jira Cloud domain (without https://)
-        </p>
       </div>
 
       {/* Email */}
@@ -271,6 +263,28 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
         </div>
       </div>
 
+      {/* Jira Domain */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Jira Domain
+        </label>
+        <input
+          type="text"
+          value={config.domain}
+          onChange={(e) => handleChange('domain', e.target.value)}
+          placeholder="chongkelv.atlassian.net"
+          className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+            errors.domain ? 'border-red-500' : 'border-gray-300'
+          }`}
+        />
+        {errors.domain && (
+          <p className="mt-1 text-sm text-red-600">{errors.domain}</p>
+        )}
+        <p className="mt-1 text-sm text-gray-500">
+          Your Jira Cloud domain (without https://)
+        </p>
+      </div>
+
       {/* Project Key */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -297,52 +311,26 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
           <button
             type="button"
             onClick={handleTestConnection}
-            disabled={isTestingConnection || !isFormValid}
+            disabled={!canTest}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {isTestingConnection ? (
-              <div className="flex items-center">
-                <RefreshCw size={14} className="animate-spin mr-2" />
-                Testing...
-              </div>
-            ) : (
-              'Test Connection'
-            )}
+            {testStatus === 'testing' ? 'Testing...' : 'Test Connection'}
           </button>
         </div>
         
-        {/* Test Results */}
-        {testResults.length > 0 && (
-          <div className="space-y-2 mb-3">
-            {testResults.map((test, index) => (
-              <div key={index} className="flex items-start space-x-3 p-2 bg-gray-50 rounded">
-                {getStatusIcon(test.status)}
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-gray-900">{test.step}</div>
-                  <div className={`text-xs ${test.status === 'error' ? 'text-red-600' : 'text-gray-600'}`}>
-                    {test.message}
-                  </div>
-                </div>
-              </div>
-            ))}
+        {/* Test Status */}
+        {testMessage && (
+          <div className={`flex items-center text-sm ${
+            testStatus === 'success' ? 'text-green-600' : 
+            testStatus === 'error' ? 'text-red-600' : 
+            'text-blue-600'
+          }`}>
+            {getTestStatusIcon()}
+            <span className="ml-2">{testMessage}</span>
           </div>
         )}
         
-        {testError && (
-          <div className="flex items-center text-red-600 text-sm mb-3">
-            <AlertCircle size={14} className="mr-2" />
-            <span>{testError}</span>
-          </div>
-        )}
-        
-        {connectionTested && (
-          <div className="flex items-center text-green-600 text-sm">
-            <CheckCircle size={14} className="mr-2" />
-            <span>Connection successful! Ready to create connection.</span>
-          </div>
-        )}
-        
-        {!testResults.length && !testError && (
+        {testStatus === 'idle' && (
           <div className="flex items-start text-gray-500 text-sm">
             <AlertCircle size={14} className="mr-2 mt-0.5 flex-shrink-0" />
             <span>
@@ -357,19 +345,54 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
         <button
           type="button"
           onClick={onBack}
-          className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+          disabled={isSubmitting}
+          className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
         >
           Back
         </button>
         
         <button
           type="submit"
-          disabled={isSubmitting || !connectionTested}
+          disabled={!canSubmit}
           className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {isSubmitting ? 'Creating...' : 'Create Connection'}
+          {isSubmitting ? (
+            <div className="flex items-center">
+              <RefreshCw size={14} className="animate-spin mr-2" />
+              Creating...
+            </div>
+          ) : (
+            'Create Connection'
+          )}
         </button>
       </div>
+
+      {/* Simple Instructions */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <h4 className="text-sm font-medium text-blue-800 mb-1">
+          Simple Process:
+        </h4>
+        <div className="text-xs text-blue-700 space-y-1">
+          <p>1. Fill in your Jira credentials (same as PowerShell script)</p>
+          <p>2. Click "Test Connection" to verify it works</p>
+          <p>3. Click "Create Connection" to save it</p>
+          <p>4. No redirects, no complex flows - just works!</p>
+        </div>
+      </div>
+
+      {/* Debug Info */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="bg-gray-100 border border-gray-300 rounded-lg p-3">
+          <h4 className="text-xs font-medium text-gray-700 mb-1">Debug Info:</h4>
+          <div className="text-xs text-gray-600 space-y-1">
+            <p>Form Valid: {isFormValid ? 'Yes' : 'No'}</p>
+            <p>Test Status: {testStatus}</p>
+            <p>Can Test: {canTest ? 'Yes' : 'No'}</p>
+            <p>Can Submit: {canSubmit ? 'Yes' : 'No'}</p>
+            <p>Is Submitting: {isSubmitting ? 'Yes' : 'No'}</p>
+          </div>
+        </div>
+      )}
     </form>
   );
 };

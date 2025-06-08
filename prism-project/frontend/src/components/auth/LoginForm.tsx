@@ -16,11 +16,6 @@ interface LoginFormProps {
 const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
   const { formData, errors, isLoading, handleChange, handleSubmit } = useLoginForm(onLoginSuccess);
 
-  // Add this before the return statement
-  const testClick = () => {
-    console.log('🔴 Submit button clicked!');
-  };
-
   return (
     <CenteredCard>
       <div className="text-center mb-6">
@@ -59,6 +54,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
               type="checkbox"
               checked={formData.remember}
               onChange={handleChange}
+              disabled={isLoading}
               className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
             />
             <label htmlFor="remember" className="ml-2 block text-sm text-gray-700">
@@ -69,11 +65,11 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
         </div>              
 
         <PrimaryButton 
-        isLoading={isLoading} 
-        disabled={isLoading}
-        onClick={testClick} // Add this line temporarily
+          isLoading={isLoading} 
+          disabled={isLoading}
+          type="submit"
         >
-          Sign in
+          {isLoading ? 'Signing in...' : 'Sign in'}
         </PrimaryButton>
         
         <div className="mt-6 text-center">

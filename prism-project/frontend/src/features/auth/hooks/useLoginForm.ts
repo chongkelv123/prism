@@ -56,31 +56,31 @@ export const useLoginForm = (onSuccess?: () => void) => {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    console.log('🔴 Form submit triggered'); // Add this
+    console.log('🔴 Form submit triggered');
     e.preventDefault();
     
-    console.log('🔴 Form data:', formData); // Add this
+    console.log('🔴 Form data:', formData);
     
     if (!validate()) {
-      console.log('🔴 Form validation failed'); // Add this
+      console.log('🔴 Form validation failed');
       return;
     }
     
-    console.log('🔴 Form validation passed, setting loading...'); // Add this
+    console.log('🔴 Form validation passed, setting loading...');
     setIsLoading(true);
     
     try {
       console.log('🔄 Starting login process...');
       
-      // Call login service to get token
-      const { accessToken } = await login(formData.email, formData.password);
+      // Step 1: Call login service to get token
+      const loginResponse = await login(formData.email, formData.password);
       console.log('✅ Login service successful, got token');
       
-      // Use the AuthContext login method and WAIT for it to complete
-      await authLogin(accessToken, formData.remember);
+      // Step 2: Use AuthContext to store token and fetch user data
+      await authLogin(loginResponse.accessToken, formData.remember);
       console.log('✅ AuthContext login completed');
       
-      // Call onSuccess callback if provided
+      // Step 3: Handle success
       if (onSuccess) {
         onSuccess();
         return; // Don't navigate if callback is provided
@@ -97,18 +97,27 @@ export const useLoginForm = (onSuccess?: () => void) => {
       
       console.log(`🚀 Redirecting to: ${redirectTo}`);
       
-      // Use a Promise-based timeout to ensure React has time to update the auth state
-      await new Promise(resolve => {
-        setTimeout(() => {
-          navigate(redirectTo, { replace: true });
-          resolve(void 0);
-        }, 150); // Small delay to prevent race conditions
-      });
+      // Navigate with a small delay to ensure React state updates
+      setTimeout(() => {
+        navigate(redirectTo, { replace: true });
+      }, 100);
       
     } catch (err: any) {
       console.error('❌ Login error:', err);
+      
+      // Extract error message from response
+      let errorMessage = 'Login failed. Please try again.';
+      
+      if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.message === 'Invalid email or password') {
+        errorMessage = 'Invalid email or password';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
       setErrors({ 
-        general: err.message || 'Invalid email or password. Please try again.' 
+        general: errorMessage
       });
     } finally {
       setIsLoading(false);

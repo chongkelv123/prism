@@ -1,17 +1,10 @@
-// frontend/src/pages/ConnectionsPage.tsx - FIXED VERSION (Internal ConnectionsProvider)
+// frontend/src/pages/ConnectionsPage.tsx - COMPLETE WORKING VERSION
 import React, { useState, useCallback } from 'react';
-import { ConnectionsProvider, useConnections } from '../contexts/ConnectionsContext';
+import { ConnectionsProvider, useConnections, type ConnectionConfig } from '../contexts/ConnectionsContext';
 import MainLayout from '../components/layout/MainLayout';
 import ConnectionsHeader from '../components/feature-specific/connections/ConnectionsHeader';
 import ConnectionsList from '../components/feature-specific/connections/ConnectionsList';
 import AddConnectionModal from '../components/feature-specific/connections/AddConnectionModal';
-import ServiceAvailabilityBanner from '../components/common/ServiceAvailabilityBanner';
-
-interface ConnectionConfig {
-  name: string;
-  platform: 'monday' | 'jira' | 'trofos';
-  config: Record<string, any>;
-}
 
 // Internal component that uses ConnectionsContext
 const ConnectionsPageContent: React.FC = () => {
@@ -37,13 +30,17 @@ const ConnectionsPageContent: React.FC = () => {
     setIsAddModalOpen(true);
   }, [isServiceAvailable]);
 
-  const handleConnectionAdded = useCallback(async (newConnectionData: ConnectionConfig) => {
+  const handleConnectionAdded = useCallback(async (newConnectionData: any) => {
     try {
-      await createConnection(newConnectionData);
+      await createConnection({
+        name: newConnectionData.name,
+        platform: newConnectionData.platform,
+        config: newConnectionData.config
+      });
       setIsAddModalOpen(false);
     } catch (error) {
       console.error('Failed to create connection:', error);
-      // Error handling is done in the context
+      // Error is already handled in the context
     }
   }, [createConnection]);
 
@@ -55,9 +52,11 @@ const ConnectionsPageContent: React.FC = () => {
         console.log('Connection test successful');
       } else {
         console.error('Connection test failed:', result.message);
+        alert(`Connection test failed: ${result.message}`);
       }
     } catch (error) {
       console.error('Failed to test connection:', error);
+      alert('Failed to test connection');
     } finally {
       setActionLoading(null);
     }
@@ -71,9 +70,11 @@ const ConnectionsPageContent: React.FC = () => {
         console.log('Connection synced successfully');
       } else {
         console.error('Connection sync failed:', result.message);
+        alert(`Connection sync failed: ${result.message}`);
       }
     } catch (error) {
       console.error('Failed to sync connection:', error);
+      alert('Failed to sync connection');
     } finally {
       setActionLoading(null);
     }
@@ -91,9 +92,11 @@ const ConnectionsPageContent: React.FC = () => {
         console.log('Connection deleted successfully');
       } else {
         console.error('Failed to delete connection:', result.message);
+        alert(`Failed to delete connection: ${result.message}`);
       }
     } catch (error) {
       console.error('Failed to delete connection:', error);
+      alert('Failed to delete connection');
     } finally {
       setActionLoading(null);
     }
@@ -105,16 +108,48 @@ const ConnectionsPageContent: React.FC = () => {
         <ConnectionsHeader onAddConnection={handleAddConnection} />
         
         {/* Service Availability Banner */}
-        <ServiceAvailabilityBanner />
+        {!isServiceAvailable && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-start">
+              <div className="text-yellow-600 mr-3 mt-0.5">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-yellow-800 mb-1">
+                  Platform Integrations Service Unavailable
+                </h3>
+                <p className="text-sm text-yellow-700">
+                  Some features may be limited. Make sure the platform integrations service is running.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* Error Display */}
-        {error && isServiceAvailable && (
+        {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
             <div className="flex items-center">
               <svg className="h-5 w-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
               </svg>
               <span>{error}</span>
+            </div>
+          </div>
+        )}
+        
+        {/* Debug Info (Development Only) */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+            <h4 className="font-medium text-blue-800 mb-2">Debug Info:</h4>
+            <div className="text-xs text-blue-700 space-y-1">
+              <div>Connections: {connections ? connections.length : 'undefined'} items</div>
+              <div>Is Array: {Array.isArray(connections) ? 'Yes' : 'No'}</div>
+              <div>Loading: {isLoading ? 'Yes' : 'No'}</div>
+              <div>Service Available: {isServiceAvailable ? 'Yes' : 'No'}</div>
+              <div>Error: {error || 'None'}</div>
             </div>
           </div>
         )}
@@ -132,7 +167,7 @@ const ConnectionsPageContent: React.FC = () => {
         {/* Connections List */}
         {!isLoading && (
           <ConnectionsList 
-            connections={connections}
+            connections={connections || []}
             isLoading={actionLoading !== null}
             onTestConnection={handleTestConnection}
             onSyncConnection={handleSyncConnection}
@@ -154,9 +189,9 @@ const ConnectionsPageContent: React.FC = () => {
   );
 };
 
-// Main component that provides ConnectionsProvider only when needed
+// Main component that provides ConnectionsProvider
 const ConnectionsPage: React.FC = () => {
-  console.log('🔄 ConnectionsPage: Rendering with internal ConnectionsProvider');
+  console.log('🔄 ConnectionsPage: Rendering with ConnectionsProvider');
   
   return (
     <ConnectionsProvider>

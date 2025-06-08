@@ -1,18 +1,20 @@
-// frontend/src/contexts/AuthContext.tsx
+// frontend/src/contexts/AuthContext.tsx - FIXED VERSION
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { apiClient } from '../services/api.service';
+import { getCurrentUser } from '../services/auth.service';
 
 interface User {
   id: string;
   email: string;
-  name: string;
+  firstName?: string;
+  lastName?: string;
+  name?: string;
 }
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
+  login: (token: string, rememberMe?: boolean) => Promise<void>;
   logout: () => void;
   checkAuthStatus: () => Promise<void>;
 }
@@ -61,20 +63,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
       
       if (!token) {
+        console.log('No auth token found');
         setIsAuthenticated(false);
         setUser(null);
         return;
       }
 
-      // Verify token with backend
-      const response = await apiClient.get('/api/auth/verify');
+      console.log('Token found, verifying with backend...');
       
-      if (response.user) {
-        setUser(response.user);
+      // Verify token with backend using auth service
+      const userData = await getCurrentUser();
+      
+      if (userData) {
+        console.log('✅ User verified:', userData);
+        setUser(userData);
         setIsAuthenticated(true);
       } else {
+        console.log('❌ Invalid token, clearing auth state');
         // Token is invalid
-        apiClient.clearAuthToken();
+        localStorage.removeItem('authToken');
+        sessionStorage.removeItem('authToken');
         setIsAuthenticated(false);
         setUser(null);
       }
@@ -82,7 +90,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.error('Auth status check failed:', error);
       
       // If verification fails, clear auth state
-      apiClient.clearAuthToken();
+      localStorage.removeItem('authToken');
+      sessionStorage.removeItem('authToken');
       setIsAuthenticated(false);
       setUser(null);
     } finally {
@@ -90,49 +99,51 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const login = async (email: string, password: string, rememberMe: boolean = false) => {
+  // This method receives a token and stores it, then fetches user data
+  const login = async (token: string, rememberMe: boolean = false) => {
     try {
-      setIsLoading(true);
+      console.log('🔐 AuthContext: Storing token and fetching user data...');
       
-      const response = await apiClient.post('/api/auth/login', {
-        email,
-        password,
-      });
-
-      if (response.token && response.user) {
-        // Store token based on rememberMe preference
-        if (rememberMe) {
-          localStorage.setItem('authToken', response.token);
-          sessionStorage.removeItem('authToken'); // Clear session storage
-        } else {
-          sessionStorage.setItem('authToken', response.token);
-          localStorage.removeItem('authToken'); // Clear local storage
-        }
-
-        setUser(response.user);
-        setIsAuthenticated(true);
+      // Store token based on rememberMe preference
+      if (rememberMe) {
+        localStorage.setItem('authToken', token);
+        sessionStorage.removeItem('authToken'); // Clear session storage
       } else {
-        throw new Error('Invalid login response');
+        sessionStorage.setItem('authToken', token);
+        localStorage.removeItem('authToken'); // Clear local storage
+      }
+
+      // Fetch user data using the stored token
+      const userData = await getCurrentUser();
+      
+      if (userData) {
+        setUser(userData);
+        setIsAuthenticated(true);
+        console.log('✅ AuthContext: Login successful');
+      } else {
+        throw new Error('Failed to fetch user data after login');
       }
     } catch (error: any) {
-      console.error('Login failed:', error);
+      console.error('❌ AuthContext: Login failed:', error);
+      // Clear tokens on error
+      localStorage.removeItem('authToken');
+      sessionStorage.removeItem('authToken');
       setIsAuthenticated(false);
       setUser(null);
       throw error;
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const logout = () => {
     // Clear tokens
-    apiClient.clearAuthToken();
+    localStorage.removeItem('authToken');
+    sessionStorage.removeItem('authToken');
     
     // Reset state
     setUser(null);
     setIsAuthenticated(false);
     
-    console.log('User logged out');
+    console.log('🚪 User logged out');
   };
 
   const value: AuthContextType = {

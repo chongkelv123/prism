@@ -1,24 +1,38 @@
-// frontend/src/contexts/ConnectionsContext.tsx
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { apiClient } from '../services/api.service';
+// frontend/src/contexts/ConnectionsContext.tsx - COMPLETE WORKING VERSION
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 
-interface ConnectionConfig {
-  domain: string;
-  email: string;
-  apiToken: string;
-  projectKey: string;
+// Types
+export interface Connection {
+  id: string;
+  name: string;
+  platform: 'monday' | 'jira' | 'trofos';
+  status: 'connected' | 'disconnected' | 'error';
+  projectCount: number;
+  lastSync?: string;
+  lastSyncError?: string;
+  createdAt: string;
 }
 
-interface ValidationResult {
-  valid: boolean;
-  message: string;
+export interface ConnectionConfig {
+  name: string;
+  platform: 'monday' | 'jira' | 'trofos';
+  config: Record<string, any>;
 }
 
 interface ConnectionsContextType {
-  validatePlatformConfig: (platform: string, config: ConnectionConfig) => Promise<ValidationResult>;
-  createConnection: (platform: string, name: string, config: ConnectionConfig) => Promise<void>;
+  connections: Connection[];
   isLoading: boolean;
+  error: string | null;
+  isServiceAvailable: boolean;
+  
+  // Actions
+  createConnection: (connectionData: ConnectionConfig) => Promise<void>;
+  refreshConnections: () => Promise<void>;
+  testConnection: (connectionId: string) => Promise<{success: boolean, message: string}>;
+  syncConnection: (connectionId: string) => Promise<{success: boolean, message: string}>;
+  deleteConnection: (connectionId: string) => Promise<{success: boolean, message: string}>;
+  validatePlatformConfig: (platform: string, config: any) => Promise<{valid: boolean, message: string}>;
 }
 
 const ConnectionsContext = createContext<ConnectionsContextType | undefined>(undefined);
@@ -36,158 +50,250 @@ interface ConnectionsProviderProps {
 }
 
 export const ConnectionsProvider: React.FC<ConnectionsProviderProps> = ({ children }) => {
+  const [connections, setConnections] = useState<Connection[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const { isAuthenticated, logout } = useAuth();
+  const [error, setError] = useState<string | null>(null);
+  const [isServiceAvailable, setIsServiceAvailable] = useState<boolean>(true);
+  
+  const { isAuthenticated } = useAuth();
 
-  const handleAuthError = (action: string) => {
-    console.error(`Authentication error during ${action}`);
-    // Force logout to refresh auth state
-    logout();
-  };
+  // Test service availability
+  const checkServiceAvailability = useCallback(async () => {
+    try {
+      const response = await fetch('/api/platforms', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('authToken') || sessionStorage.getItem('authToken')}`
+        }
+      });
+      setIsServiceAvailable(response.ok);
+      return response.ok;
+    } catch (error) {
+      console.error('Service availability check failed:', error);
+      setIsServiceAvailable(false);
+      return false;
+    }
+  }, []);
 
-  const validatePlatformConfig = async (
-    platform: string, 
-    config: ConnectionConfig
-  ): Promise<ValidationResult> => {
+  // Load connections when component mounts and user is authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      checkServiceAvailability().then(available => {
+        if (available) {
+          refreshConnections();
+        }
+      });
+    } else {
+      setConnections([]);
+      setError(null);
+    }
+  }, [isAuthenticated]);
+
+  const refreshConnections = useCallback(async (): Promise<void> => {
+    if (!isAuthenticated) {
+      console.log('User not authenticated, skipping connections refresh');
+      return;
+    }
+
     try {
       setIsLoading(true);
-
-      // Check authentication first
-      if (!isAuthenticated) {
-        return {
-          valid: false,
-          message: 'Authentication required. Please log in again.',
-        };
-      }
-
-      // Validate required fields
-      const requiredFields = ['domain', 'email', 'apiToken', 'projectKey'];
-      const missingFields = requiredFields.filter(field => !config[field as keyof ConnectionConfig]?.trim());
+      setError(null);
       
-      if (missingFields.length > 0) {
-        return {
-          valid: false,
-          message: `Missing required fields: ${missingFields.join(', ')}`,
-        };
+      const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+      const response = await fetch('/api/connections', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        if (response.status === 503) {
+          setIsServiceAvailable(false);
+          setError('Platform integrations service is not available');
+          return;
+        }
+        throw new Error(`Failed to fetch connections: ${response.status}`);
       }
-
-      console.log('Validating platform config:', {
-        platform,
-        configKeys: Object.keys(config),
-        hasToken: !!config.apiToken, // Log presence without exposing token
-      });
-
-      const response = await apiClient.post(`/api/platforms/${platform}/validate`, {
-        config: {
-          domain: config.domain.trim(),
-          email: config.email.trim(),
-          apiToken: config.apiToken.trim(),
-          projectKey: config.projectKey.trim(),
-        },
-      });
-
-      return {
-        valid: response.valid || false,
-        message: response.message || 'Validation completed',
-      };
-
+      
+      const fetchedConnections = await response.json();
+      console.log('✅ Connections fetched:', fetchedConnections);
+      
+      setConnections(Array.isArray(fetchedConnections) ? fetchedConnections : []);
+      setIsServiceAvailable(true);
+      
     } catch (error: any) {
-      console.error('Platform validation error:', error);
-
-      if (error.response?.status === 401) {
-        handleAuthError('validatePlatformConfig');
-        return {
-          valid: false,
-          message: 'Authentication expired. Please log in again.',
-        };
-      }
-
-      if (error.response?.status === 403) {
-        return {
-          valid: false,
-          message: 'Insufficient permissions to validate connection.',
-        };
-      }
-
-      // Handle network errors
-      if (!error.response) {
-        return {
-          valid: false,
-          message: 'Network error. Please check your connection and try again.',
-        };
-      }
-
-      // Extract error message from response
-      const errorMessage = error.response?.data?.message || 
-                          error.response?.data?.error || 
-                          error.message || 
-                          'Connection validation failed';
-
-      return {
-        valid: false,
-        message: errorMessage,
-      };
+      console.error('❌ Failed to fetch connections:', error);
+      setConnections([]);
+      setIsServiceAvailable(false);
+      setError(error.message || 'Failed to fetch connections');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [isAuthenticated]);
 
-  const createConnection = async (
-    platform: string, 
-    name: string, 
-    config: ConnectionConfig
-  ): Promise<void> => {
+  const validatePlatformConfig = useCallback(async (platform: string, config: any): Promise<{valid: boolean, message: string}> => {
+    if (!isAuthenticated) {
+      return { valid: false, message: 'Authentication required' };
+    }
+
+    try {
+      const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+      const response = await fetch(`/api/platforms/${platform}/validate`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ config })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Validation failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      return result;
+    } catch (error: any) {
+      console.error('❌ Failed to validate platform config:', error);
+      return { valid: false, message: error.message || 'Validation failed' };
+    }
+  }, [isAuthenticated]);
+
+  const createConnection = useCallback(async (connectionData: ConnectionConfig): Promise<void> => {
+    if (!isAuthenticated) {
+      throw new Error('Authentication required');
+    }
+
     try {
       setIsLoading(true);
+      setError(null);
 
-      if (!isAuthenticated) {
-        throw new Error('Authentication required');
-      }
-
-      console.log('Creating connection:', {
-        platform,
-        name,
-        configKeys: Object.keys(config),
-      });
-
-      await apiClient.post('/api/connections', {
-        platform,
-        name: name.trim(),
-        config: {
-          domain: config.domain.trim(),
-          email: config.email.trim(),
-          apiToken: config.apiToken.trim(),
-          projectKey: config.projectKey.trim(),
+      const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+      const response = await fetch('/api/connections', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         },
+        body: JSON.stringify(connectionData)
       });
 
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Failed to create connection: ${response.status}`);
+      }
+
+      console.log('✅ Connection created successfully');
+      await refreshConnections();
+      
     } catch (error: any) {
-      console.error('Create connection error:', error);
-
-      if (error.response?.status === 401) {
-        handleAuthError('createConnection');
-        throw new Error('Authentication expired. Please log in again.');
-      }
-
-      if (error.response?.status === 403) {
-        throw new Error('Insufficient permissions to create connection.');
-      }
-
-      const errorMessage = error.response?.data?.message || 
-                          error.response?.data?.error || 
-                          error.message || 
-                          'Failed to create connection';
-
-      throw new Error(errorMessage);
+      console.error('❌ Failed to create connection:', error);
+      setError(error.message || 'Failed to create connection');
+      throw error;
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [isAuthenticated, refreshConnections]);
+
+  const testConnection = useCallback(async (connectionId: string): Promise<{success: boolean, message: string}> => {
+    if (!isAuthenticated) {
+      return { success: false, message: 'Authentication required' };
+    }
+
+    try {
+      const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+      const response = await fetch(`/api/connections/${connectionId}/test`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        return { success: false, message: result.message || 'Test failed' };
+      }
+
+      await refreshConnections();
+      return result;
+    } catch (error: any) {
+      console.error('❌ Failed to test connection:', error);
+      return { success: false, message: error.message || 'Test failed' };
+    }
+  }, [isAuthenticated, refreshConnections]);
+
+  const syncConnection = useCallback(async (connectionId: string): Promise<{success: boolean, message: string}> => {
+    if (!isAuthenticated) {
+      return { success: false, message: 'Authentication required' };
+    }
+
+    try {
+      const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+      const response = await fetch(`/api/connections/${connectionId}/sync`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        return { success: false, message: result.message || 'Sync failed' };
+      }
+
+      await refreshConnections();
+      return result;
+    } catch (error: any) {
+      console.error('❌ Failed to sync connection:', error);
+      return { success: false, message: error.message || 'Sync failed' };
+    }
+  }, [isAuthenticated, refreshConnections]);
+
+  const deleteConnection = useCallback(async (connectionId: string): Promise<{success: boolean, message: string}> => {
+    if (!isAuthenticated) {
+      return { success: false, message: 'Authentication required' };
+    }
+
+    try {
+      const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+      const response = await fetch(`/api/connections/${connectionId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        return { success: false, message: result.message || 'Delete failed' };
+      }
+
+      await refreshConnections();
+      return result;
+    } catch (error: any) {
+      console.error('❌ Failed to delete connection:', error);
+      return { success: false, message: error.message || 'Delete failed' };
+    }
+  }, [isAuthenticated, refreshConnections]);
 
   const value: ConnectionsContextType = {
-    validatePlatformConfig,
-    createConnection,
+    connections,
     isLoading,
+    error,
+    isServiceAvailable,
+    createConnection,
+    refreshConnections,
+    testConnection,
+    syncConnection,
+    deleteConnection,
+    validatePlatformConfig,
   };
 
   return (

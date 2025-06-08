@@ -1,26 +1,26 @@
-// backend/services/platform-integrations-service/src/middleware/auth.ts
+// backend/services/platform-integrations-service/src/middleware/auth.ts - COMPLETE WORKING VERSION
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
 interface AuthenticatedRequest extends Request {
   user?: {
-    id: string;
+    userId: string;
     email: string;
-    name: string;
+    [key: string]: any;
   };
 }
 
 interface JWTPayload {
-  id: string;
+  userId: string;
   email: string;
-  name: string;
   iat?: number;
   exp?: number;
+  [key: string]: any;
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key_here';
 
-export const authenticateJWT = (
+const authenticateJWT = (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
@@ -63,9 +63,23 @@ export const authenticateJWT = (
     // Verify token
     const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
     
-    // Validate token payload
-    if (!decoded.id || !decoded.email) {
-      console.warn('Invalid token payload for request:', req.path);
+    // Validate token payload - handle different token formats
+    let userId = decoded.userId;
+    let email = decoded.email;
+    
+    // Handle different JWT payload formats
+    if (!userId && decoded.id) {
+      userId = decoded.id;
+    }
+    if (!email && decoded.user?.email) {
+      email = decoded.user.email;
+    }
+    if (!userId && decoded.user?.id) {
+      userId = decoded.user.id;
+    }
+    
+    if (!userId) {
+      console.warn('Invalid token payload - missing userId for request:', req.path);
       res.status(401).json({
         error: 'Invalid token payload',
         message: 'Token does not contain required user information',
@@ -85,12 +99,12 @@ export const authenticateJWT = (
 
     // Attach user info to request for downstream use
     req.user = {
-      id: decoded.id,
-      email: decoded.email,
-      name: decoded.name,
+      userId: userId,
+      email: email || 'unknown@example.com',
+      ...decoded
     };
 
-    console.debug('Authentication successful for user:', decoded.email, 'on path:', req.path);
+    console.debug('Authentication successful for user:', email, 'on path:', req.path);
     
     // Continue to next middleware
     next();
@@ -130,38 +144,5 @@ export const authenticateJWT = (
   }
 };
 
-// Optional middleware for routes that don't require authentication
-export const optionalAuth = (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-): void => {
-  try {
-    const authHeader = req.headers.authorization;
-    
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      
-      if (token && token.trim() !== '') {
-        try {
-          const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
-          req.user = {
-            id: decoded.id,
-            email: decoded.email,
-            name: decoded.name,
-          };
-        } catch (error) {
-          // Ignore auth errors for optional auth
-          console.debug('Optional auth failed, continuing without user:', error);
-        }
-      }
-    }
-    
-    next();
-  } catch (error) {
-    // Always continue for optional auth
-    next();
-  }
-};
-
 export default authenticateJWT;
+export { authenticateJWT };

@@ -1,7 +1,6 @@
-// frontend/src/components/feature-specific/connections/MondayConfigForm.tsx (FIXED)
+// frontend/src/components/feature-specific/connections/MondayConfigForm.tsx - CLEAN FIXED VERSION
 import React, { useState } from 'react';
-import { Eye, EyeOff, ExternalLink, AlertCircle } from 'lucide-react';
-import { useConnections } from '../../../contexts/ConnectionsContext';
+import { Eye, EyeOff, ExternalLink, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
 
 interface MondayConfigFormProps {
   onSubmit: (data: any) => void;
@@ -11,30 +10,44 @@ interface MondayConfigFormProps {
 
 interface MondayConfig {
   name: string;
-  apiKey: string;
+  apiToken: string;
+  apiUrl: string;
+  boardId: string;
+}
+
+interface TestStep {
+  step: string;
+  status: 'pending' | 'success' | 'error';
+  message: string;
+  details?: any;
 }
 
 const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, isSubmitting }) => {
-  const { validatePlatformConfig } = useConnections();
   const [config, setConfig] = useState<MondayConfig>({
-    name: '',
-    apiKey: ''
+    name: 'Monday.com Main Board',
+    apiToken: '',
+    apiUrl: 'https://api.monday.com/v2',
+    boardId: ''
   });
-  const [showApiKey, setShowApiKey] = useState(false);
+  
+  const [showApiToken, setShowApiToken] = useState(false);
   const [errors, setErrors] = useState<Partial<MondayConfig>>({});
-  const [isTestingConnection, setIsTestingConnection] = useState(false);
-  const [connectionTested, setConnectionTested] = useState(false);
-  const [testResult, setTestResult] = useState<{valid: boolean, message: string} | null>(null);
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testSteps, setTestSteps] = useState<TestStep[]>([]);
+  const [testMessage, setTestMessage] = useState<string>('');
+  const [discoveredBoards, setDiscoveredBoards] = useState<any[]>([]);
 
   const handleChange = (field: keyof MondayConfig, value: string) => {
     setConfig(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: undefined }));
     }
-    // Reset connection test when credentials change
-    if (field === 'apiKey') {
-      setConnectionTested(false);
-      setTestResult(null);
+    // Reset test when credentials change
+    if (field !== 'name' && testStatus !== 'idle') {
+      setTestStatus('idle');
+      setTestSteps([]);
+      setTestMessage('');
+      setDiscoveredBoards([]);
     }
   };
 
@@ -45,75 +58,188 @@ const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, i
       newErrors.name = 'Connection name is required';
     }
     
-    if (!config.apiKey.trim()) {
-      newErrors.apiKey = 'API key is required';
+    if (!config.apiToken.trim()) {
+      newErrors.apiToken = 'API token is required';
+    }
+    
+    if (!config.apiUrl.trim()) {
+      newErrors.apiUrl = 'API URL is required';
+    } else if (!config.apiUrl.startsWith('http')) {
+      newErrors.apiUrl = 'Please enter a valid URL';
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  // Use backend proxy to avoid CORS issues (same as Jira approach)
+  const testMondayConnection = async () => {
+    const response = await fetch('/api/monday-proxy/test-connection', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        apiToken: config.apiToken.trim(),
+        apiUrl: config.apiUrl.trim(),
+        boardId: config.boardId.trim() || undefined
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    return await response.json();
+  };
+
+  const getBoardsList = async () => {
+    const response = await fetch('/api/monday-proxy/get-boards', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        apiToken: config.apiToken.trim(),
+        apiUrl: config.apiUrl.trim()
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to get boards');
+    }
+
+    return await response.json();
+  };
+
+  const updateTestStep = (stepName: string, status: 'pending' | 'success' | 'error', message: string, details?: any) => {
+    setTestSteps(prev => {
+      const existing = prev.find(s => s.step === stepName);
+      const newStep = { step: stepName, status, message, details };
+      
+      if (existing) {
+        return prev.map(s => s.step === stepName ? newStep : s);
+      } else {
+        return [...prev, newStep];
+      }
+    });
+  };
+
   const handleTestConnection = async () => {
-    if (!config.apiKey) {
-      setErrors({ apiKey: 'API key is required for testing' });
+    if (!validateForm()) {
       return;
     }
 
-    setIsTestingConnection(true);
-    setTestResult(null);
+    setTestStatus('testing');
+    setTestSteps([]);
+    setTestMessage('Starting connection test...');
+    setDiscoveredBoards([]);
     
     try {
-      console.log('🔄 Testing Monday.com connection with backend...');
+      console.log('Testing Monday.com connection through backend proxy...');
       
-      // Call real backend API to validate Monday.com configuration
-      const result = await validatePlatformConfig('monday', { 
-        apiKey: config.apiKey 
-      });
+      // Use backend proxy for testing (avoids CORS issues)
+      const result = await testMondayConnection();
       
-      console.log('✅ Backend validation result:', result);
-      
-      setTestResult(result);
-      setConnectionTested(result.valid);
-      
-      if (!result.valid) {
-        setErrors({ apiKey: result.message });
-      } else {
+      if (result.success) {
+        // Process successful test steps
+        if (result.steps) {
+          result.steps.forEach((step: any) => {
+            updateTestStep(step.step, step.status, step.message, step.details);
+          });
+        }
+        
+        // If no board ID was set, try to get boards for selection
+        if (!config.boardId) {
+          try {
+            updateTestStep('Loading Boards', 'pending', 'Getting available boards...');
+            const boardsResult = await getBoardsList();
+            
+            if (boardsResult.success && boardsResult.boards) {
+              setDiscoveredBoards(boardsResult.boards);
+              updateTestStep('Loading Boards', 'success', `Found ${boardsResult.boards.length} active boards`);
+              
+              // Auto-select PRISM board if found
+              const prismBoard = boardsResult.boards.find((board: any) => 
+                board.name.toLowerCase().includes('prism')
+              );
+              
+              if (prismBoard) {
+                setConfig(prev => ({ ...prev, boardId: prismBoard.id }));
+                updateTestStep('Auto-Selection', 'success', `Auto-selected: ${prismBoard.name}`);
+              }
+            }
+          } catch (boardsError) {
+            updateTestStep('Loading Boards', 'error', 'Could not load boards for selection');
+          }
+        }
+        
+        setTestStatus('success');
+        setTestMessage('All tests passed! Ready to create connection.');
         setErrors({});
+      } else {
+        throw new Error(result.error || 'Connection test failed');
       }
+      
     } catch (error) {
-      console.error('❌ Monday.com connection test failed:', error);
+      console.error('Monday.com connection test failed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Connection test failed';
       
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : 'Failed to test connection. Please check your network and try again.';
+      setTestStatus('error');
+      setTestMessage(errorMessage);
+      setErrors({ apiToken: errorMessage });
       
-      setErrors({ apiKey: errorMessage });
-      setTestResult({ valid: false, message: errorMessage });
-      setConnectionTested(false);
-    } finally {
-      setIsTestingConnection(false);
+      // Add error step if no steps were returned
+      if (testSteps.length === 0) {
+        updateTestStep('Connection Test', 'error', errorMessage);
+      }
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!validateForm()) return;
+    if (!validateForm()) {
+      return;
+    }
     
-    if (!connectionTested) {
-      setErrors({ apiKey: 'Please test the connection before submitting' });
+    if (testStatus !== 'success') {
+      setErrors({ apiToken: 'Please test the connection before submitting' });
       return;
     }
 
-    // Submit the real configuration to backend
-    onSubmit({
-      name: config.name,
-      platform: 'monday',
+    // Create connection data
+    const connectionData = {
+      name: config.name.trim(),
+      platform: 'monday' as const,
       config: {
-        apiKey: config.apiKey
+        apiToken: config.apiToken.trim(),
+        apiUrl: config.apiUrl.trim(),
+        boardId: config.boardId.trim()
       }
-    });
+    };
+    
+    onSubmit(connectionData);
   };
+
+  const getTestStatusIcon = (status: string) => {
+    switch (status) {
+      case 'success':
+        return <CheckCircle size={16} className="text-green-500" />;
+      case 'error':
+        return <AlertCircle size={16} className="text-red-500" />;
+      case 'pending':
+        return <RefreshCw size={16} className="text-blue-500 animate-spin" />;
+      default:
+        return null;
+    }
+  };
+
+  const isFormValid = config.name && config.apiToken && config.apiUrl;
+  const canTest = isFormValid && testStatus !== 'testing';
+  const canSubmit = testStatus === 'success' && !isSubmitting;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -125,7 +251,7 @@ const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, i
           Connect to Monday.com
         </h3>
         <p className="text-gray-600">
-          Enter your Monday.com API credentials to sync your workspace data
+          Enter your Monday.com API token to sync your board data
         </p>
       </div>
 
@@ -138,7 +264,7 @@ const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, i
           type="text"
           value={config.name}
           onChange={(e) => handleChange('name', e.target.value)}
-          placeholder="e.g., Monday.com Main Workspace"
+          placeholder="Monday.com Main Board"
           className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
             errors.name ? 'border-red-500' : 'border-gray-300'
           }`}
@@ -148,43 +274,82 @@ const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, i
         )}
       </div>
 
-      {/* API Key */}
+      {/* API Token */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          API Key
+          API Token
         </label>
         <div className="relative">
           <input
-            type={showApiKey ? 'text' : 'password'}
-            value={config.apiKey}
-            onChange={(e) => handleChange('apiKey', e.target.value)}
-            placeholder="Enter your Monday.com API key"
+            type={showApiToken ? 'text' : 'password'}
+            value={config.apiToken}
+            onChange={(e) => handleChange('apiToken', e.target.value)}
+            placeholder="Enter your Monday.com API token"
             className={`w-full px-3 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-              errors.apiKey ? 'border-red-500' : 'border-gray-300'
+              errors.apiToken ? 'border-red-500' : 'border-gray-300'
             }`}
           />
           <button
             type="button"
-            onClick={() => setShowApiKey(!showApiKey)}
+            onClick={() => setShowApiToken(!showApiToken)}
             className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
           >
-            {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+            {showApiToken ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
         </div>
-        {errors.apiKey && (
-          <p className="mt-1 text-sm text-red-600">{errors.apiKey}</p>
+        {errors.apiToken && (
+          <p className="mt-1 text-sm text-red-600">{errors.apiToken}</p>
         )}
         <div className="mt-2 flex items-center text-sm text-blue-600">
           <ExternalLink size={14} className="mr-1" />
           <a 
-            href="https://support.monday.com/hc/en-us/articles/360005144659-Monday-com-API" 
+            href="https://auth.monday.com/users/sign_in" 
             target="_blank" 
             rel="noopener noreferrer"
             className="hover:underline"
           >
-            How to get your API key
+            Get your API token from Monday.com
           </a>
         </div>
+      </div>
+
+      {/* API URL */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          API URL
+        </label>
+        <input
+          type="text"
+          value={config.apiUrl}
+          onChange={(e) => handleChange('apiUrl', e.target.value)}
+          placeholder="https://api.monday.com/v2"
+          className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+            errors.apiUrl ? 'border-red-500' : 'border-gray-300'
+          }`}
+        />
+        {errors.apiUrl && (
+          <p className="mt-1 text-sm text-red-600">{errors.apiUrl}</p>
+        )}
+        <p className="mt-1 text-sm text-gray-500">
+          Monday.com GraphQL API endpoint
+        </p>
+      </div>
+
+      {/* Board ID (Optional) */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Board ID (Optional)
+        </label>
+        <input
+          type="text"
+          value={config.boardId}
+          onChange={(e) => handleChange('boardId', e.target.value)}
+          placeholder="Leave empty to auto-discover"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <p className="mt-1 text-sm text-gray-500">
+          If empty, we'll help you choose from your available boards
+        </p>
       </div>
 
       {/* Test Connection */}
@@ -194,31 +359,63 @@ const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, i
           <button
             type="button"
             onClick={handleTestConnection}
-            disabled={isTestingConnection || !config.apiKey}
+            disabled={!canTest}
             className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {isTestingConnection ? 'Testing...' : 'Test Connection'}
+            {testStatus === 'testing' ? 'Testing...' : 'Test Connection'}
           </button>
         </div>
         
-        {testResult && (
-          <div className={`flex items-center ${testResult.valid ? 'text-green-600' : 'text-red-600'}`}>
-            <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-              {testResult.valid ? (
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              ) : (
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              )}
-            </svg>
-            <span className="text-sm">{testResult.message}</span>
+        {/* Test Steps */}
+        {testSteps.length > 0 && (
+          <div className="space-y-2 mb-3">
+            {testSteps.map((step, index) => (
+              <div key={index} className="flex items-center text-sm">
+                {getTestStatusIcon(step.status)}
+                <span className="ml-2 font-medium">{step.step}:</span>
+                <span className="ml-1">{step.message}</span>
+              </div>
+            ))}
           </div>
         )}
         
-        {!testResult && (
-          <div className="flex items-start text-gray-500">
-            <AlertCircle size={16} className="mr-2 mt-0.5 flex-shrink-0" />
-            <span className="text-sm">
-              Please test your connection to verify the credentials work correctly.
+        {/* Test Message */}
+        {testMessage && (
+          <div className={`text-sm ${
+            testStatus === 'success' ? 'text-green-600' : 
+            testStatus === 'error' ? 'text-red-600' : 
+            'text-blue-600'
+          }`}>
+            {testMessage}
+          </div>
+        )}
+        
+        {/* Board Selection */}
+        {discoveredBoards.length > 0 && !config.boardId && (
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Select Board
+            </label>
+            <select
+              value={config.boardId}
+              onChange={(e) => handleChange('boardId', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Choose a board...</option>
+              {discoveredBoards.map(board => (
+                <option key={board.id} value={board.id}>
+                  {board.name} ({board.items_count} items)
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        
+        {testStatus === 'idle' && (
+          <div className="flex items-start text-gray-500 text-sm">
+            <AlertCircle size={14} className="mr-2 mt-0.5 flex-shrink-0" />
+            <span>
+              Test your connection to verify credentials and discover boards
             </span>
           </div>
         )}
@@ -240,19 +437,56 @@ const MondayConfigForm: React.FC<MondayConfigFormProps> = ({ onSubmit, onBack, i
         <button
           type="button"
           onClick={onBack}
-          className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+          disabled={isSubmitting}
+          className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
         >
           Back
         </button>
         
         <button
           type="submit"
-          disabled={isSubmitting || !connectionTested}
+          disabled={!canSubmit}
           className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {isSubmitting ? 'Connecting...' : 'Create Connection'}
+          {isSubmitting ? (
+            <div className="flex items-center">
+              <RefreshCw size={14} className="animate-spin mr-2" />
+              Creating...
+            </div>
+          ) : (
+            'Create Connection'
+          )}
         </button>
       </div>
+
+      {/* Simple Instructions */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <h4 className="text-sm font-medium text-blue-800 mb-1">
+          Simple Process:
+        </h4>
+        <div className="text-xs text-blue-700 space-y-1">
+          <p>1. Get your API token from Monday.com (link above)</p>
+          <p>2. Fill in the form with your token</p>
+          <p>3. Click "Test Connection" to verify it works</p>
+          <p>4. Select a board if needed</p>
+          <p>5. Click "Create Connection" to save it</p>
+        </div>
+      </div>
+
+      {/* Debug Info */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="bg-gray-100 border border-gray-300 rounded-lg p-3">
+          <h4 className="text-xs font-medium text-gray-700 mb-1">Debug Info:</h4>
+          <div className="text-xs text-gray-600 space-y-1">
+            <p>Form Valid: {isFormValid ? 'Yes' : 'No'}</p>
+            <p>Test Status: {testStatus}</p>
+            <p>Can Test: {canTest ? 'Yes' : 'No'}</p>
+            <p>Can Submit: {canSubmit ? 'Yes' : 'No'}</p>
+            <p>Boards Found: {discoveredBoards.length}</p>
+            <p>Board ID: {config.boardId || 'Not set'}</p>
+          </div>
+        </div>
+      )}
     </form>
   );
 };

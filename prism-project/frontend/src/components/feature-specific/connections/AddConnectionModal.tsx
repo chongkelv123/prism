@@ -1,8 +1,9 @@
-// frontend/src/components/feature-specific/connections/AddConnectionModal.tsx - FIXED VERSION
+// frontend/src/components/feature-specific/connections/AddConnectionModal.tsx - UPDATED WITH MONDAY SUPPORT
 import React, { useState } from 'react';
 import { X, CheckCircle, AlertCircle } from 'lucide-react';
 import PlatformSelector from './PlatformSelector';
 import JiraConfigForm from './JiraConfigForm';
+import MondayConfigForm from './MondayConfigForm';
 
 interface AddConnectionModalProps {
   isOpen: boolean;
@@ -26,7 +27,7 @@ const AddConnectionModal: React.FC<AddConnectionModalProps> = ({
   if (!isOpen) return null;
 
   const handlePlatformSelect = (platform: Platform) => {
-    console.log('🎯 Platform selected:', platform);
+    console.log('Platform selected:', platform);
     setSelectedPlatform(platform);
     setStep('configure');
     setErrorMessage('');
@@ -52,8 +53,8 @@ const AddConnectionModal: React.FC<AddConnectionModalProps> = ({
   };
 
   const handleConnectionSubmit = async (connectionData: any) => {
-    console.log('🔄 AddConnectionModal: Starting connection creation');
-    console.log('📦 Connection data:', {
+    console.log('AddConnectionModal: Starting connection creation');
+    console.log('Connection data:', {
       name: connectionData.name,
       platform: connectionData.platform,
       configKeys: Object.keys(connectionData.config || {})
@@ -66,7 +67,7 @@ const AddConnectionModal: React.FC<AddConnectionModalProps> = ({
       // Prevent any navigation during this process
       window.history.pushState(null, '', window.location.href);
       
-      console.log('💾 Processing connection...');
+      console.log('Processing connection...');
       
       // Simple success flow - no complex backend calls
       setSuccessMessage(`Connection "${connectionData.name}" created successfully!`);
@@ -75,7 +76,7 @@ const AddConnectionModal: React.FC<AddConnectionModalProps> = ({
       // Notify parent component (this will save to localStorage)
       onConnectionAdded(connectionData);
 
-      console.log('✅ Connection creation completed successfully');
+      console.log('Connection creation completed successfully');
       
       // Auto-close modal after 2 seconds
       setTimeout(() => {
@@ -83,7 +84,7 @@ const AddConnectionModal: React.FC<AddConnectionModalProps> = ({
       }, 2000);
       
     } catch (error) {
-      console.error('❌ Connection creation failed:', error);
+      console.error('Connection creation failed:', error);
       
       const errorMsg = error instanceof Error 
         ? error.message 
@@ -105,23 +106,19 @@ const AddConnectionModal: React.FC<AddConnectionModalProps> = ({
       case 'configure':
         return (
           <div>
+            {selectedPlatform === 'monday' && (
+              <MondayConfigForm 
+                onSubmit={handleConnectionSubmit}
+                onBack={handleBack}
+                isSubmitting={isSubmitting}
+              />
+            )}
             {selectedPlatform === 'jira' && (
               <JiraConfigForm 
                 onSubmit={handleConnectionSubmit}
                 onBack={handleBack}
                 isSubmitting={isSubmitting}
               />
-            )}
-            {selectedPlatform === 'monday' && (
-              <div className="text-center py-8">
-                <p className="text-gray-600 mb-4">Monday.com configuration coming soon!</p>
-                <button 
-                  onClick={handleBack}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-lg"
-                >
-                  Back to Platform Selection
-                </button>
-              </div>
             )}
             {selectedPlatform === 'trofos' && (
               <div className="text-center py-8">

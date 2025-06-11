@@ -1,14 +1,13 @@
-// src/routes/connectionRoutes.ts
+// =============================================================================
+// 2. BACKEND: Enhanced Connection Routes (MINIMAL ADDITIONS)
+// File: backend/services/platform-integrations-service/src/routes/connectionRoutes.ts
+// =============================================================================
 
 import { Router, Request, Response } from 'express';
 import { ConnectionService } from '../services/ConnectionService';
 import { authenticateJWT } from '../middleware/auth';
 import logger from '../utils/logger';
 
-/**
- * Extend Express’s Request so that `req.user?.userId` is known to TypeScript.
- * Your JWT middleware attaches `{ userId: string }` on req.user.
- */
 interface AuthRequest extends Request {
   user?: { userId: string };
 }
@@ -16,39 +15,42 @@ interface AuthRequest extends Request {
 const router = Router();
 const connectionService = new ConnectionService();
 
-// All routes require a valid JWT
+// All routes require authentication
 router.use(authenticateJWT);
 
-/**
- * Create a new connection
- */
+// CREATE: Store connection in backend
 router.post('/', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { name, platform, config } = req.body;
+    const { name, platform, config, metadata } = req.body;
 
     if (!userId) {
       return res.status(401).json({ message: 'User ID required' });
     }
+
     if (!name || !platform || !config) {
       return res.status(400).json({
         message: 'Name, platform, and config are required'
       });
     }
 
-    const connection = await connectionService.createConnection(userId, {
+    const connectionData = {
       name,
       platform,
-      config
-    });
+      config,
+      metadata: metadata || {} // Optional metadata
+    };
 
-    // Strip out sensitive config before returning
+    const connection = await connectionService.createConnection(userId, connectionData);
+
+    // Return safe connection data (no sensitive config)
     const safeConnection = {
       id: connection.id,
       name: connection.name,
       platform: connection.platform,
       status: connection.status,
       projectCount: connection.projectCount,
+      metadata: connection.metadata,
       lastSync: connection.lastSync,
       createdAt: connection.createdAt
     };
@@ -61,9 +63,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-/**
- * List all connections for the authenticated user
- */
+// READ: Get all connections for user
 router.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -72,12 +72,15 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     }
 
     const connections = await connectionService.getConnections(userId);
+    
+    // Return safe connections (no sensitive config)
     const safeConnections = connections.map(conn => ({
       id: conn.id,
       name: conn.name,
       platform: conn.platform,
       status: conn.status,
       projectCount: conn.projectCount,
+      metadata: conn.metadata,
       lastSync: conn.lastSync,
       lastSyncError: conn.lastSyncError,
       createdAt: conn.createdAt
@@ -90,90 +93,99 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-/**
- * Get details of a single connection
- */
-router.get('/:connectionId', async (req: AuthRequest, res: Response) => {
+// UPDATE: Update connection metadata
+router.put('/:connectionId/metadata', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const { connectionId } = req.params;
+    const { metadata } = req.body;
 
     if (!userId) {
       return res.status(401).json({ message: 'User ID required' });
     }
 
-    const connection = await connectionService.getConnection(userId, connectionId);
-    if (!connection) {
+    const success = await connectionService.updateConnectionMetadata(userId, connectionId, metadata);
+    
+    if (!success) {
       return res.status(404).json({ message: 'Connection not found' });
     }
 
-    const safeConnection = {
-      id: connection.id,
-      name: connection.name,
-      platform: connection.platform,
-      status: connection.status,
-      projectCount: connection.projectCount,
-      lastSync: connection.lastSync,
-      lastSyncError: connection.lastSyncError,
-      createdAt: connection.createdAt
-    };
-
-    res.json(safeConnection);
+    res.json({ success: true, message: 'Metadata updated successfully' });
   } catch (error) {
-    logger.error('Get connection error:', error);
-    res.status(500).json({ message: 'Failed to get connection' });
+    logger.error('Update metadata error:', error);
+    res.status(500).json({ message: 'Failed to update metadata' });
   }
 });
 
-/**
- * Test (validate) a connection’s credentials
- */
-router.post('/:connectionId/test', async (req: AuthRequest, res: Response) => {
+// MIGRATION: Bulk import from localStorage
+router.post('/import', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { connectionId } = req.params;
+    const { connections } = req.body;
 
     if (!userId) {
       return res.status(401).json({ message: 'User ID required' });
     }
 
-    const isConnected = await connectionService.testConnection(userId, connectionId);
+    if (!Array.isArray(connections)) {
+      return res.status(400).json({ message: 'Connections must be an array' });
+    }
+
+    logger.info(`Importing ${connections.length} connections for user ${userId}`);
+
+    const importResults = [];
+    
+    for (const connData of connections) {
+      try {
+        // Transform localStorage format to backend format
+        const connectionData = {
+          name: connData.name || `${connData.platform} Connection`,
+          platform: connData.platform,
+          config: connData.credentials || connData.config || {},
+          metadata: {
+            selectedProjects: [],
+            defaultTemplate: 'standard',
+            reportPreferences: {
+              includeCharts: true,
+              includeTeamInfo: true,
+              dateRange: 30
+            }
+          }
+        };
+
+        const connection = await connectionService.createConnection(userId, connectionData);
+        importResults.push({
+          success: true,
+          originalId: connData.id,
+          newId: connection.id,
+          name: connection.name
+        });
+      } catch (error) {
+        logger.error(`Failed to import connection ${connData.name}:`, error);
+        importResults.push({
+          success: false,
+          originalId: connData.id,
+          name: connData.name,
+          error: error instanceof Error ? error.message : 'Import failed'
+        });
+      }
+    }
+
+    const successCount = importResults.filter(r => r.success).length;
+    const failureCount = importResults.filter(r => !r.success).length;
+
     res.json({
-      success: isConnected,
-      status: isConnected ? 'connected' : 'error',
-      message: isConnected ? 'Connection successful' : 'Connection failed'
+      success: true,
+      message: `Import completed: ${successCount} successful, ${failureCount} failed`,
+      results: importResults
     });
   } catch (error) {
-    logger.error('Test connection error:', error);
-    const message = error instanceof Error ? error.message : 'Connection test failed';
-    res.status(500).json({ success: false, message });
+    logger.error('Bulk import error:', error);
+    res.status(500).json({ message: 'Failed to import connections' });
   }
 });
 
-/**
- * Kick off a sync of the connection’s data
- */
-router.post('/:connectionId/sync', async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user?.userId;
-    const { connectionId } = req.params;
-
-    if (!userId) {
-      return res.status(401).json({ message: 'User ID required' });
-    }
-
-    await connectionService.syncConnection(userId, connectionId);
-    res.json({ success: true, message: 'Sync started' });
-  } catch (error) {
-    logger.error('Sync connection error:', error);
-    const message = error instanceof Error ? error.message : 'Connection sync failed';
-    res.status(500).json({ success: false, message });
-  }
-});
-
-/**
- * Delete a connection
- */
+// DELETE: Remove connection
 router.delete('/:connectionId', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -189,32 +201,6 @@ router.delete('/:connectionId', async (req: AuthRequest, res: Response) => {
     logger.error('Delete connection error:', error);
     const message = error instanceof Error ? error.message : 'Failed to delete connection';
     res.status(500).json({ success: false, message });
-  }
-});
-
-/**
- * Get project data via query parameter `?projectId=...`
- */
-router.get('/:connectionId/projects', async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user?.userId;
-    const { connectionId } = req.params;
-    const { projectId } = req.query;
-
-    if (!userId) {
-      return res.status(401).json({ message: 'User ID required' });
-    }
-
-    const projectData = await connectionService.getProjectData(
-      userId,
-      connectionId,
-      projectId as string
-    );
-    res.json(projectData);
-  } catch (error) {
-    logger.error('Get project data error:', error);
-    const message = error instanceof Error ? error.message : 'Failed to get project data';
-    res.status(500).json({ message });
   }
 });
 

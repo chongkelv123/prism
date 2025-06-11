@@ -1,70 +1,53 @@
-// frontend/src/contexts/ConnectionsContext.tsx - COMPLETE VERSION
+// frontend/src/contexts/ConnectionsContext.tsx - FIXED VERSION
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { apiClient } from '../services/api.service';
 import { useAuth } from './AuthContext';
 
-// Types
 export interface Connection {
   id: string;
   name: string;
-  platform: 'monday' | 'jira' | 'trofos';
+  platform: 'monday' | 'jira';
   status: 'connected' | 'disconnected' | 'error';
   projectCount: number;
   lastSync?: string;
   lastSyncError?: string;
   createdAt: string;
+  metadata?: {
+    selectedProjects?: string[];
+    defaultTemplate?: string;
+    reportPreferences?: {
+      includeCharts?: boolean;
+      includeTeamInfo?: boolean;
+      dateRange?: number;
+    };
+  };
 }
 
 interface ConnectionConfig {
   name: string;
-  platform: 'monday' | 'jira' | 'trofos';
+  platform: 'monday' | 'jira';
   config: Record<string, any>;
-}
-
-interface ValidationResult {
-  valid: boolean;
-  message: string;
-}
-
-interface ProjectData {
-  id: string;
-  name: string;
-  description?: string;
-  status: string;
-  tasks?: Array<{
-    id: string;
-    title: string;
-    status: string;
-    assignee?: string;
-  }>;
-  team?: Array<{
-    id: string;
-    name: string;
-    role: string;
-  }>;
-  metrics?: Array<{
-    name: string;
-    value: number | string;
-  }>;
+  metadata?: any;
 }
 
 interface ConnectionsContextType {
-  // Service availability
-  isServiceAvailable: boolean;
-  error: string | null;
-  refreshConnections: () => Promise<void>;
-  
-  // Connection management
   connections: Connection[];
   isLoading: boolean;
+  error: string | null;
   
-  // API functions
-  validatePlatformConfig: (platform: string, config: Record<string, any>) => Promise<ValidationResult>;
+  // Core operations
   createConnection: (connectionData: ConnectionConfig) => Promise<void>;
+  deleteConnection: (connectionId: string) => Promise<{ success: boolean; message: string }>;
+  refreshConnections: () => Promise<void>;
+  
+  // NEW: Simple migration
+  migrateFromLocalStorage: () => Promise<void>;
+  
+  // Existing operations (simplified)
+  validatePlatformConfig: (platform: string, config: Record<string, any>) => Promise<{valid: boolean, message: string}>;
   testConnection: (connectionId: string) => Promise<{ success: boolean; message: string }>;
   syncConnection: (connectionId: string) => Promise<{ success: boolean; message: string }>;
-  deleteConnection: (connectionId: string) => Promise<{ success: boolean; message: string }>;
-  getProjectData: (connectionId: string, projectId?: string) => Promise<ProjectData | ProjectData[]>;
+  getProjectData: (connectionId: string, projectId?: string) => Promise<any>;
 }
 
 const ConnectionsContext = createContext<ConnectionsContextType | undefined>(undefined);
@@ -77,340 +60,267 @@ export const useConnections = () => {
   return context;
 };
 
-interface ConnectionsProviderProps {
-  children: ReactNode;
-}
-
-export const ConnectionsProvider: React.FC<ConnectionsProviderProps> = ({ children }) => {
-  // State
+export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [isServiceAvailable, setIsServiceAvailable] = useState<boolean>(false);
   
   const { isAuthenticated, logout } = useAuth();
 
-  // Service health check
-  const checkServiceHealth = useCallback(async (): Promise<boolean> => {
-    try {
-      console.log('🔍 Checking platform integrations service health...');
-      
-      // Check if API Gateway is responding
-      const gatewayResponse = await fetch('http://localhost:3000/health', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      
-      if (!gatewayResponse.ok) {
-        throw new Error('API Gateway not responding');
-      }
-      
-      // Check if platform integrations service is responding through gateway
-      const serviceResponse = await fetch('http://localhost:3000/api/platform-integrations/health', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      
-      if (!serviceResponse.ok) {
-        throw new Error('Platform integrations service not responding');
-      }
-      
-      const serviceData = await serviceResponse.json();
-      console.log('✅ Platform integrations service health check passed:', serviceData);
-      
-      return true;
-    } catch (error) {
-      console.error('❌ Platform integrations service health check failed:', error);
-      return false;
-    }
-  }, []);
+  // CACHE KEYS
+  const CACHE_KEY = 'prism-connections-cache';
+  const MIGRATION_KEY = 'prism-migration-completed';
+  const OLD_STORAGE_KEY = 'prism-connections';
 
-  // Initialize service health check
-  useEffect(() => {
-    const initializeService = async () => {
-      setIsLoading(true);
-      setError(null);
-      
-      try {
-        const isHealthy = await checkServiceHealth();
-        setIsServiceAvailable(isHealthy);
-        
-        if (isHealthy && isAuthenticated) {
-          // Load connections if service is healthy and user is authenticated
-          await loadConnections();
-        } else if (!isHealthy) {
-          setError('Platform integrations service is not available');
-        }
-      } catch (error) {
-        console.error('Service initialization failed:', error);
-        setIsServiceAvailable(false);
-        setError(error instanceof Error ? error.message : 'Service initialization failed');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    initializeService();
-  }, [isAuthenticated, checkServiceHealth]);
-
-  // Load connections from API
+  // Load connections: Backend first, fallback to cache
   const loadConnections = useCallback(async () => {
-    if (!isAuthenticated || !isServiceAvailable) {
+    if (!isAuthenticated) {
       setConnections([]);
       return;
     }
 
     try {
       setIsLoading(true);
-      console.log('📡 Loading connections...');
-      
-      const response = await apiClient.get('/api/connections');
-      setConnections(response.data || []);
       setError(null);
       
-      console.log('✅ Connections loaded:', response.data?.length || 0);
+      console.log('Loading connections from backend...');
+      
+      // Try backend first
+      const response = await apiClient.get('/api/connections');
+      const backendConnections = response.data || [];
+      
+      console.log(`Loaded ${backendConnections.length} connections from backend`);
+      
+      // Update state and cache
+      setConnections(backendConnections);
+      localStorage.setItem(CACHE_KEY, JSON.stringify(backendConnections));
+      
     } catch (error: any) {
-      console.error('❌ Failed to load connections:', error);
+      console.error('Backend load failed, trying cache:', error);
       
       if (error.response?.status === 401) {
         logout();
-        setError('Authentication expired');
-      } else if (error.response?.status === 503) {
-        setIsServiceAvailable(false);
-        setError('Platform integrations service is unavailable');
-      } else {
-        setError(error.message || 'Failed to load connections');
+        return;
       }
       
-      setConnections([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isAuthenticated, isServiceAvailable, logout]);
-
-  // Refresh connections and service health
-  const refreshConnections = useCallback(async () => {
-    console.log('🔄 Refreshing connections and service health...');
-    
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      // Check service health first
-      const isHealthy = await checkServiceHealth();
-      setIsServiceAvailable(isHealthy);
-      
-      if (isHealthy) {
-        await loadConnections();
-      } else {
-        setError('Platform integrations service is not available');
+      // Fallback to cache
+      try {
+        const cachedData = localStorage.getItem(CACHE_KEY);
+        if (cachedData) {
+          const cachedConnections = JSON.parse(cachedData);
+          setConnections(cachedConnections);
+          console.log(`Loaded ${cachedConnections.length} connections from cache`);
+          setError('Working offline - using cached data');
+        } else {
+          setConnections([]);
+          setError('Unable to load connections');
+        }
+      } catch (cacheError) {
+        console.error('Cache load failed:', cacheError);
         setConnections([]);
+        setError('Failed to load connections');
       }
-    } catch (error) {
-      console.error('Refresh failed:', error);
-      setIsServiceAvailable(false);
-      setError(error instanceof Error ? error.message : 'Refresh failed');
     } finally {
       setIsLoading(false);
     }
-  }, [checkServiceHealth, loadConnections]);
+  }, [isAuthenticated, logout]);
 
-  // Validate platform configuration
-  const validatePlatformConfig = useCallback(async (
-    platform: string, 
-    config: Record<string, any>
-  ): Promise<ValidationResult> => {
-    if (!isServiceAvailable) {
-      return {
-        valid: false,
-        message: 'Platform integrations service is not available',
-      };
-    }
-
-    try {
-      console.log(`🔍 Validating ${platform} configuration...`);
-      
-      const response = await apiClient.post(`/api/platforms/${platform}/validate`, { config });
-      
-      console.log(`✅ ${platform} validation result:`, response.data);
-      return response.data;
-    } catch (error: any) {
-      console.error(`❌ ${platform} validation failed:`, error);
-      
-      let errorMessage = 'Validation failed';
-      if (error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      } else if (error.response?.status === 401) {
-        errorMessage = 'Authentication required';
-      } else if (error.response?.status === 503) {
-        setIsServiceAvailable(false);
-        errorMessage = 'Service unavailable';
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      return { valid: false, message: errorMessage };
-    }
-  }, [isServiceAvailable]);
-
-  // Create connection
+  // Create connection: Backend first, then cache
   const createConnection = useCallback(async (connectionData: ConnectionConfig): Promise<void> => {
-    if (!isServiceAvailable) {
-      throw new Error('Platform integrations service is not available');
-    }
-
     try {
       setIsLoading(true);
-      console.log('🔗 Creating connection:', connectionData.name);
+      console.log('Creating connection:', connectionData.name);
       
-      await apiClient.post('/api/connections', connectionData);
+      // Save to backend
+      const response = await apiClient.post('/api/connections', connectionData);
+      const newConnection = response.data;
       
-      // Reload connections after creating
-      await loadConnections();
+      // Update state and cache
+      const updatedConnections = [...connections, newConnection];
+      setConnections(updatedConnections);
+      localStorage.setItem(CACHE_KEY, JSON.stringify(updatedConnections));
       
-      console.log('✅ Connection created successfully');
+      console.log('Connection created successfully');
+      setError(null);
+      
     } catch (error: any) {
-      console.error('❌ Failed to create connection:', error);
+      console.error('Failed to create connection:', error);
       
       let errorMessage = 'Failed to create connection';
       if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
       } else if (error.response?.status === 401) {
         errorMessage = 'Authentication required';
-      } else if (error.response?.status === 503) {
-        setIsServiceAvailable(false);
-        errorMessage = 'Service unavailable';
       }
       
       throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
-  }, [isServiceAvailable, loadConnections]);
+  }, [connections]);
 
-  // Test connection
-  const testConnection = useCallback(async (connectionId: string): Promise<{ success: boolean; message: string }> => {
-    if (!isServiceAvailable) {
-      return { success: false, message: 'Service unavailable' };
-    }
-
-    try {
-      console.log('🧪 Testing connection:', connectionId);
-      
-      const response = await apiClient.post(`/api/connections/${connectionId}/test`);
-      
-      // Reload connections to get updated status
-      await loadConnections();
-      
-      return response.data;
-    } catch (error: any) {
-      console.error('❌ Connection test failed:', error);
-      
-      return {
-        success: false,
-        message: error.response?.data?.message || error.message || 'Test failed'
-      };
-    }
-  }, [isServiceAvailable, loadConnections]);
-
-  // Sync connection
-  const syncConnection = useCallback(async (connectionId: string): Promise<{ success: boolean; message: string }> => {
-    if (!isServiceAvailable) {
-      return { success: false, message: 'Service unavailable' };
-    }
-
-    try {
-      console.log('🔄 Syncing connection:', connectionId);
-      
-      const response = await apiClient.post(`/api/connections/${connectionId}/sync`);
-      
-      // Reload connections to get updated data
-      await loadConnections();
-      
-      return response.data;
-    } catch (error: any) {
-      console.error('❌ Connection sync failed:', error);
-      
-      return {
-        success: false,
-        message: error.response?.data?.message || error.message || 'Sync failed'
-      };
-    }
-  }, [isServiceAvailable, loadConnections]);
-
-  // Delete connection
+  // Delete connection: Backend first, then cache
   const deleteConnection = useCallback(async (connectionId: string): Promise<{ success: boolean; message: string }> => {
-    if (!isServiceAvailable) {
-      return { success: false, message: 'Service unavailable' };
-    }
-
     try {
-      console.log('🗑️ Deleting connection:', connectionId);
+      setIsLoading(true);
+      console.log('Deleting connection:', connectionId);
       
+      // Delete from backend
       await apiClient.delete(`/api/connections/${connectionId}`);
       
-      // Reload connections after deleting
-      await loadConnections();
+      // Update state and cache
+      const updatedConnections = connections.filter(conn => conn.id !== connectionId);
+      setConnections(updatedConnections);
+      localStorage.setItem(CACHE_KEY, JSON.stringify(updatedConnections));
       
+      console.log('Connection deleted successfully');
       return { success: true, message: 'Connection deleted successfully' };
-    } catch (error: any) {
-      console.error('❌ Connection deletion failed:', error);
       
-      return {
-        success: false,
-        message: error.response?.data?.message || error.message || 'Deletion failed'
-      };
+    } catch (error: any) {
+      console.error('Failed to delete connection:', error);
+      
+      let errorMessage = 'Failed to delete connection';
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      }
+      
+      return { success: false, message: errorMessage };
+    } finally {
+      setIsLoading(false);
     }
-  }, [isServiceAvailable, loadConnections]);
+  }, [connections]);
 
-  // Get project data
-  const getProjectData = useCallback(async (connectionId: string, projectId?: string): Promise<ProjectData | ProjectData[]> => {
-    if (!isServiceAvailable) {
-      throw new Error('Service unavailable');
+  // NEW: Migration from localStorage
+  const migrateFromLocalStorage = useCallback(async (): Promise<void> => {
+    const migrationCompleted = localStorage.getItem(MIGRATION_KEY);
+    const oldData = localStorage.getItem(OLD_STORAGE_KEY);
+    
+    if (migrationCompleted || !oldData || !isAuthenticated) {
+      return;
     }
 
     try {
-      console.log('📊 Getting project data for connection:', connectionId);
+      console.log('Starting localStorage migration...');
+      setIsLoading(true);
       
-      const url = projectId 
-        ? `/api/connections/${connectionId}/projects?projectId=${projectId}`
-        : `/api/connections/${connectionId}/projects`;
-      
-      const response = await apiClient.get(url);
-      
-      return response.data;
-    } catch (error: any) {
-      console.error('❌ Failed to get project data:', error);
-      
-      let errorMessage = 'Failed to load project data';
-      if (error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      } else if (error.response?.status === 404) {
-        errorMessage = projectId ? 'Project not found' : 'Connection not found';
-      } else if (error.response?.status === 401) {
-        errorMessage = 'Authentication required';
+      const oldConnections = JSON.parse(oldData);
+      if (!Array.isArray(oldConnections) || oldConnections.length === 0) {
+        localStorage.setItem(MIGRATION_KEY, 'true');
+        return;
       }
       
-      throw new Error(errorMessage);
+      console.log(`Migrating ${oldConnections.length} connections...`);
+      
+      // Import to backend
+      const response = await apiClient.post('/api/connections/import', {
+        connections: oldConnections
+      });
+      
+      console.log('Migration response:', response.data);
+      
+      // Mark migration as completed
+      localStorage.setItem(MIGRATION_KEY, 'true');
+      
+      // Clean up old data
+      localStorage.removeItem(OLD_STORAGE_KEY);
+      
+      // Reload connections from backend
+      await loadConnections();
+      
+      console.log('Migration completed successfully');
+      
+    } catch (error) {
+      console.error('Migration failed:', error);
+      // Don't mark as completed if it failed - will retry next time
+      setError('Migration failed - will retry next time');
+    } finally {
+      setIsLoading(false);
     }
-  }, [isServiceAvailable]);
+  }, [isAuthenticated, loadConnections]);
+
+  // Refresh connections
+  const refreshConnections = useCallback(async () => {
+    await loadConnections();
+  }, [loadConnections]);
+
+  // Initialize: Load connections and attempt migration
+  useEffect(() => {
+    const initialize = async () => {
+      if (isAuthenticated) {
+        // Try migration first
+        await migrateFromLocalStorage();
+        // Then load connections (migration will have loaded them if successful)
+        if (!localStorage.getItem(MIGRATION_KEY)) {
+          await loadConnections();
+        }
+      }
+    };
+    
+    initialize();
+  }, [isAuthenticated, migrateFromLocalStorage, loadConnections]);
+
+  // Simplified platform operations (existing functionality)
+  const validatePlatformConfig = useCallback(async (
+    platform: string, 
+    config: Record<string, any>
+  ): Promise<{valid: boolean, message: string}> => {
+    try {
+      const response = await apiClient.post(`/api/platforms/${platform}/validate`, { config });
+      return response.data;
+    } catch (error: any) {
+      return { 
+        valid: false, 
+        message: error.response?.data?.message || 'Validation failed' 
+      };
+    }
+  }, []);
+
+  const testConnection = useCallback(async (connectionId: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      const response = await apiClient.post(`/api/connections/${connectionId}/test`);
+      await loadConnections(); // Refresh to get updated status
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Test failed'
+      };
+    }
+  }, [loadConnections]);
+
+  const syncConnection = useCallback(async (connectionId: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      const response = await apiClient.post(`/api/connections/${connectionId}/sync`);
+      await loadConnections(); // Refresh to get updated data
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Sync failed'
+      };
+    }
+  }, [loadConnections]);
+
+  const getProjectData = useCallback(async (connectionId: string, projectId?: string): Promise<any> => {
+    const url = projectId 
+      ? `/api/connections/${connectionId}/projects?projectId=${projectId}`
+      : `/api/connections/${connectionId}/projects`;
+    
+    const response = await apiClient.get(url);
+    return response.data;
+  }, []);
 
   const value: ConnectionsContextType = {
-    // Service availability
-    isServiceAvailable,
-    error,
-    refreshConnections,
-    
-    // Connection management
     connections,
     isLoading,
-    
-    // API functions
-    validatePlatformConfig,
+    error,
     createConnection,
+    deleteConnection,
+    refreshConnections,
+    migrateFromLocalStorage,
+    validatePlatformConfig,
     testConnection,
     syncConnection,
-    deleteConnection,
     getProjectData,
   };
 

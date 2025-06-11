@@ -1,9 +1,11 @@
-// frontend/src/pages/ConnectionsPage.tsx - FIXED VERSION
+// frontend/src/pages/ConnectionsPage.tsx - FIXED VERSION WITH INTERNAL PROVIDER
 import React, { useState, useCallback, useEffect } from 'react';
+import { ConnectionsProvider } from '../contexts/ConnectionsContext';
 import MainLayout from '../components/layout/MainLayout';
 import ConnectionsHeader from '../components/feature-specific/connections/ConnectionsHeader';
 import ConnectionsList from '../components/feature-specific/connections/ConnectionsList';
 import AddConnectionModal from '../components/feature-specific/connections/AddConnectionModal';
+import ServiceAvailabilityBanner from '../components/common/ServiceAvailabilityBanner';
 
 interface Connection {
   id: string;
@@ -16,7 +18,8 @@ interface Connection {
   createdAt: string;
 }
 
-const ConnectionsPage: React.FC = () => {
+// Internal component that uses ConnectionsContext
+const ConnectionsPageContent: React.FC = () => {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -34,9 +37,9 @@ const ConnectionsPage: React.FC = () => {
       const savedConnections = JSON.parse(localStorage.getItem('prism-connections') || '[]');
       setConnections(savedConnections);
       setError(null);
-      console.log('✅ Loaded connections:', savedConnections.length);
+      console.log('Loaded connections:', savedConnections.length);
     } catch (error) {
-      console.error('❌ Failed to load connections:', error);
+      console.error('Failed to load connections:', error);
       setError('Failed to load connections');
       setConnections([]);
     } finally {
@@ -45,12 +48,12 @@ const ConnectionsPage: React.FC = () => {
   };
 
   const handleAddConnection = useCallback(() => {
-    console.log('🔗 Opening add connection modal');
+    console.log('Opening add connection modal');
     setIsAddModalOpen(true);
   }, []);
 
   const handleConnectionAdded = useCallback(async (newConnectionData: any) => {
-    console.log('🔄 Adding new connection:', newConnectionData.name);
+    console.log('Adding new connection:', newConnectionData.name);
     
     try {
       // Create connection object
@@ -74,15 +77,15 @@ const ConnectionsPage: React.FC = () => {
       setIsAddModalOpen(false);
       setError(null);
 
-      console.log('✅ Connection added successfully:', connection.id);
+      console.log('Connection added successfully:', connection.id);
     } catch (error) {
-      console.error('❌ Failed to add connection:', error);
+      console.error('Failed to add connection:', error);
       setError('Failed to add connection');
     }
   }, []);
 
   const handleTestConnection = useCallback(async (connectionId: string) => {
-    console.log('🧪 Testing connection:', connectionId);
+    console.log('Testing connection:', connectionId);
     setActionLoading(connectionId);
     
     try {
@@ -99,9 +102,9 @@ const ConnectionsPage: React.FC = () => {
       setConnections(updatedConnections);
       localStorage.setItem('prism-connections', JSON.stringify(updatedConnections));
       
-      console.log('✅ Connection test successful');
+      console.log('Connection test successful');
     } catch (error) {
-      console.error('❌ Connection test failed:', error);
+      console.error('Connection test failed:', error);
       
       // Update connection with error status
       const updatedConnections = connections.map(conn => 
@@ -118,7 +121,7 @@ const ConnectionsPage: React.FC = () => {
   }, [connections]);
 
   const handleSyncConnection = useCallback(async (connectionId: string) => {
-    console.log('🔄 Syncing connection:', connectionId);
+    console.log('Syncing connection:', connectionId);
     setActionLoading(connectionId);
     
     try {
@@ -135,9 +138,9 @@ const ConnectionsPage: React.FC = () => {
       setConnections(updatedConnections);
       localStorage.setItem('prism-connections', JSON.stringify(updatedConnections));
       
-      console.log('✅ Connection sync successful');
+      console.log('Connection sync successful');
     } catch (error) {
-      console.error('❌ Connection sync failed:', error);
+      console.error('Connection sync failed:', error);
       
       const updatedConnections = connections.map(conn => 
         conn.id === connectionId 
@@ -157,7 +160,7 @@ const ConnectionsPage: React.FC = () => {
       return;
     }
 
-    console.log('🗑️ Deleting connection:', connectionId);
+    console.log('Deleting connection:', connectionId);
     setActionLoading(connectionId);
     
     try {
@@ -166,9 +169,9 @@ const ConnectionsPage: React.FC = () => {
       setConnections(updatedConnections);
       localStorage.setItem('prism-connections', JSON.stringify(updatedConnections));
       
-      console.log('✅ Connection deleted successfully');
+      console.log('Connection deleted successfully');
     } catch (error) {
-      console.error('❌ Failed to delete connection:', error);
+      console.error('Failed to delete connection:', error);
       setError('Failed to delete connection');
     } finally {
       setActionLoading(null);
@@ -178,6 +181,9 @@ const ConnectionsPage: React.FC = () => {
   return (
     <MainLayout>
       <div className="space-y-6">
+        {/* Service Availability Banner */}
+        <ServiceAvailabilityBanner />
+        
         <ConnectionsHeader onAddConnection={handleAddConnection} />
         
         {/* Error Display */}
@@ -192,7 +198,7 @@ const ConnectionsPage: React.FC = () => {
                 onClick={() => setError(null)}
                 className="ml-auto text-red-500 hover:text-red-700"
               >
-                ×
+                &times;
               </button>
             </div>
           </div>
@@ -261,6 +267,17 @@ const ConnectionsPage: React.FC = () => {
         )}
       </div>
     </MainLayout>
+  );
+};
+
+// Main component that provides ConnectionsProvider only when needed
+const ConnectionsPage: React.FC = () => {
+  console.log('ConnectionsPage: Rendering with internal ConnectionsProvider');
+  
+  return (
+    <ConnectionsProvider>
+      <ConnectionsPageContent />
+    </ConnectionsProvider>
   );
 };
 

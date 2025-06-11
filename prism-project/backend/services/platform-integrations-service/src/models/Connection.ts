@@ -1,16 +1,31 @@
+// =============================================================================
+// 1. BACKEND: Enhanced Connection Model (MINIMAL CHANGES)
+// File: backend/services/platform-integrations-service/src/models/Connection.ts
+// =============================================================================
+
 import { Schema, model, Document } from 'mongoose';
 import { encrypt, decrypt } from '../utils/encryption';
 
 export interface IConnection extends Document {
   userId: string;
   name: string;
-  platform: 'monday' | 'jira' | 'trofos';
+  platform: 'monday' | 'jira';
   config: Record<string, any>;
   encryptedConfig: string;
   status: 'connected' | 'disconnected' | 'error';
   lastSync?: Date;
   lastSyncError?: string;
   projectCount: number;
+  // NEW: Simple metadata addition (optional for now)
+  metadata?: {
+    selectedProjects?: string[];
+    defaultTemplate?: string;
+    reportPreferences?: {
+      includeCharts?: boolean;
+      includeTeamInfo?: boolean;
+      dateRange?: number;
+    };
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -21,7 +36,7 @@ const connectionSchema = new Schema<IConnection>({
   platform: { 
     type: String, 
     required: true, 
-    enum: ['monday', 'jira', 'trofos'] 
+    enum: ['monday', 'jira'] 
   },
   encryptedConfig: { type: String, required: true },
   status: { 
@@ -33,6 +48,16 @@ const connectionSchema = new Schema<IConnection>({
   lastSync: { type: Date },
   lastSyncError: { type: String },
   projectCount: { type: Number, default: 0 },
+  // NEW: Optional metadata (backward compatible)
+  metadata: {
+    selectedProjects: [{ type: String }],
+    defaultTemplate: { type: String, default: 'standard' },
+    reportPreferences: {
+      includeCharts: { type: Boolean, default: true },
+      includeTeamInfo: { type: Boolean, default: true },
+      dateRange: { type: Number, default: 30 }
+    }
+  },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });

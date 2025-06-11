@@ -1,7 +1,4 @@
-// backend/services/platform-integrations-service/src/index.ts - ADD MISSING ROUTES
-import dotenv from 'dotenv';
-dotenv.config();
-
+// backend/services/platform-integrations-service/src/index.ts - ENSURE THESE ROUTES EXIST
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -15,84 +12,84 @@ app.use(helmet());
 app.use(cors({ origin: true }));
 app.use(express.json());
 
-// Existing routes
-app.use('/api/platforms', platformRoutes);
-app.use('/api/connections', connectionRoutes);
+// CRITICAL: These routes must exist for the frontend to work
 
-// NEW: Add the missing /api/platform-integrations routes
-app.use('/api/platform-integrations', (req, res, next) => {
-  logger.info(`Platform integrations route accessed: ${req.method} ${req.path}`);
-  next();
+// 1. Basic service health endpoints (NO /api prefix needed)
+app.get('/health', (req, res) => {
+  logger.info('Health check requested');
+  res.status(200).json({
+    status: 'healthy',
+    service: 'platform-integrations',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: {
+      used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB',
+      total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + 'MB'
+    }
+  });
 });
 
-// Service info endpoint
+app.get('/status', (req, res) => {
+  logger.info('Status check requested');
+  res.status(200).json({
+    service: 'platform-integrations',
+    status: 'running',
+    uptime: `${Math.floor(process.uptime())}s`,
+    version: '1.0.0',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// 2. Platform integrations specific endpoints (WITH /api prefix)
+app.get('/api/platform-integrations/health', (req, res) => {
+  logger.info('Platform integrations health check');
+  res.status(200).json({
+    status: 'healthy',
+    service: 'platform-integrations',
+    version: '1.0.0',
+    capabilities: [
+      'Connection management',
+      'Platform validation',
+      'Data synchronization'
+    ],
+    supportedPlatforms: ['monday', 'jira'],
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/api/platform-integrations/status', (req, res) => {
+  res.status(200).json({
+    service: 'platform-integrations',
+    status: 'running',
+    uptime: `${Math.floor(process.uptime())}s`,
+    memory: process.memoryUsage(),
+    timestamp: new Date().toISOString()
+  });
+});
+
 app.get('/api/platform-integrations/info', (req, res) => {
   logger.info('Service info requested');
   res.json({
     service: 'platform-integrations',
     version: '1.0.0',
-    status: 'running',
     description: 'PRISM Platform Integrations Service',
     supportedPlatforms: [
       { id: 'monday', name: 'Monday.com', status: 'supported' },
-      { id: 'jira', name: 'Jira Cloud', status: 'supported' },
-      { id: 'trofos', name: 'TROFOS', status: 'supported' }
+      { id: 'jira', name: 'Jira Cloud', status: 'supported' }
     ],
     endpoints: {
+      health: '/api/platform-integrations/health',
       platforms: '/api/platforms',
-      connections: '/api/connections',
-      info: '/api/platform-integrations/info',
-      health: '/api/platform-integrations/health'
+      connections: '/api/connections'
     },
     timestamp: new Date().toISOString()
   });
 });
 
-// Health check for platform integrations
-app.get('/api/platform-integrations/health', (req, res) => {
-  logger.info('Platform integrations health check');
-  res.json({
-    status: 'healthy',
-    service: 'platform-integrations',
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Service status
-app.get('/api/platform-integrations/status', (req, res) => {
-  res.json({
-    service: 'platform-integrations',
-    status: 'running',
-    uptime: `${Math.floor(process.uptime())}s`,
-    memory: {
-      used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB',
-      total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + 'MB'
-    },
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Root service health check (no /api prefix)
-app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'ok', 
-    service: 'platform-integrations',
-    timestamp: new Date().toISOString(),
-    version: '1.0.0'
-  });
-});
-
-// Service status (no /api prefix)
-app.get('/status', (req, res) => {
-  res.status(200).json({
-    service: 'platform-integrations',
-    status: 'running',
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    timestamp: new Date().toISOString()
-  });
-});
+// 3. Main API routes
+app.use('/api/platforms', platformRoutes);
+app.use('/api/connections', connectionRoutes);
 
 const PORT = Number(process.env.PORT) || 4005;
 
@@ -100,15 +97,16 @@ async function start() {
   try {
     await connectDB();
     app.listen(PORT, () => {
-      logger.info(`Platform Integrations service up on ${PORT}`);
-      logger.info(`Available routes:`);
+      logger.info(`Platform Integrations service running on port ${PORT}`);
+      logger.info(`Health check: http://localhost:${PORT}/health`);
+      logger.info(`Available endpoints:`);
       logger.info(`  - GET /health (service health)`);
       logger.info(`  - GET /status (service status)`);
+      logger.info(`  - GET /api/platform-integrations/health`);
+      logger.info(`  - GET /api/platform-integrations/status`);
+      logger.info(`  - GET /api/platform-integrations/info`);
       logger.info(`  - /api/platforms/* (platform management)`);
       logger.info(`  - /api/connections/* (connection management)`);
-      logger.info(`  - /api/platform-integrations/info (service info)`);
-      logger.info(`  - /api/platform-integrations/health (service health)`);
-      logger.info(`  - /api/platform-integrations/status (service status)`);
     });
   } catch (err) {
     logger.error('Startup failed', err);

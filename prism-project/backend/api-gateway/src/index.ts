@@ -1,11 +1,11 @@
-// backend/api-gateway/src/index.ts - UPDATED WITH MONDAY PROXY
+// backend/api-gateway/src/index.ts - FIXED TYPESCRIPT ERRORS
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import proxy from 'express-http-proxy';
 import dotenv from 'dotenv';
 import jiraProxy from './routes/jiraProxy';
-import mondayProxy from './routes/mondayProxy'; // ADD THIS LINE
+import mondayProxy from './routes/mondayProxy';
 
 dotenv.config();
 
@@ -14,17 +14,16 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: true, // Allow all origins in development
+  credentials: true
+}));
 app.use(express.json());
 
 // Service URLs
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://localhost:4000';
 const REPORT_SERVICE_URL = process.env.REPORT_SERVICE_URL || 'http://localhost:4002';
 const PLATFORM_INTEGRATIONS_SERVICE_URL = process.env.PLATFORM_INTEGRATIONS_SERVICE_URL || 'http://localhost:4005';
-
-// ADD PROXY ROUTES - INSERT BEFORE OTHER ROUTES
-app.use('/api/jira-proxy', jiraProxy);
-app.use('/api/monday-proxy', mondayProxy); // ADD THIS LINE
 
 // Enhanced error handling for proxy
 const createProxyOptions = (serviceUrl: string, serviceName: string) => ({
@@ -44,6 +43,10 @@ const createProxyOptions = (serviceUrl: string, serviceName: string) => ({
   }
 });
 
+// PROXY ROUTES - These must come BEFORE other routes to avoid conflicts
+app.use('/api/jira-proxy', jiraProxy);
+app.use('/api/monday-proxy', mondayProxy);
+
 // Gateway health check
 app.get('/health', (req, res) => {
   res.status(200).json({ 
@@ -55,7 +58,7 @@ app.get('/health', (req, res) => {
       platformIntegrations: PLATFORM_INTEGRATIONS_SERVICE_URL,
       reportGeneration: REPORT_SERVICE_URL,
       jiraProxy: 'enabled',
-      mondayProxy: 'enabled' // ADD THIS LINE
+      mondayProxy: 'enabled'
     }
   });
 });
@@ -66,55 +69,65 @@ app.use((req, res, next) => {
   next();
 });
 
-// Authentication routes
+// 1. AUTHENTICATION ROUTES
 app.use('/api/auth', proxy(AUTH_SERVICE_URL, {
   ...createProxyOptions(AUTH_SERVICE_URL, 'auth-service'),
   proxyReqPathResolver: (req) => {
-    console.log(`Routing to auth-service: /api/auth${req.url}`);
-    return `/api/auth${req.url}`;
+    const path = `/api/auth${req.url}`;
+    console.log(`Routing to auth-service: ${path}`);
+    return path;
   }
 }));
 
-// Platform routes (existing - should work)
-app.use('/api/platforms', proxy(PLATFORM_INTEGRATIONS_SERVICE_URL, {
-  ...createProxyOptions(PLATFORM_INTEGRATIONS_SERVICE_URL, 'platform-integrations-service'),
-  proxyReqPathResolver: (req) => {
-    console.log(`Routing to platform-integrations-service: /api/platforms${req.url}`);
-    return `/api/platforms${req.url}`;
-  }
-}));
+// 2. PLATFORM INTEGRATIONS ROUTES (CRITICAL - This was likely missing or misconfigured)
 
-// Connection routes (existing - should work)
-app.use('/api/connections', proxy(PLATFORM_INTEGRATIONS_SERVICE_URL, {
-  ...createProxyOptions(PLATFORM_INTEGRATIONS_SERVICE_URL, 'platform-integrations-service'),
-  proxyReqPathResolver: (req) => {
-    console.log(`Routing to platform-integrations-service: /api/connections${req.url}`);
-    return `/api/connections${req.url}`;
-  }
-}));
-
-// Platform integrations general routes
+// 2a. General platform integrations service routes
 app.use('/api/platform-integrations', proxy(PLATFORM_INTEGRATIONS_SERVICE_URL, {
   ...createProxyOptions(PLATFORM_INTEGRATIONS_SERVICE_URL, 'platform-integrations-service'),
   proxyReqPathResolver: (req) => {
-    const path = req.url;
-    console.log(`Routing to platform-integrations-service: /api/platform-integrations${path}`);
+    let path = req.url;
     
-    // Map specific paths
+    // Handle specific route mappings
     if (path === '/' || path === '') {
-      return '/api/platform-integrations/info';  // Map root to info endpoint
+      path = '/api/platform-integrations/info';
+    } else if (path.startsWith('/')) {
+      path = `/api/platform-integrations${path}`;
+    } else {
+      path = `/api/platform-integrations/${path}`;
     }
     
-    return `/api/platform-integrations${path}`;
+    console.log(`Routing to platform-integrations-service: ${path}`);
+    return path;
   }
 }));
 
-// Report generation routes
+// 2b. Platforms routes (for platform management)
+app.use('/api/platforms', proxy(PLATFORM_INTEGRATIONS_SERVICE_URL, {
+  ...createProxyOptions(PLATFORM_INTEGRATIONS_SERVICE_URL, 'platform-integrations-service'),
+  proxyReqPathResolver: (req) => {
+    const path = `/api/platforms${req.url}`;
+    console.log(`Routing to platform-integrations-service (platforms): ${path}`);
+    return path;
+  }
+}));
+
+// 2c. Connections routes (for connection management)
+app.use('/api/connections', proxy(PLATFORM_INTEGRATIONS_SERVICE_URL, {
+  ...createProxyOptions(PLATFORM_INTEGRATIONS_SERVICE_URL, 'platform-integrations-service'),
+  proxyReqPathResolver: (req) => {
+    const path = `/api/connections${req.url}`;
+    console.log(`Routing to platform-integrations-service (connections): ${path}`);
+    return path;
+  }
+}));
+
+// 3. REPORT GENERATION ROUTES
 app.use('/api/reports', proxy(REPORT_SERVICE_URL, {
   ...createProxyOptions(REPORT_SERVICE_URL, 'report-generation-service'),
   proxyReqPathResolver: (req) => {
-    console.log(`Routing to report-generation-service: /api/reports${req.url}`);
-    return `/api/reports${req.url}`;
+    const path = `/api/reports${req.url}`;
+    console.log(`Routing to report-generation-service: ${path}`);
+    return path;
   }
 }));
 
@@ -138,17 +151,21 @@ app.use('/api/*', (req, res) => {
     path: req.path,
     method: req.method,
     availableRoutes: [
+      'GET /health (API Gateway health)',
       'GET /api/auth/me',
       'POST /api/auth/login', 
       'POST /api/auth/register',
       'POST /api/jira-proxy/test-connection',
-      'POST /api/monday-proxy/test-connection', // ADD THIS LINE
-      'POST /api/monday-proxy/get-boards', // ADD THIS LINE
+      'POST /api/monday-proxy/test-connection',
+      'POST /api/monday-proxy/get-boards',
+      'GET /api/platform-integrations/health',
+      'GET /api/platform-integrations/status',
+      'GET /api/platform-integrations/info',
       'GET /api/platforms',
       'POST /api/platforms/:platformId/validate',
       'GET /api/connections',
       'POST /api/connections',
-      'GET /api/platform-integrations/',
+      'POST /api/connections/import',
       'GET /api/reports'
     ],
     timestamp: new Date().toISOString()
@@ -159,12 +176,60 @@ app.use('/api/*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`API Gateway running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
-  console.log(`Service routes:`);
-  console.log(`  - Auth: /api/auth/* -> ${AUTH_SERVICE_URL}`);
-  console.log(`  - Jira Proxy: /api/jira-proxy/* -> Direct proxy`);
-  console.log(`  - Monday Proxy: /api/monday-proxy/* -> Direct proxy`); // ADD THIS LINE
-  console.log(`  - Platforms: /api/platforms/* -> ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);
-  console.log(`  - Connections: /api/connections/* -> ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);
-  console.log(`  - Platform Integrations: /api/platform-integrations/* -> ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);
-  console.log(`  - Reports: /api/reports/* -> ${REPORT_SERVICE_URL}`);
+  console.log(`Service routes configured:`);
+  console.log(`  Auth: /api/auth/* -> ${AUTH_SERVICE_URL}`);
+  console.log(`  Jira Proxy: /api/jira-proxy/* -> Direct proxy`);
+  console.log(`  Monday Proxy: /api/monday-proxy/* -> Direct proxy`);
+  console.log(`  Platform Integrations: /api/platform-integrations/* -> ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);
+  console.log(`  Platforms: /api/platforms/* -> ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);
+  console.log(`  Connections: /api/connections/* -> ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);
+  console.log(`  Reports: /api/reports/* -> ${REPORT_SERVICE_URL}`);
+  console.log(`\nTroubleshooting:`);
+  console.log(`  1. Check if platform-integrations-service is running on ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);
+  console.log(`  2. Test direct service: curl ${PLATFORM_INTEGRATIONS_SERVICE_URL}/health`);
+  console.log(`  3. Test through gateway: curl http://localhost:${PORT}/api/platform-integrations/health`);
 });
+
+// =============================================================================
+// PLATFORM INTEGRATIONS SERVICE HEALTH ENDPOINT CHECK
+// =============================================================================
+
+// Helper function to create AbortController for timeout
+const createTimeoutAbortController = (timeoutMs: number): AbortController => {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), timeoutMs);
+  return controller;
+};
+
+// Additional startup check to verify platform integrations service
+const checkPlatformServiceOnStartup = async () => {
+  try {
+    console.log(`Checking platform integrations service at ${PLATFORM_INTEGRATIONS_SERVICE_URL}...`);
+    
+    // Create timeout controller
+    const controller = createTimeoutAbortController(5000);
+    
+    const response = await fetch(`${PLATFORM_INTEGRATIONS_SERVICE_URL}/health`, {
+      method: 'GET',
+      signal: controller.signal
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`Platform integrations service is healthy:`, data);
+    } else {
+      console.log(`Platform integrations service responded with status ${response.status}`);
+    }
+  } catch (error: unknown) {
+    // Proper error handling for unknown type
+    if (error instanceof Error) {
+      console.log(`Platform integrations service is not responding:`, error.message);
+    } else {
+      console.log(`Platform integrations service is not responding: Unknown error`);
+    }
+    console.log(`Make sure the service is running: cd backend/services/platform-integrations-service && npm run dev`);
+  }
+};
+
+// Run the check 2 seconds after startup
+setTimeout(checkPlatformServiceOnStartup, 2000);

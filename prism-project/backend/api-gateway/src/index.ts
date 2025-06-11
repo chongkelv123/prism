@@ -1,4 +1,4 @@
-// backend/api-gateway/src/index.ts - FIXED TYPESCRIPT ERRORS
+// backend/api-gateway/src/index.ts - FIXED HEALTH ENDPOINTS
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -43,11 +43,25 @@ const createProxyOptions = (serviceUrl: string, serviceName: string) => ({
   }
 });
 
-// PROXY ROUTES - These must come BEFORE other routes to avoid conflicts
-app.use('/api/jira-proxy', jiraProxy);
-app.use('/api/monday-proxy', mondayProxy);
+// HEALTH ENDPOINTS - THESE MUST COME FIRST!
 
-// Gateway health check
+// API Gateway health check (accessed via /api/health from frontend)
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'ok', 
+    service: 'api-gateway',
+    timestamp: new Date().toISOString(),
+    services: {
+      auth: AUTH_SERVICE_URL,
+      platformIntegrations: PLATFORM_INTEGRATIONS_SERVICE_URL,
+      reportGeneration: REPORT_SERVICE_URL,
+      jiraProxy: 'enabled',
+      mondayProxy: 'enabled'
+    }
+  });
+});
+
+// Root health check (accessed directly via /health)
 app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'ok', 
@@ -62,6 +76,22 @@ app.get('/health', (req, res) => {
     }
   });
 });
+
+// API Gateway status endpoint
+app.get('/api/status', (req, res) => {
+  res.status(200).json({
+    service: 'api-gateway',
+    status: 'running',
+    uptime: `${Math.floor(process.uptime())}s`,
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// PROXY ROUTES - These must come BEFORE other routes to avoid conflicts
+app.use('/api/jira-proxy', jiraProxy);
+app.use('/api/monday-proxy', mondayProxy);
 
 // Route logging middleware (for debugging)
 app.use((req, res, next) => {
@@ -79,7 +109,7 @@ app.use('/api/auth', proxy(AUTH_SERVICE_URL, {
   }
 }));
 
-// 2. PLATFORM INTEGRATIONS ROUTES (CRITICAL - This was likely missing or misconfigured)
+// 2. PLATFORM INTEGRATIONS ROUTES (CRITICAL - Fixed routing)
 
 // 2a. General platform integrations service routes
 app.use('/api/platform-integrations', proxy(PLATFORM_INTEGRATIONS_SERVICE_URL, {
@@ -152,6 +182,8 @@ app.use('/api/*', (req, res) => {
     method: req.method,
     availableRoutes: [
       'GET /health (API Gateway health)',
+      'GET /api/health (API Gateway health via /api)',
+      'GET /api/status (API Gateway status)',
       'GET /api/auth/me',
       'POST /api/auth/login', 
       'POST /api/auth/register',
@@ -176,6 +208,7 @@ app.use('/api/*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`API Gateway running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
+  console.log(`API Health check: http://localhost:${PORT}/api/health`);
   console.log(`Service routes configured:`);
   console.log(`  Auth: /api/auth/* -> ${AUTH_SERVICE_URL}`);
   console.log(`  Jira Proxy: /api/jira-proxy/* -> Direct proxy`);
@@ -188,44 +221,35 @@ app.listen(PORT, () => {
   console.log(`  1. Check if platform-integrations-service is running on ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);
   console.log(`  2. Test direct service: curl ${PLATFORM_INTEGRATIONS_SERVICE_URL}/health`);
   console.log(`  3. Test through gateway: curl http://localhost:${PORT}/api/platform-integrations/health`);
+  console.log(`  4. Test gateway health: curl http://localhost:${PORT}/api/health`);
 });
-
-// =============================================================================
-// PLATFORM INTEGRATIONS SERVICE HEALTH ENDPOINT CHECK
-// =============================================================================
-
-// Helper function to create AbortController for timeout
-const createTimeoutAbortController = (timeoutMs: number): AbortController => {
-  const controller = new AbortController();
-  setTimeout(() => controller.abort(), timeoutMs);
-  return controller;
-};
 
 // Additional startup check to verify platform integrations service
 const checkPlatformServiceOnStartup = async () => {
   try {
     console.log(`Checking platform integrations service at ${PLATFORM_INTEGRATIONS_SERVICE_URL}...`);
     
-    // Create timeout controller
-    const controller = createTimeoutAbortController(5000);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     
     const response = await fetch(`${PLATFORM_INTEGRATIONS_SERVICE_URL}/health`, {
       method: 'GET',
       signal: controller.signal
     });
     
+    clearTimeout(timeoutId);
+    
     if (response.ok) {
       const data = await response.json();
-      console.log(`Platform integrations service is healthy:`, data);
+      console.log(`✅ Platform integrations service is healthy:`, data);
     } else {
-      console.log(`Platform integrations service responded with status ${response.status}`);
+      console.log(`⚠️ Platform integrations service responded with status ${response.status}`);
     }
   } catch (error: unknown) {
-    // Proper error handling for unknown type
     if (error instanceof Error) {
-      console.log(`Platform integrations service is not responding:`, error.message);
+      console.log(`❌ Platform integrations service is not responding:`, error.message);
     } else {
-      console.log(`Platform integrations service is not responding: Unknown error`);
+      console.log(`❌ Platform integrations service is not responding: Unknown error`);
     }
     console.log(`Make sure the service is running: cd backend/services/platform-integrations-service && npm run dev`);
   }

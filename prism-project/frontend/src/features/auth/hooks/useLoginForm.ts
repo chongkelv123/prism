@@ -1,8 +1,7 @@
-// frontend/src/features/auth/hooks/useLoginForm.ts - FIXED VERSION
+// frontend/src/features/auth/hooks/useLoginForm.ts - FIXED TO HANDLE RESPONSE STRUCTURE
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { login } from '../../../services/auth.service';
-import { validateEmail } from '../../../utils/validation';
 import { useAuth } from '../../../contexts/AuthContext';
 
 interface LoginFormData {
@@ -17,33 +16,44 @@ interface LoginFormErrors {
   general?: string;
 }
 
-export const useLoginForm = (onSuccess?: () => void) => {
-  const { login: authLogin } = useAuth();
+interface UseLoginFormProps {
+  onSuccess?: () => void;
+}
+
+export function useLoginForm({ onSuccess }: UseLoginFormProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { login: authLogin } = useAuth();
   
   const [formData, setFormData] = useState<LoginFormData>({
     email: '',
     password: '',
     remember: false,
   });
+  
   const [errors, setErrors] = useState<LoginFormErrors>({});
   const [isLoading, setIsLoading] = useState(false);
 
   const validate = (): boolean => {
     const newErrors: LoginFormErrors = {};
-    if (!validateEmail(formData.email)) {
-      newErrors.email = 'Please enter a valid email address';
+    
+    if (!formData.email) {
+      newErrors.email = 'Email is required';
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      newErrors.email = 'Email is invalid';
     }
-    if (formData.password.trim() === '') {
+    
+    if (!formData.password) {
       newErrors.password = 'Password is required';
     }
+    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
+    
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value,
@@ -74,10 +84,34 @@ export const useLoginForm = (onSuccess?: () => void) => {
       
       // Step 1: Call login service to get token
       const loginResponse = await login(formData.email, formData.password);
-      console.log('✅ Login service successful, got token');
+      console.log('✅ Login service successful, got response:', loginResponse);
+      
+      // Handle different response structures
+      let token: string;
+      
+      if (loginResponse.accessToken) {
+        // Expected structure: { accessToken: "...", userId: "..." }
+        token = loginResponse.accessToken;
+        console.log('🔍 Using accessToken from response');
+      } else if (loginResponse.token) {
+        // Alternative structure: { token: "...", userId: "..." }
+        token = loginResponse.token;
+        console.log('🔍 Using token from response');
+      } else if (typeof loginResponse === 'string') {
+        // Direct token string
+        token = loginResponse;
+        console.log('🔍 Using direct token string');
+      } else {
+        // Unknown structure - log and throw error
+        console.error('❌ Unknown response structure:', loginResponse);
+        console.error('❌ Available keys:', Object.keys(loginResponse));
+        throw new Error('Invalid login response format. Please contact support.');
+      }
+      
+      console.log('🔐 Using token for authentication');
       
       // Step 2: Use AuthContext to store token and fetch user data
-      await authLogin(loginResponse.accessToken, formData.remember);
+      await authLogin(token, formData.remember);
       console.log('✅ AuthContext login completed');
       
       // Step 3: Handle success
@@ -125,4 +159,4 @@ export const useLoginForm = (onSuccess?: () => void) => {
   };
 
   return { formData, errors, isLoading, handleChange, handleSubmit };
-};
+}

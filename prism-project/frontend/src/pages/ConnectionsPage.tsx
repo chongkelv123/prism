@@ -1,6 +1,7 @@
-// frontend/src/pages/ConnectionsPage.tsx - FIXED WITH INTERNAL PROVIDER
+// frontend/src/pages/ConnectionsPage.tsx - DEBUG VERSION TO FIND THE ISSUE
 import React, { useState, useCallback } from 'react';
 import { ConnectionsProvider, useConnections } from '../contexts/ConnectionsContext';
+import { useAuth } from '../contexts/AuthContext';
 import MainLayout from '../components/layout/MainLayout';
 import ConnectionsHeader from '../components/feature-specific/connections/ConnectionsHeader';
 import ConnectionsList from '../components/feature-specific/connections/ConnectionsList';
@@ -12,6 +13,9 @@ const ConnectionsPageContent: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
+  // Get auth info for debugging
+  const { user, isAuthenticated } = useAuth();
+
   // Now we can safely use ConnectionsContext
   const { 
     connections, 
@@ -20,19 +24,47 @@ const ConnectionsPageContent: React.FC = () => {
     createConnection,
     testConnection,
     syncConnection,
-    deleteConnection 
+    deleteConnection,
+    isServiceAvailable 
   } = useConnections();
 
   const handleAddConnection = useCallback(() => {
-    console.log('Opening add connection modal');
+    console.log('🔘 Opening add connection modal');
     setIsAddModalOpen(true);
   }, []);
 
   const handleConnectionAdded = useCallback(async (newConnectionData: any) => {
-    console.log('Adding new connection via ConnectionsContext:', newConnectionData.name);
+    console.log('🔄 ===== CONNECTION CREATION DEBUG =====');
+    console.log('🔄 Input data:', {
+      name: newConnectionData.name,
+      platform: newConnectionData.platform,
+      hasConfig: !!newConnectionData.config,
+      configKeys: newConnectionData.config ? Object.keys(newConnectionData.config) : []
+    });
+    
+    // Debug auth state
+    console.log('🔐 Auth state:', {
+      isAuthenticated,
+      userId: user?.id,
+      userEmail: user?.email
+    });
+    
+    // Debug service state
+    console.log('🌐 Service state:', {
+      isServiceAvailable,
+      connectionsCount: connections.length,
+      isLoading,
+      error
+    });
+    
+    // Debug localStorage before
+    console.log('💾 LocalStorage BEFORE:');
+    console.log('  Global:', localStorage.getItem('prism-connections'));
+    console.log('  User:', localStorage.getItem(`prism-connections-${user?.id}`));
     
     try {
-      // Use ConnectionsContext instead of direct localStorage
+      console.log('⏳ Calling createConnection...');
+      
       await createConnection({
         name: newConnectionData.name,
         platform: newConnectionData.platform,
@@ -40,13 +72,26 @@ const ConnectionsPageContent: React.FC = () => {
         metadata: newConnectionData.metadata || {}
       });
       
+      console.log('✅ createConnection completed successfully');
+      
+      // Debug localStorage after
+      console.log('💾 LocalStorage AFTER:');
+      console.log('  Global:', localStorage.getItem('prism-connections'));
+      console.log('  User:', localStorage.getItem(`prism-connections-${user?.id}`));
+      
       setIsAddModalOpen(false);
-      console.log('✅ Connection added successfully via ConnectionsContext');
+      console.log('🔄 ===== CONNECTION CREATION COMPLETE =====');
+      
     } catch (error) {
-      console.error('❌ Failed to add connection:', error);
-      // Error is handled by ConnectionsContext
+      console.error('❌ ===== CONNECTION CREATION FAILED =====');
+      console.error('❌ Error details:', error);
+      console.error('❌ Error message:', error instanceof Error ? error.message : 'Unknown error');
+      console.error('❌ ===== END ERROR =====');
+      
+      // Show error to user
+      alert(`Failed to create connection: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }, [createConnection]);
+  }, [createConnection, isAuthenticated, user?.id, isServiceAvailable, connections, isLoading, error]);
 
   const handleTestConnection = useCallback(async (connectionId: string) => {
     console.log('Testing connection via ConnectionsContext:', connectionId);
@@ -145,6 +190,51 @@ const ConnectionsPageContent: React.FC = () => {
           />
         )}
 
+        {/* Enhanced Debug Info */}
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <h3 className="text-sm font-medium text-yellow-800 mb-2">
+            🐛 DEBUG INFO:
+          </h3>
+          <div className="text-xs text-yellow-700 space-y-1">
+            <p><strong>Auth:</strong> {isAuthenticated ? '✅ Authenticated' : '❌ Not authenticated'}</p>
+            <p><strong>User ID:</strong> {user?.id || 'None'}</p>
+            <p><strong>Service Available:</strong> {isServiceAvailable ? '✅ Available' : '❌ Unavailable'}</p>
+            <p><strong>Connections:</strong> {connections.length}</p>
+            <p><strong>Connected:</strong> {connections.filter(c => c.status === 'connected').length}</p>
+            <p><strong>Loading:</strong> {isLoading ? 'Yes' : 'No'}</p>
+            <p><strong>Error:</strong> {error || 'None'}</p>
+            <p><strong>Storage Keys:</strong> prism-connections-{user?.id || 'NO_USER'}</p>
+          </div>
+          
+          <div className="mt-3 flex space-x-2">
+            <button
+              onClick={() => {
+                console.log('📊 Current state:', {
+                  connections,
+                  isLoading,
+                  error,
+                  isServiceAvailable,
+                  isAuthenticated,
+                  user
+                });
+              }}
+              className="px-2 py-1 text-xs bg-yellow-200 text-yellow-800 rounded"
+            >
+              Log State
+            </button>
+            <button
+              onClick={() => {
+                const globalData = localStorage.getItem('prism-connections');
+                const userData = localStorage.getItem(`prism-connections-${user?.id}`);
+                console.log('💾 Storage debug:', { globalData, userData });
+              }}
+              className="px-2 py-1 text-xs bg-yellow-200 text-yellow-800 rounded"
+            >
+              Check Storage
+            </button>
+          </div>
+        </div>
+
         {/* Instructions */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <h3 className="text-sm font-medium text-blue-800 mb-2">
@@ -158,25 +248,6 @@ const ConnectionsPageContent: React.FC = () => {
             <p>5. Use "Test" or "Sync" to verify connections anytime</p>
           </div>
         </div>
-
-        {/* Debug Info */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="bg-gray-100 border border-gray-300 rounded-lg p-4">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">
-              🐛 Debug Info (ConnectionsContext):
-            </h3>
-            <div className="text-xs text-gray-600 space-y-1">
-              <p>Connections: {connections.length}</p>
-              <p>Connected: {connections.filter(c => c.status === 'connected').length}</p>
-              <p>Is Loading: {isLoading ? 'Yes' : 'No'}</p>
-              <p>Action Loading: {actionLoading || 'None'}</p>
-              <p>Modal Open: {isAddModalOpen ? 'Yes' : 'No'}</p>
-              <p>Error: {error || 'None'}</p>
-              <p>Storage: User-specific (prism-connections-USER_ID)</p>
-              <p>Statuses: {connections.map(c => c.status).join(', ') || 'None'}</p>
-            </div>
-          </div>
-        )}
       </div>
     </MainLayout>
   );

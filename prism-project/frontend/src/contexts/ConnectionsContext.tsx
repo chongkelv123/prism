@@ -245,20 +245,33 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     }
   }, [isAuthenticated, user?.id, logout, checkServiceHealth]);
 
-  // Create connection with proper user association
-  const createConnection = useCallback(async (connectionData: ConnectionConfig): Promise<void> => {
-    if (!isAuthenticated || !user?.id) {
-      throw new Error('Authentication required');
-    }
+// Add this debug logging to ConnectionsContext.tsx createConnection method
+const createConnection = useCallback(async (connectionData: ConnectionConfig): Promise<void> => {
+  if (!isAuthenticated || !user?.id) {
+    throw new Error('Authentication required');
+  }
 
-    try {
-      setIsLoading(true);
-      console.log('➕ Creating connection for user:', user.id, connectionData.name);
+  try {
+    setIsLoading(true);
+    console.log('➕ Creating connection for user:', user.id, connectionData.name);
+    
+    // DEBUG: Log the exact data being sent to backend
+    console.log('🔍 CONNECTION DATA DEBUG:');
+    console.log('  - name:', connectionData.name);
+    console.log('  - platform:', connectionData.platform);
+    console.log('  - config keys:', Object.keys(connectionData.config || {}));
+    console.log('  - config values:', connectionData.config);
+    console.log('  - metadata:', connectionData.metadata);
+    
+    if (isServiceAvailable) {
+      // Try backend first
+      console.log('🌐 Sending to backend...');
       
-      if (isServiceAvailable) {
-        // Try backend first
+      try {
         const response = await apiClient.post('/api/connections', connectionData);
-        const newConnection = response.data;
+        const newConnection = response;
+        
+        console.log('✅ Backend response:', newConnection);
         
         // Validate the new connection
         const validatedConnection = ConnectionMigration.migrateAndValidateConnections([newConnection])[0];
@@ -273,43 +286,60 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         console.log('✅ Connection created successfully in backend');
         setError(null);
         
-      } else {
-        // Fallback to localStorage with user association
-        const newConnection: Connection = {
-          id: `conn_${user.id}_${Date.now()}`,
-          name: connectionData.name,
-          platform: connectionData.platform,
-          status: 'connected',
-          projectCount: 1,
-          lastSync: 'Just now',
-          createdAt: new Date().toISOString(),
-          metadata: connectionData.metadata
-        };
+      } catch (backendError: any) {
+        console.error('🚨 Backend Error Details:');
+        console.error('  - Status:', backendError.response?.status);
+        console.error('  - Status Text:', backendError.response?.statusText);
+        console.error('  - Error Data:', backendError.response?.data);
+        console.error('  - Error Message:', backendError.message);
+        console.error('  - Full Error:', backendError);
         
-        const updatedConnections = [...connections, newConnection];
-        setConnections(updatedConnections);
-        
-        const userStorageKey = `prism-connections-${user.id}`;
-        localStorage.setItem(userStorageKey, JSON.stringify(updatedConnections));
-        
-        console.log('✅ Connection created successfully in localStorage (offline mode)');
+        // Check if it's a validation error vs server error
+        if (backendError.response?.status === 400) {
+          throw new Error(backendError.response?.data?.message || 'Invalid connection data');
+        } else if (backendError.response?.status === 500) {
+          throw new Error(backendError.response?.data?.message || 'Server error during connection creation');
+        } else {
+          throw new Error('Failed to create connection on server');
+        }
       }
+        
+    } else {
+      // Fallback to localStorage with user association
+      console.log('📴 Service unavailable, using localStorage fallback');
+      const newConnection: Connection = {
+        id: `conn_${user.id}_${Date.now()}`,
+        name: connectionData.name,
+        platform: connectionData.platform,
+        status: 'connected',
+        projectCount: 1,
+        lastSync: 'Just now',
+        createdAt: new Date().toISOString(),
+        metadata: connectionData.metadata
+      };
       
-    } catch (error: any) {
-      console.error('❌ Failed to create connection:', error);
+      const updatedConnections = [...connections, newConnection];
+      setConnections(updatedConnections);
       
-      let errorMessage = 'Failed to create connection';
-      if (error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      } else if (error.response?.status === 401) {
-        errorMessage = 'Authentication required';
-      }
+      const userStorageKey = `prism-connections-${user.id}`;
+      localStorage.setItem(userStorageKey, JSON.stringify(updatedConnections));
       
-      throw new Error(errorMessage);
-    } finally {
-      setIsLoading(false);
+      console.log('✅ Connection created successfully in localStorage (offline mode)');
     }
-  }, [connections, isAuthenticated, user?.id, isServiceAvailable]);
+    
+  } catch (error: any) {
+    console.error('❌ Failed to create connection:', error);
+    
+    let errorMessage = 'Failed to create connection';
+    if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    throw new Error(errorMessage);
+  } finally {
+    setIsLoading(false);
+  }
+}, [connections, isAuthenticated, user?.id, isServiceAvailable]);
 
   // Delete connection with user association
   const deleteConnection = useCallback(async (connectionId: string): Promise<{ success: boolean; message: string }> => {

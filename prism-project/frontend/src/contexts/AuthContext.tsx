@@ -1,4 +1,4 @@
-// frontend/src/contexts/AuthContext.tsx - FIXED VERSION
+// frontend/src/contexts/AuthContext.tsx - COMPLETE FIXED VERSION
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { getCurrentUser } from '../services/auth.service';
 
@@ -38,6 +38,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
+  // Normalize user data - handle MongoDB _id vs id field
+  const normalizeUserData = (userData: any): User | null => {
+    if (!userData) return null;
+    
+    // Handle different user data structures
+    const normalizedUser: User = {
+      id: userData.id || userData._id || userData.userId,
+      email: userData.email,
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      name: userData.name || `${userData.firstName || ''} ${userData.lastName || ''}`.trim()
+    };
+    
+    // Validate that we have required fields
+    if (!normalizedUser.id || !normalizedUser.email) {
+      console.error('❌ Invalid user data - missing id or email:', userData);
+      return null;
+    }
+    
+    console.log('🔧 Normalized user data:', normalizedUser);
+    return normalizedUser;
+  };
+
   // Check authentication status on app load
   useEffect(() => {
     checkAuthStatus();
@@ -74,13 +97,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Verify token with backend using auth service
       const userData = await getCurrentUser();
       
-      if (userData) {
-        console.log('✅ User verified:', userData);
-        setUser(userData);
+      const normalizedUser = normalizeUserData(userData);
+      
+      if (normalizedUser) {
+        console.log('✅ User verified:', normalizedUser);
+        setUser(normalizedUser);
         setIsAuthenticated(true);
       } else {
-        console.log('❌ Invalid token, clearing auth state');
-        // Token is invalid
+        console.log('❌ Invalid user data, clearing auth state');
         localStorage.removeItem('authToken');
         sessionStorage.removeItem('authToken');
         setIsAuthenticated(false);
@@ -116,12 +140,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Fetch user data using the stored token
       const userData = await getCurrentUser();
       
-      if (userData) {
-        setUser(userData);
+      const normalizedUser = normalizeUserData(userData);
+      
+      if (normalizedUser) {
+        setUser(normalizedUser);
         setIsAuthenticated(true);
-        console.log('✅ AuthContext: Login successful');
+        console.log('✅ AuthContext: Login successful with user:', normalizedUser);
       } else {
-        throw new Error('Failed to fetch user data after login');
+        throw new Error('Failed to normalize user data after login');
       }
     } catch (error: any) {
       console.error('❌ AuthContext: Login failed:', error);

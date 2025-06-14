@@ -60,8 +60,11 @@ export const getCurrentUser = async (): Promise<any> => {
         console.log('🔐 Auth Service: Getting current user...');
         const response = await apiClient.get('/api/auth/me');
         console.log('✅ Auth Service: Current user fetched successfully');
-        console.log('👤 User data:', response); // ← Response is already the data
-        return response; // ← FIXED: Return response directly, not response.data
+        console.log('👤 User data structure:', response); // ← Response is already the data
+        console.log('👤 User keys:', Object.keys(response)); // ← See what fields exist
+        console.log('👤 User id field:', response.id); // ← Check id specifically
+        console.log('👤 User _id field:', response._id); // ← Check _id specifically  
+        return response;
     } catch (error: any) {
         console.error('❌ Auth Service: Get current user failed:', error);
         

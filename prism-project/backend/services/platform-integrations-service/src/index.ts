@@ -1,4 +1,7 @@
 // backend/services/platform-integrations-service/src/index.ts - COMPLETE FIXED VERSION
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';

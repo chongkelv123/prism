@@ -1,10 +1,12 @@
-// backend/services/platform-integrations-service/src/services/ConnectionService.ts - NO TROFOS VERSION
+// backend/services/platform-integrations-service/src/services/ConnectionService.ts
+// FIXED VERSION - Updated Monday.com validation to use "apiToken" instead of "apiKey"
+
 import { Connection, IConnection } from '../models/Connection';
 import logger from '../utils/logger';
 
 export interface ConnectionCreateData {
   name: string;
-  platform: 'monday' | 'jira';  // Removed 'trofos'
+  platform: 'monday' | 'jira';
   config: Record<string, any>;
   metadata?: {
     selectedProjects?: string[];
@@ -58,6 +60,11 @@ export class ConnectionService {
       const isValid = await this.validateConnectionConfig(connectionData.platform, connectionData.config);
       
       if (!isValid) {
+        logger.error('Connection validation failed:', {
+          platform: connectionData.platform,
+          configKeys: Object.keys(connectionData.config),
+          requiredForMondaycom: ['apiToken', 'boardId']
+        });
         throw new Error('Invalid connection configuration');
       }
       
@@ -103,37 +110,16 @@ export class ConnectionService {
   }
 
   /**
-   * Get all connections for a specific user with status validation
+   * Get all connections for a user
    */
   async getConnections(userId: string): Promise<IConnection[]> {
     try {
-      logger.info(`📡 Getting connections for user: ${userId}`);
+      logger.info(`Getting connections for user: ${userId}`);
       
       const connections = await Connection.find({ userId }).sort({ createdAt: -1 });
       
-      logger.info(`📊 Found ${connections.length} connections for user ${userId}`);
-      
-      // Log status distribution for debugging
-      const statusCounts = connections.reduce((acc, conn) => {
-        acc[conn.status] = (acc[conn.status] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-      
-      logger.info(`📈 Status distribution:`, statusCounts);
-      
-      // Validate and fix any connections with invalid status
-      const validatedConnections = await Promise.all(
-        connections.map(async (conn) => {
-          if (!['connected', 'disconnected', 'error'].includes(conn.status)) {
-            logger.warn(`🔧 Fixing invalid status "${conn.status}" for connection ${conn.name}`);
-            conn.status = 'disconnected'; // Default to disconnected for safety
-            await conn.save();
-          }
-          return conn;
-        })
-      );
-      
-      return validatedConnections;
+      logger.info(`Found ${connections.length} connections for user ${userId}`);
+      return connections;
       
     } catch (error) {
       logger.error('Failed to get connections:', error);
@@ -142,11 +128,11 @@ export class ConnectionService {
   }
 
   /**
-   * Test connection and update status
+   * Test a connection
    */
   async testConnection(userId: string, connectionId: string): Promise<ConnectionTestResult> {
     try {
-      logger.info(`🧪 Testing connection ${connectionId} for user ${userId}`);
+      logger.info(`Testing connection ${connectionId} for user ${userId}`);
       
       const connection = await Connection.findOne({ _id: connectionId, userId });
       
@@ -154,7 +140,6 @@ export class ConnectionService {
         throw new Error('Connection not found');
       }
 
-      // Test the actual connection based on platform
       let testResult: ConnectionTestResult;
       
       switch (connection.platform) {
@@ -165,51 +150,34 @@ export class ConnectionService {
           testResult = await this.testMondayConnection(connection.config);
           break;
         default:
-          throw new Error(`Unsupported platform: ${connection.platform}`);
+          testResult = {
+            success: false,
+            message: `Unsupported platform: ${connection.platform}`
+          };
       }
 
       // Update connection status based on test result
-      const newStatus = testResult.success ? 'connected' : 'error';
-      const updateData: any = { 
-        status: newStatus,
-        lastSync: new Date()
-      };
-      
-      if (testResult.success) {
-        updateData.lastSyncError = null;
-      } else {
-        updateData.lastSyncError = testResult.message;
+      connection.status = testResult.success ? 'connected' : 'error';
+      if (!testResult.success) {
+        connection.lastSyncError = testResult.message;
       }
+      await connection.save();
 
-      await Connection.findByIdAndUpdate(connectionId, updateData);
-      
-      logger.info(`🎯 Connection test result for ${connection.name}: ${testResult.success ? 'SUCCESS' : 'FAILED'}`);
-      
+      logger.info(`Connection test result for ${connectionId}: ${testResult.success ? 'success' : 'failed'}`);
       return testResult;
       
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Connection test failed:', error);
-      
-      // Update connection with error status
-      await Connection.findByIdAndUpdate(connectionId, {
-        status: 'error',
-        lastSyncError: error?.message || 'Connection test failed',
-        lastSync: new Date()
-      });
-      
-      return {
-        success: false,
-        message: error?.message || 'Connection test failed'
-      };
+      throw error;
     }
   }
 
   /**
-   * Sync connection data and update project count
+   * Sync a connection to get latest project count
    */
   async syncConnection(userId: string, connectionId: string): Promise<ConnectionSyncResult> {
     try {
-      logger.info(`🔄 Syncing connection ${connectionId} for user ${userId}`);
+      logger.info(`Syncing connection ${connectionId} for user ${userId}`);
       
       const connection = await Connection.findOne({ _id: connectionId, userId });
       
@@ -217,17 +185,6 @@ export class ConnectionService {
         throw new Error('Connection not found');
       }
 
-      // First test the connection
-      const testResult = await this.testConnection(userId, connectionId);
-      
-      if (!testResult.success) {
-        return {
-          success: false,
-          message: `Connection test failed: ${testResult.message}`
-        };
-      }
-
-      // Sync data based on platform
       let syncResult: ConnectionSyncResult;
       
       switch (connection.platform) {
@@ -238,42 +195,31 @@ export class ConnectionService {
           syncResult = await this.syncMondayConnection(connection);
           break;
         default:
-          throw new Error(`Unsupported platform: ${connection.platform}`);
+          syncResult = {
+            success: false,
+            message: `Unsupported platform: ${connection.platform}`
+          };
       }
 
       // Update connection with sync results
-      const updateData: any = {
-        status: syncResult.success ? 'connected' : 'error',
-        lastSync: new Date(),
-        projectCount: syncResult.projectCount || connection.projectCount
-      };
-      
       if (syncResult.success) {
-        updateData.lastSyncError = null;
+        connection.projectCount = syncResult.projectCount || 0;
+        connection.lastSync = syncResult.lastSync || new Date();
+        connection.status = 'connected';
+        connection.lastSyncError = undefined;
       } else {
-        updateData.lastSyncError = syncResult.message;
+        connection.lastSyncError = syncResult.message;
+        connection.status = 'error';
       }
-
-      await Connection.findByIdAndUpdate(connectionId, updateData);
       
-      logger.info(`✅ Connection sync completed for ${connection.name}`);
+      await connection.save();
+      logger.info(`Connection sync result for ${connectionId}: ${syncResult.success ? 'success' : 'failed'}`);
       
       return syncResult;
       
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Connection sync failed:', error);
-      
-      // Update connection with error status
-      await Connection.findByIdAndUpdate(connectionId, {
-        status: 'error',
-        lastSyncError: error?.message || 'Connection sync failed',
-        lastSync: new Date()
-      });
-      
-      return {
-        success: false,
-        message: error?.message || 'Connection sync failed'
-      };
+      throw error;
     }
   }
 
@@ -282,15 +228,15 @@ export class ConnectionService {
    */
   async deleteConnection(userId: string, connectionId: string): Promise<boolean> {
     try {
-      logger.info(`🗑️ Deleting connection ${connectionId} for user ${userId}`);
+      logger.info(`Deleting connection ${connectionId} for user ${userId}`);
       
       const result = await Connection.deleteOne({ _id: connectionId, userId });
       
       if (result.deletedCount === 0) {
-        throw new Error('Connection not found or not authorized');
+        throw new Error('Connection not found or access denied');
       }
       
-      logger.info(`✅ Connection deleted successfully`);
+      logger.info(`✅ Connection ${connectionId} deleted successfully`);
       return true;
       
     } catch (error) {
@@ -367,18 +313,38 @@ export class ConnectionService {
 
   /**
    * Validate platform configuration
+   * FIXED: Updated Monday.com validation to use "apiToken" instead of "apiKey"
    */
   private async validateConnectionConfig(platform: string, config: any): Promise<boolean> {
     if (!config || typeof config !== 'object') {
+      logger.error('Invalid config: must be a non-null object');
       return false;
     }
     
     switch (platform) {
       case 'jira':
-        return !!(config.domain && config.email && config.apiToken);
+        const hasJiraFields = !!(config.domain && config.email && config.apiToken);
+        if (!hasJiraFields) {
+          logger.error('Jira validation failed - missing required fields:', {
+            domain: !!config.domain,
+            email: !!config.email, 
+            apiToken: !!config.apiToken
+          });
+        }
+        return hasJiraFields;
       case 'monday':
-        return !!(config.apiKey && config.boardId);
+        // FIXED: Change from config.apiKey to config.apiToken
+        const hasMondayFields = !!(config.apiToken && config.boardId);
+        if (!hasMondayFields) {
+          logger.error('Monday.com validation failed - missing required fields:', {
+            apiToken: !!config.apiToken,
+            boardId: !!config.boardId,
+            receivedFields: Object.keys(config)
+          });
+        }
+        return hasMondayFields;
       default:
+        logger.error(`Unsupported platform: ${platform}`);
         return false;
     }
   }
@@ -420,18 +386,13 @@ export class ConnectionService {
         const userData = await response.json() as JiraUserResponse;
         return {
           success: true,
-          message: 'Jira connection successful',
-          details: {
-            user: userData.displayName,
-            accountId: userData.accountId
-          }
+          message: `Connected as ${userData.displayName}`,
+          details: userData
         };
       } else {
-        const errorData = await response.json().catch(() => ({}));
         return {
           success: false,
-          message: `Jira API error: ${response.status} ${response.statusText}`,
-          details: errorData
+          message: `Jira connection failed: ${response.status} ${response.statusText}`
         };
       }
       
@@ -445,7 +406,7 @@ export class ConnectionService {
   }
 
   /**
-   * Sync Jira connection
+   * Sync Jira connection to get project count
    */
   private async syncJiraConnection(connection: IConnection): Promise<ConnectionSyncResult> {
     try {
@@ -454,10 +415,7 @@ export class ConnectionService {
       const { domain, email, apiToken } = connection.config;
       const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
       
-      // Get projects
-      const projectsUrl = `https://${domain}/rest/api/3/project`;
-      
-      const response = await fetch(projectsUrl, {
+      const response = await fetch(`https://${domain}/rest/api/3/project`, {
         method: 'GET',
         headers: {
           'Authorization': `Basic ${auth}`,
@@ -466,12 +424,11 @@ export class ConnectionService {
       });
 
       if (response.ok) {
-        const projects = await response.json() as any[];
-        
+        const projects = await response.json() as any[]; // Fix: Type as array
         return {
           success: true,
           message: 'Jira sync successful',
-          projectCount: projects?.length || 0,
+          projectCount: Array.isArray(projects) ? projects.length : 0, // Fix: Check if array
           lastSync: new Date()
         };
       } else {
@@ -498,40 +455,28 @@ export class ConnectionService {
       const { domain, email, apiToken } = connection.config;
       const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
       
+      let url: string;
+      
       if (projectId) {
         // Get specific project
-        const projectUrl = `https://${domain}/rest/api/3/project/${projectId}`;
-        
-        const response = await fetch(projectUrl, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Basic ${auth}`,
-            'Accept': 'application/json'
-          }
-        });
-
-        if (response.ok) {
-          return await response.json();
-        } else {
-          throw new Error(`Failed to get Jira project: ${response.status}`);
-        }
+        url = `https://${domain}/rest/api/3/project/${projectId}`;
       } else {
         // Get all projects
-        const projectsUrl = `https://${domain}/rest/api/3/project`;
-        
-        const response = await fetch(projectsUrl, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Basic ${auth}`,
-            'Accept': 'application/json'
-          }
-        });
-
-        if (response.ok) {
-          return await response.json();
-        } else {
-          throw new Error(`Failed to get Jira projects: ${response.status}`);
+        url = `https://${domain}/rest/api/3/project`;
+      }
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Accept': 'application/json'
         }
+      });
+
+      if (response.ok) {
+        return await response.json();
+      } else {
+        throw new Error(`Failed to get Jira project data: ${response.status}`);
       }
       
     } catch (error) {
@@ -544,27 +489,27 @@ export class ConnectionService {
 
   /**
    * Test Monday.com connection
+   * FIXED: Updated to use "apiToken" instead of "apiKey"
    */
   private async testMondayConnection(config: any): Promise<ConnectionTestResult> {
     try {
       logger.info('Testing Monday.com connection...');
       
-      const { apiKey } = config;
+      const { apiToken } = config;  // FIXED: Use apiToken instead of apiKey
       
-      if (!apiKey) {
+      if (!apiToken) {
         return {
           success: false,
-          message: 'Missing Monday.com API key'
+          message: 'Missing required Monday.com configuration (apiToken)'
         };
       }
 
-      // Test API call to get user info
       const query = `query { me { name email } }`;
       
       const response = await fetch('https://api.monday.com/v2', {
         method: 'POST',
         headers: {
-          'Authorization': apiKey,
+          'Authorization': `Bearer ${apiToken}`,  // FIXED: Use apiToken
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ query })
@@ -582,13 +527,13 @@ export class ConnectionService {
         
         return {
           success: true,
-          message: 'Monday.com connection successful',
+          message: `Connected as ${data.data?.me?.name}`,
           details: data.data?.me
         };
       } else {
         return {
           success: false,
-          message: `Monday.com API error: ${response.status}`
+          message: `Monday.com connection failed: ${response.status} ${response.statusText}`
         };
       }
       
@@ -602,19 +547,20 @@ export class ConnectionService {
   }
 
   /**
-   * Sync Monday.com connection
+   * Sync Monday.com connection to get board count
+   * FIXED: Updated to use "apiToken" instead of "apiKey"
    */
   private async syncMondayConnection(connection: IConnection): Promise<ConnectionSyncResult> {
     try {
       logger.info('Syncing Monday.com connection...');
       
-      const { apiKey } = connection.config;
+      const { apiToken } = connection.config;  // FIXED: Use apiToken instead of apiKey
       const query = `query { boards { name id } }`;
       
       const response = await fetch('https://api.monday.com/v2', {
         method: 'POST',
         headers: {
-          'Authorization': apiKey,
+          'Authorization': `Bearer ${apiToken}`,  // FIXED: Use apiToken
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ query })
@@ -654,10 +600,11 @@ export class ConnectionService {
 
   /**
    * Get Monday.com project data
+   * FIXED: Updated to use "apiToken" instead of "apiKey"
    */
   private async getMondayProjectData(connection: IConnection, projectId?: string): Promise<any> {
     try {
-      const { apiKey } = connection.config;
+      const { apiToken } = connection.config;  // FIXED: Use apiToken instead of apiKey
       
       let query: string;
       
@@ -672,7 +619,7 @@ export class ConnectionService {
       const response = await fetch('https://api.monday.com/v2', {
         method: 'POST',
         headers: {
-          'Authorization': apiKey,
+          'Authorization': `Bearer ${apiToken}`,  // FIXED: Use apiToken
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ query })

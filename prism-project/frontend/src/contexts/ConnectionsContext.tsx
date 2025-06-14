@@ -1,7 +1,8 @@
-// frontend/src/contexts/ConnectionsContext.tsx - FIXED HEALTH CHECK URLs
+// frontend/src/contexts/ConnectionsContext.tsx - COMPLETE FIXED VERSION
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { apiClient } from '../services/api.service';
 import { useAuth } from './AuthContext';
+import { ConnectionMigration } from '../utils/connectionMigration';
 
 export interface Connection {
   id: string;
@@ -72,7 +73,7 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     try {
       console.log('🏥 Checking platform integrations service health...');
       
-      // First check API Gateway health (corrected URL)
+      // First check API Gateway health
       const gatewayResponse = await fetch('/api/health', {
         method: 'GET',
         headers: {
@@ -108,7 +109,7 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       if (error.response?.status === 503) {
         errorMessage = 'Platform integrations service is temporarily unavailable';
       } else if (error.response?.status === 404) {
-        errorMessage = 'API Gateway unhealthy: 404';
+        errorMessage = 'API Gateway not configured correctly';
       } else if (error.code === 'ECONNREFUSED' || error.message.includes('Network Error')) {
         errorMessage = 'Cannot connect to platform integrations service';
       } else if (error.message.includes('fetch failed')) {
@@ -122,7 +123,7 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     }
   }, []);
 
-  // Load connections from backend (user-specific)
+  // Load connections with unified localStorage key strategy
   const loadConnections = useCallback(async () => {
     if (!isAuthenticated || !user?.id) {
       console.log('👤 Not authenticated or no user ID, clearing connections');
@@ -130,28 +131,56 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       return;
     }
 
+    // Auto-migrate legacy data
+    ConnectionMigration.autoMigrateConnections(user.id);
+
     // First check if service is available
     const serviceHealthy = await checkServiceHealth();
+    
     if (!serviceHealthy) {
       console.log('🚨 Service unavailable, using fallback mode');
-      // Load from localStorage as fallback, but make it user-specific
+      
       try {
         const userStorageKey = `prism-connections-${user.id}`;
-        const cachedData = localStorage.getItem(userStorageKey);
+        const globalStorageKey = 'prism-connections';
+        
+        // Try user-specific cache first
+        let cachedData = localStorage.getItem(userStorageKey);
+        
         if (cachedData) {
           const cachedConnections = JSON.parse(cachedData);
-          setConnections(cachedConnections);
-          console.log(`📦 Loaded ${cachedConnections.length} connections from cache for user ${user.id}`);
+          const validatedConnections = ConnectionMigration.migrateAndValidateConnections(cachedConnections);
+          setConnections(validatedConnections);
+          console.log(`📦 Loaded ${validatedConnections.length} connections from user cache`);
+          setError(validatedConnections.length > 0 ? 'Working offline - using cached data' : null);
         } else {
-          setConnections([]);
+          // Fallback to global cache and migrate
+          cachedData = localStorage.getItem(globalStorageKey);
+          if (cachedData) {
+            const cachedConnections = JSON.parse(cachedData);
+            const validatedConnections = ConnectionMigration.migrateAndValidateConnections(cachedConnections);
+            
+            console.log(`🔄 Migrating ${validatedConnections.length} connections from global cache`);
+            
+            // Save to user-specific cache
+            localStorage.setItem(userStorageKey, JSON.stringify(validatedConnections));
+            setConnections(validatedConnections);
+            console.log(`✅ Migrated connections to user cache for user ${user.id}`);
+            setError('Working offline - using cached data');
+          } else {
+            setConnections([]);
+            setError(null);
+          }
         }
       } catch (cacheError) {
         console.error('💾 Cache load failed:', cacheError);
         setConnections([]);
+        setError('Failed to load connections');
       }
       return;
     }
 
+    // Backend is available - proceed with normal loading
     try {
       setIsLoading(true);
       setError(null);
@@ -163,10 +192,13 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       
       console.log(`✅ Loaded ${backendConnections.length} connections from backend`);
       
+      // Validate backend data
+      const validatedConnections = ConnectionMigration.migrateAndValidateConnections(backendConnections);
+      
       // Update state and user-specific cache
-      setConnections(backendConnections);
+      setConnections(validatedConnections);
       const userStorageKey = `prism-connections-${user.id}`;
-      localStorage.setItem(userStorageKey, JSON.stringify(backendConnections));
+      localStorage.setItem(userStorageKey, JSON.stringify(validatedConnections));
       
     } catch (error: any) {
       console.error('❌ Backend load failed:', error);
@@ -176,14 +208,28 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         return;
       }
       
-      // Fallback to user-specific cache
+      // Fallback to user-specific cache with migration support
       try {
         const userStorageKey = `prism-connections-${user.id}`;
-        const cachedData = localStorage.getItem(userStorageKey);
+        const globalStorageKey = 'prism-connections';
+        
+        let cachedData = localStorage.getItem(userStorageKey);
+        
+        if (!cachedData) {
+          // Try to migrate from global cache
+          cachedData = localStorage.getItem(globalStorageKey);
+          if (cachedData) {
+            console.log('🔄 Migrating from global cache due to backend failure');
+            localStorage.setItem(userStorageKey, cachedData);
+          }
+        }
+        
         if (cachedData) {
           const cachedConnections = JSON.parse(cachedData);
-          setConnections(cachedConnections);
-          console.log(`📦 Loaded ${cachedConnections.length} connections from user cache`);
+          const validatedConnections = ConnectionMigration.migrateAndValidateConnections(cachedConnections);
+          
+          setConnections(validatedConnections);
+          console.log(`📦 Loaded ${validatedConnections.length} connections from cache (with migration)`);
           setError('Working offline - using cached data');
         } else {
           setConnections([]);
@@ -214,8 +260,11 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         const response = await apiClient.post('/api/connections', connectionData);
         const newConnection = response.data;
         
+        // Validate the new connection
+        const validatedConnection = ConnectionMigration.migrateAndValidateConnections([newConnection])[0];
+        
         // Update state and cache
-        const updatedConnections = [...connections, newConnection];
+        const updatedConnections = [...connections, validatedConnection];
         setConnections(updatedConnections);
         
         const userStorageKey = `prism-connections-${user.id}`;

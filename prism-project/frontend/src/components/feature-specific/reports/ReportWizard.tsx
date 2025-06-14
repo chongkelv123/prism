@@ -1,4 +1,4 @@
-// frontend/src/components/feature-specific/reports/ReportWizard.tsx
+// frontend/src/components/feature-specific/reports/ReportWizard.tsx - COMPLETE FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowRight, Check, FileText, CheckCircle, Clock, X, AlertCircle, Loader } from 'lucide-react';
 import reportService from '../../../services/report.service';
@@ -19,11 +19,50 @@ const ReportWizard: React.FC = () => {
   const [availableProjects, setAvailableProjects] = useState<any[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
 
-  const { connections, getProjectData } = useConnections();
+  const { connections, getProjectData, isLoading: connectionsLoading, error: connectionsError } = useConnections();
   const totalSteps = 4;
 
-  // Filter only connected platforms
-  const connectedPlatforms = connections.filter(conn => conn.status === 'connected');
+  // DEBUGGING: Add comprehensive logging
+  useEffect(() => {
+    console.log('🔍 ReportWizard Debug Info:');
+    console.log('  - Total connections:', connections.length);
+    console.log('  - Connections loading:', connectionsLoading);
+    console.log('  - Connections error:', connectionsError);
+    console.log('  - Raw connections:', connections);
+    
+    if (connections.length > 0) {
+      console.log('  - Connection statuses:', connections.map(c => ({ 
+        id: c.id, 
+        name: c.name, 
+        status: c.status, 
+        platform: c.platform 
+      })));
+    }
+    
+    const connected = connections.filter(conn => conn.status === 'connected');
+    console.log('  - Connected platforms:', connected.length);
+    console.log('  - Connected details:', connected);
+    
+  }, [connections, connectionsLoading, connectionsError]);
+
+  // Filter only connected platforms with additional validation
+  const connectedPlatforms = connections.filter(conn => {
+    const isConnected = conn.status === 'connected';
+    if (!isConnected) {
+      console.log(`🚫 Filtering out connection "${conn.name}" - status: "${conn.status}"`);
+    }
+    return isConnected;
+  });
+
+  // DEBUGGING: Log the filtered result
+  useEffect(() => {
+    console.log('🎯 ReportWizard connectedPlatforms result:', connectedPlatforms.length);
+    if (connectedPlatforms.length === 0 && connections.length > 0) {
+      console.warn('⚠️  No connected platforms found but connections exist!');
+      console.warn('   This indicates a status field issue.');
+      console.warn('   Check connection status values:', connections.map(c => c.status));
+    }
+  }, [connectedPlatforms, connections]);
 
   useEffect(() => {
     if (wizardData.connectionId && currentStep === 2) {
@@ -95,48 +134,30 @@ const ReportWizard: React.FC = () => {
         `${selectedProject.name} - ${selectedConnection.name} Report`;
 
       const report = await reportService.generateReport({
-        platformId: selectedConnection.platform,
+        platform: selectedConnection.platform,
+        connectionId: wizardData.connectionId,
+        projectId: wizardData.projectId,
         templateId: wizardData.templateId,
         configuration: {
           ...wizardData.configuration,
-          title: reportTitle,
-          connectionId: wizardData.connectionId,
-          projectId: wizardData.projectId,
-          connectionName: selectedConnection.name,
-          projectName: selectedProject.name
+          title: reportTitle
         }
       });
 
       setReportId(report.id);
+      setCurrentStep(5);
 
-      // Poll for report generation status
+      // Poll for completion
       const checkStatus = async () => {
         try {
           const status = await reportService.getReportStatus(report.id);
-
+          
           if (status.status === 'completed') {
             setGenerationComplete(true);
             setIsGenerating(false);
-            addNotification({
-              type: 'success',
-              title: 'Report Generated',
-              message: `Your "${reportTitle}" report is ready to download`,
-              actions: [
-                { label: 'Download', action: 'download', id: report.id },
-                { label: 'View', action: 'view', id: report.id }
-              ]
-            });
           } else if (status.status === 'failed') {
             setGenerationError(true);
             setIsGenerating(false);
-            addNotification({
-              type: 'error',
-              title: 'Report Generation Failed',
-              message: 'There was an error generating your report',
-              actions: [
-                { label: 'Try Again', action: 'retry', id: report.id }
-              ]
-            });
           } else {
             setTimeout(checkStatus, 2000);
           }
@@ -178,6 +199,44 @@ const ReportWizard: React.FC = () => {
     }
   };
 
+  const isStepComplete = (step: number): boolean => {
+    switch (step) {
+      case 1:
+        return !!wizardData.connectionId;
+      case 2:
+        return !!wizardData.projectId;
+      case 3:
+        return !!wizardData.templateId;
+      case 4:
+        return true;
+      default:
+        return false;
+    }
+  };
+
+  const getStepTitle = (step: number): string => {
+    switch (step) {
+      case 1: return 'Select Connection';
+      case 2: return 'Choose Project';
+      case 3: return 'Select Template';
+      case 4: return 'Configure Report';
+      case 5: return 'Generate Report';
+      default: return '';
+    }
+  };
+
+  const getButtonText = (): string => {
+    if (currentStep < 4) return 'Next';
+    if (currentStep === 4) return 'Generate Report';
+    if (currentStep === 5) {
+      if (isGenerating) return 'Generating...';
+      if (generationComplete) return 'Download Report';
+      if (generationError) return 'Retry';
+      return 'Generate Report';
+    }
+    return 'Next';
+  };
+
   const renderStepContent = () => {
     switch (currentStep) {
       case 1:
@@ -192,17 +251,16 @@ const ReportWizard: React.FC = () => {
         return (
           <ProjectSelection
             projects={availableProjects}
-            isLoading={isLoadingProjects}
             selectedProjectId={wizardData.projectId}
             onSelectProject={(projectId) => updateWizardData('projectId', projectId)}
-            connectionName={connections.find(c => c.id === wizardData.connectionId)?.name}
+            isLoading={isLoadingProjects}
           />
         );
       case 3:
         return (
           <TemplateSelection
-            selectedTemplate={wizardData.templateId}
-            onSelectTemplate={(template) => updateWizardData('templateId', template)}
+            selectedTemplateId={wizardData.templateId}
+            onSelectTemplate={(templateId) => updateWizardData('templateId', templateId)}
           />
         );
       case 4:
@@ -210,22 +268,14 @@ const ReportWizard: React.FC = () => {
           <ReportConfiguration
             configuration={wizardData.configuration}
             onUpdateConfiguration={(config) => updateWizardData('configuration', config)}
-            connectionName={connections.find(c => c.id === wizardData.connectionId)?.name}
-            projectName={availableProjects.find(p => p.id === wizardData.projectId)?.name}
           />
         );
       case 5:
         return (
-          <GenerationProgress
+          <ReportGeneration
             isGenerating={isGenerating}
-            isComplete={generationComplete}
-            hasError={generationError}
-            onRetry={() => {
-              setGenerationError(false);
-              setIsGenerating(false);
-              handleGenerateReport();
-            }}
-            onDownload={handleDownload}
+            generationComplete={generationComplete}
+            generationError={generationError}
           />
         );
       default:
@@ -233,111 +283,88 @@ const ReportWizard: React.FC = () => {
     }
   };
 
-  const isStepComplete = (step: number) => {
-    switch (step) {
-      case 1:
-        return !!wizardData.connectionId;
-      case 2:
-        return !!wizardData.projectId;
-      case 3:
-        return !!wizardData.templateId;
-      case 4:
-        return Object.keys(wizardData.configuration).length > 0;
-      case 5:
-        return !isGenerating || generationComplete || generationError;
-      default:
-        return false;
-    }
-  };
-
-  const getButtonText = () => {
-    if (currentStep === 5) {
-      if (!isGenerating && !generationComplete && !generationError) {
-        return 'Generate Report';
-      } else if (generationComplete) {
-        return 'Download Report';
-      } else if (generationError) {
-        return 'Try Again';
-      }
-      return 'Generating...';
-    }
-    return currentStep === 4 ? 'Generate Report' : 'Continue';
-  };
-
-  const actualTotalSteps = 5; // Updated to include generation step
+  const renderProgressBar = () => (
+    <div className="mb-8">
+      <div className="flex justify-between items-center mb-4">
+        {[1, 2, 3, 4].map((step) => (
+          <div key={step} className="flex items-center">
+            <div
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                currentStep > step
+                  ? 'bg-green-500 text-white'
+                  : currentStep === step
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-600'
+              }`}
+            >
+              {currentStep > step ? <Check size={16} /> : step}
+            </div>
+            {step < 4 && (
+              <div
+                className={`w-16 h-1 mx-2 ${
+                  currentStep > step ? 'bg-green-500' : 'bg-gray-200'
+                }`}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="text-center">
+        <h2 className="text-xl font-semibold text-gray-900">{getStepTitle(currentStep)}</h2>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="bg-white rounded-xl shadow-md p-6 max-w-4xl mx-auto">
-      {/* Wizard Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Create New Report</h1>
-        <p className="text-gray-600">Generate PowerPoint reports from your connected platforms</p>
-      </div>
+    <div className="max-w-4xl mx-auto p-6">
+      <div className="bg-white rounded-lg shadow-lg p-8">
+        {currentStep <= 4 && renderProgressBar()}
+        
+        {connectionsLoading && (
+          <div className="text-center py-8">
+            <Loader className="animate-spin h-8 w-8 mx-auto mb-4 text-blue-600" />
+            <p className="text-gray-600">Loading connections...</p>
+          </div>
+        )}
 
-      {/* Progress Indicator */}
-      <div className="mb-8">
-        <div className="flex justify-between">
-          {Array.from({ length: actualTotalSteps }).map((_, idx) => {
-            const stepNum = idx + 1;
-            const isActive = currentStep === stepNum;
-            const isDone = stepNum < currentStep || (stepNum === currentStep && isStepComplete(stepNum));
+        {connectionsError && (
+          <div className="text-center py-8">
+            <AlertCircle className="h-8 w-8 mx-auto mb-4 text-red-500" />
+            <p className="text-red-600 mb-4">{connectionsError}</p>
+            <p className="text-gray-600">Please check your connection to the platform integrations service.</p>
+          </div>
+        )}
 
-            return (
-              <div key={idx} className="flex flex-col items-center relative">
-                {idx < actualTotalSteps - 1 && (
-                  <div
-                    className={`absolute w-full h-1 top-4 left-1/2 -z-10 ${isDone ? 'bg-blue-500' : 'bg-gray-200'}`}
-                  />
-                )}
-                <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center 
-                    ${isActive || isDone ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'}`}
-                >
-                  {isDone && stepNum < currentStep ? <Check size={16} /> : stepNum}
-                </div>
-                <span className={`text-sm mt-2 ${isActive ? 'text-blue-600 font-medium' : 'text-gray-500'}`}>
-                  {stepNum === 1 && 'Connection'}
-                  {stepNum === 2 && 'Project'}
-                  {stepNum === 3 && 'Template'}
-                  {stepNum === 4 && 'Configure'}
-                  {stepNum === 5 && 'Generate'}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+        {!connectionsLoading && !connectionsError && renderStepContent()}
 
-      {/* Step Content */}
-      <div className="min-h-64 mb-8">
-        {renderStepContent()}
-      </div>
-
-      {/* Wizard Actions */}
-      <div className="flex justify-between pt-4 border-t border-gray-200">
-        <button
-          onClick={handleBack}
-          disabled={currentStep === 1 || isGenerating}
-          className={`flex items-center px-4 py-2 rounded-lg 
-            ${currentStep === 1 || isGenerating ? 'text-gray-400 cursor-not-allowed' : 'text-gray-600 hover:bg-gray-100'}`}
-        >
-          <ArrowLeft size={16} className="mr-1" />
-          Back
-        </button>
-
-        <button
-          onClick={handleNext}
-          disabled={!isStepComplete(currentStep) || (isGenerating && !generationComplete && !generationError)}
-          className={`flex items-center px-6 py-2 rounded-lg 
-            ${!isStepComplete(currentStep) || (isGenerating && !generationComplete && !generationError)
-              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              : 'bg-blue-600 text-white hover:bg-blue-700'
+        <div className="flex justify-between mt-8">
+          <button
+            onClick={handleBack}
+            disabled={currentStep === 1}
+            className={`flex items-center px-6 py-2 rounded-lg ${
+              currentStep === 1
+                ? 'text-gray-400 cursor-not-allowed'
+                : 'text-gray-600 hover:bg-gray-100'
             }`}
-        >
-          {getButtonText()}
-          {currentStep < 4 && <ArrowRight size={16} className="ml-1" />}
-          {currentStep === 5 && generationComplete && <Check size={16} className="ml-1" />}
-        </button>
+          >
+            <ArrowLeft size={16} className="mr-1" />
+            Back
+          </button>
+
+          <button
+            onClick={handleNext}
+            disabled={!isStepComplete(currentStep) || (isGenerating && !generationComplete && !generationError)}
+            className={`flex items-center px-6 py-2 rounded-lg ${
+              !isStepComplete(currentStep) || (isGenerating && !generationComplete && !generationError)
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
+          >
+            {getButtonText()}
+            {currentStep < 4 && <ArrowRight size={16} className="ml-1" />}
+            {currentStep === 5 && generationComplete && <Check size={16} className="ml-1" />}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -394,17 +421,22 @@ const ConnectionSelection: React.FC<{
                 : 'border-gray-200 hover:border-gray-300'
             }`}
           >
-            <div className="flex items-center">
-              <span className="text-2xl mr-3">{getPlatformIcon(connection.platform)}</span>
-              <div className="flex-1">
-                <h3 className="font-medium text-gray-900">{connection.name}</h3>
-                <p className="text-sm text-gray-500">
-                  {connection.platform} • {connection.projectCount} project{connection.projectCount !== 1 ? 's' : ''}
-                </p>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <span className="text-2xl mr-3">{getPlatformIcon(connection.platform)}</span>
+                <div>
+                  <h3 className="font-medium text-gray-900">{connection.name}</h3>
+                  <p className="text-sm text-gray-500 capitalize">{connection.platform}</p>
+                </div>
               </div>
-              {selectedConnectionId === connection.id && (
-                <CheckCircle size={20} className="text-blue-500" />
-              )}
+              <div className="flex items-center space-x-2">
+                <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full">
+                  Connected
+                </span>
+                {selectedConnectionId === connection.id && (
+                  <Check size={20} className="text-blue-600" />
+                )}
+              </div>
             </div>
           </div>
         ))}
@@ -416,15 +448,14 @@ const ConnectionSelection: React.FC<{
 // Project Selection Component
 const ProjectSelection: React.FC<{
   projects: any[],
-  isLoading: boolean,
   selectedProjectId: string,
   onSelectProject: (projectId: string) => void,
-  connectionName?: string
-}> = ({ projects, isLoading, selectedProjectId, onSelectProject, connectionName }) => {
+  isLoading: boolean
+}> = ({ projects, selectedProjectId, onSelectProject, isLoading }) => {
   if (isLoading) {
     return (
       <div className="text-center py-8">
-        <Loader className="animate-spin h-8 w-8 mx-auto text-blue-500 mb-4" />
+        <Loader className="animate-spin h-8 w-8 mx-auto mb-4 text-blue-600" />
         <p className="text-gray-600">Loading projects...</p>
       </div>
     );
@@ -433,10 +464,12 @@ const ProjectSelection: React.FC<{
   if (projects.length === 0) {
     return (
       <div className="text-center py-8">
-        <AlertCircle size={48} className="mx-auto text-gray-400 mb-4" />
+        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <FileText size={24} className="text-gray-400" />
+        </div>
         <h3 className="text-lg font-medium text-gray-900 mb-2">No Projects Found</h3>
         <p className="text-gray-600">
-          No projects were found in your {connectionName} connection.
+          No projects were found for the selected connection.
         </p>
       </div>
     );
@@ -444,10 +477,8 @@ const ProjectSelection: React.FC<{
 
   return (
     <div>
-      <h2 className="text-xl font-semibold text-gray-900 mb-4">Select Project</h2>
-      <p className="text-gray-600 mb-6">
-        Choose the project from {connectionName} to include in your report
-      </p>
+      <h2 className="text-xl font-semibold text-gray-900 mb-4">Choose Project</h2>
+      <p className="text-gray-600 mb-6">Select which project to include in your report</p>
       
       <div className="space-y-3">
         {projects.map((project) => (
@@ -463,24 +494,17 @@ const ProjectSelection: React.FC<{
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-medium text-gray-900">{project.name}</h3>
-                {project.description && (
-                  <p className="text-sm text-gray-500 mt-1">{project.description}</p>
-                )}
-                <div className="flex items-center mt-2 space-x-4">
-                  {project.tasks && (
-                    <span className="text-xs text-gray-500">
-                      {project.tasks.length} tasks
-                    </span>
-                  )}
-                  {project.team && (
-                    <span className="text-xs text-gray-500">
-                      {project.team.length} team members
-                    </span>
-                  )}
+                <p className="text-sm text-gray-500">
+                  {project.description || 'No description available'}
+                </p>
+                <div className="flex items-center mt-2 space-x-4 text-xs text-gray-500">
+                  <span>{project.status || 'Active'}</span>
+                  {project.progress && <span>{project.progress}% Complete</span>}
+                  {project.teamSize && <span>{project.teamSize} team members</span>}
                 </div>
               </div>
               {selectedProjectId === project.id && (
-                <CheckCircle size={20} className="text-blue-500" />
+                <Check size={20} className="text-blue-600" />
               )}
             </div>
           </div>
@@ -492,63 +516,52 @@ const ProjectSelection: React.FC<{
 
 // Template Selection Component
 const TemplateSelection: React.FC<{
-  selectedTemplate: string,
-  onSelectTemplate: (template: string) => void
-}> = ({ selectedTemplate, onSelectTemplate }) => {
+  selectedTemplateId: string,
+  onSelectTemplate: (templateId: string) => void
+}> = ({ selectedTemplateId, onSelectTemplate }) => {
   const templates = [
     {
-      id: 'standard-report',
-      name: 'Standard Project Report',
-      description: 'A comprehensive overview including metrics, tasks, and team information',
-      features: ['Project Overview', 'Team Members', 'Task Status', 'Metrics Dashboard']
+      id: 'standard',
+      name: 'Standard Report',
+      description: 'A comprehensive report with all project metrics and insights',
+      preview: '📊'
     },
     {
-      id: 'executive-summary',
+      id: 'executive',
       name: 'Executive Summary',
-      description: 'High-level overview perfect for stakeholder presentations',
-      features: ['Key Metrics', 'Project Status', 'Critical Issues', 'Next Steps']
+      description: 'High-level overview for stakeholders and executives',
+      preview: '📈'
     },
     {
-      id: 'detailed-analysis',
+      id: 'detailed',
       name: 'Detailed Analysis',
-      description: 'In-depth analysis with detailed charts and breakdowns',
-      features: ['Detailed Metrics', 'Task Breakdown', 'Timeline Analysis', 'Resource Allocation']
+      description: 'In-depth analysis with charts, tables, and detailed breakdowns',
+      preview: '📋'
     }
   ];
 
   return (
     <div>
-      <h2 className="text-xl font-semibold text-gray-900 mb-4">Choose Template</h2>
-      <p className="text-gray-600 mb-6">Select the report template that best fits your needs</p>
+      <h2 className="text-xl font-semibold text-gray-900 mb-4">Select Template</h2>
+      <p className="text-gray-600 mb-6">Choose a report template that best fits your needs</p>
       
-      <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {templates.map((template) => (
           <div
             key={template.id}
             onClick={() => onSelectTemplate(template.id)}
             className={`p-6 border rounded-lg cursor-pointer transition-all ${
-              selectedTemplate === template.id
+              selectedTemplateId === template.id
                 ? 'border-blue-500 bg-blue-50'
                 : 'border-gray-200 hover:border-gray-300'
             }`}
           >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <h3 className="font-semibold text-gray-900 mb-2">{template.name}</h3>
-                <p className="text-gray-600 mb-3">{template.description}</p>
-                <div className="flex flex-wrap gap-2">
-                  {template.features.map((feature, index) => (
-                    <span
-                      key={index}
-                      className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full"
-                    >
-                      {feature}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              {selectedTemplate === template.id && (
-                <CheckCircle size={20} className="text-blue-500 ml-4" />
+            <div className="text-center">
+              <div className="text-4xl mb-4">{template.preview}</div>
+              <h3 className="font-medium text-gray-900 mb-2">{template.name}</h3>
+              <p className="text-sm text-gray-500 mb-4">{template.description}</p>
+              {selectedTemplateId === template.id && (
+                <Check size={20} className="text-blue-600 mx-auto" />
               )}
             </div>
           </div>
@@ -561,191 +574,98 @@ const TemplateSelection: React.FC<{
 // Report Configuration Component
 const ReportConfiguration: React.FC<{
   configuration: any,
-  onUpdateConfiguration: (config: any) => void,
-  connectionName?: string,
-  projectName?: string
-}> = ({ configuration, onUpdateConfiguration, connectionName, projectName }) => {
-  const [config, setConfig] = useState({
-    title: '',
-    includeMetrics: true,
-    includeTasks: true,
-    includeTimeline: true,
-    includeResources: true,
-    dateRange: '30',
-    ...configuration
-  });
-
-  const handleConfigChange = (key: string, value: any) => {
-    const newConfig = { ...config, [key]: value };
-    setConfig(newConfig);
-    onUpdateConfiguration(newConfig);
+  onUpdateConfiguration: (config: any) => void
+}> = ({ configuration, onUpdateConfiguration }) => {
+  const updateConfig = (key: string, value: any) => {
+    onUpdateConfiguration({
+      ...configuration,
+      [key]: value
+    });
   };
-
-  // Set default title if empty
-  React.useEffect(() => {
-    if (!config.title && projectName && connectionName) {
-      const defaultTitle = `${projectName} - ${connectionName} Report`;
-      handleConfigChange('title', defaultTitle);
-    }
-  }, [projectName, connectionName]);
 
   return (
     <div>
       <h2 className="text-xl font-semibold text-gray-900 mb-4">Configure Report</h2>
-      <p className="text-gray-600 mb-6">Customize your report settings and content</p>
+      <p className="text-gray-600 mb-6">Customize your report settings</p>
       
       <div className="space-y-6">
-        {/* Report Title */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Report Title
           </label>
           <input
             type="text"
-            value={config.title}
-            onChange={(e) => handleConfigChange('title', e.target.value)}
-            placeholder={`${projectName} - ${connectionName} Report`}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={configuration.title || ''}
+            onChange={(e) => updateConfig('title', e.target.value)}
+            placeholder="Enter custom report title"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
 
-        {/* Content Options */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-3">
-            Include in Report
+            Include Sections
           </label>
           <div className="space-y-3">
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={config.includeMetrics}
-                onChange={(e) => handleConfigChange('includeMetrics', e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <span className="ml-2 text-sm text-gray-700">Project Metrics & Statistics</span>
-            </label>
-            
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={config.includeTasks}
-                onChange={(e) => handleConfigChange('includeTasks', e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <span className="ml-2 text-sm text-gray-700">Task List & Status</span>
-            </label>
-            
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={config.includeTimeline}
-                onChange={(e) => handleConfigChange('includeTimeline', e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <span className="ml-2 text-sm text-gray-700">Timeline & Milestones</span>
-            </label>
-            
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={config.includeResources}
-                onChange={(e) => handleConfigChange('includeResources', e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <span className="ml-2 text-sm text-gray-700">Team & Resources</span>
-            </label>
+            {[
+              { key: 'includeMetrics', label: 'Project Metrics', description: 'Include key performance indicators' },
+              { key: 'includeTasks', label: 'Task Details', description: 'Include task status and assignments' },
+              { key: 'includeTimeline', label: 'Project Timeline', description: 'Include project timeline and milestones' },
+              { key: 'includeResources', label: 'Team Resources', description: 'Include team member information' }
+            ].map((section) => (
+              <div key={section.key} className="flex items-start">
+                <input
+                  type="checkbox"
+                  checked={configuration[section.key] !== false}
+                  onChange={(e) => updateConfig(section.key, e.target.checked)}
+                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <div className="ml-3">
+                  <label className="text-sm font-medium text-gray-700">
+                    {section.label}
+                  </label>
+                  <p className="text-xs text-gray-500">{section.description}</p>
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
-
-        {/* Date Range */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Data Range (Days)
-          </label>
-          <select
-            value={config.dateRange}
-            onChange={(e) => handleConfigChange('dateRange', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="7">Last 7 days</option>
-            <option value="30">Last 30 days</option>
-            <option value="90">Last 90 days</option>
-            <option value="all">All time</option>
-          </select>
         </div>
       </div>
     </div>
   );
 };
 
-// Generation Progress Component
-const GenerationProgress: React.FC<{
+// Report Generation Component
+const ReportGeneration: React.FC<{
   isGenerating: boolean,
-  isComplete: boolean,
-  hasError: boolean,
-  onRetry: () => void,
-  onDownload: () => void
-}> = ({ isGenerating, isComplete, hasError, onRetry, onDownload }) => {
-  if (hasError) {
-    return (
-      <div className="text-center py-8">
-        <X size={48} className="mx-auto text-red-500 mb-4" />
-        <h3 className="text-lg font-medium text-gray-900 mb-2">Generation Failed</h3>
-        <p className="text-gray-600 mb-4">
-          There was an error generating your report. Please try again.
-        </p>
-        <button
-          onClick={onRetry}
-          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-        >
-          Try Again
-        </button>
-      </div>
-    );
-  }
-
-  if (isComplete) {
-    return (
-      <div className="text-center py-8">
-        <CheckCircle size={48} className="mx-auto text-green-500 mb-4" />
-        <h3 className="text-lg font-medium text-gray-900 mb-2">Report Generated Successfully!</h3>
-        <p className="text-gray-600 mb-4">
-          Your PowerPoint report is ready for download.
-        </p>
-        <button
-          onClick={onDownload}
-          className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-        >
-          Download Report
-        </button>
-      </div>
-    );
-  }
-
-  if (isGenerating) {
-    return (
-      <div className="text-center py-8">
-        <div className="relative">
-          <Clock size={48} className="mx-auto text-blue-500 mb-4 animate-spin" />
-        </div>
-        <h3 className="text-lg font-medium text-gray-900 mb-2">Generating Report...</h3>
-        <p className="text-gray-600 mb-4">
-          Please wait while we create your PowerPoint report. This may take a few moments.
-        </p>
-        <div className="w-full bg-gray-200 rounded-full h-2 max-w-xs mx-auto">
-          <div className="bg-blue-600 h-2 rounded-full animate-pulse" style={{ width: '60%' }}></div>
-        </div>
-      </div>
-    );
-  }
-
+  generationComplete: boolean,
+  generationError: boolean
+}> = ({ isGenerating, generationComplete, generationError }) => {
   return (
     <div className="text-center py-8">
-      <FileText size={48} className="mx-auto text-gray-400 mb-4" />
-      <h3 className="text-lg font-medium text-gray-900 mb-2">Ready to Generate</h3>
-      <p className="text-gray-600">
-        Click "Generate Report" to create your PowerPoint presentation.
-      </p>
+      {isGenerating && (
+        <>
+          <Loader className="animate-spin h-12 w-12 mx-auto mb-4 text-blue-600" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Generating Report</h3>
+          <p className="text-gray-600">Please wait while we create your PowerPoint report...</p>
+        </>
+      )}
+
+      {generationComplete && (
+        <>
+          <CheckCircle className="h-12 w-12 mx-auto mb-4 text-green-500" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Report Generated Successfully</h3>
+          <p className="text-gray-600">Your report is ready for download.</p>
+        </>
+      )}
+
+      {generationError && (
+        <>
+          <X className="h-12 w-12 mx-auto mb-4 text-red-500" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Generation Failed</h3>
+          <p className="text-gray-600">There was an error generating your report. Please try again.</p>
+        </>
+      )}
     </div>
   );
 };

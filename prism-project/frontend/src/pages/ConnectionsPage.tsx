@@ -1,51 +1,27 @@
-// frontend/src/pages/ConnectionsPage.tsx - FIXED VERSION WITH INTERNAL PROVIDER
-import React, { useState, useCallback, useEffect } from 'react';
-import { ConnectionsProvider } from '../contexts/ConnectionsContext';
+// frontend/src/pages/ConnectionsPage.tsx - FIXED WITH INTERNAL PROVIDER
+import React, { useState, useCallback } from 'react';
+import { ConnectionsProvider, useConnections } from '../contexts/ConnectionsContext';
 import MainLayout from '../components/layout/MainLayout';
 import ConnectionsHeader from '../components/feature-specific/connections/ConnectionsHeader';
 import ConnectionsList from '../components/feature-specific/connections/ConnectionsList';
 import AddConnectionModal from '../components/feature-specific/connections/AddConnectionModal';
 import ServiceAvailabilityBanner from '../components/common/ServiceAvailabilityBanner';
 
-interface Connection {
-  id: string;
-  name: string;
-  platform: 'monday' | 'jira' | 'trofos';
-  status: 'connected' | 'disconnected' | 'error';
-  projectCount: number;
-  lastSync?: string;
-  lastSyncError?: string;
-  createdAt: string;
-}
-
 // Internal component that uses ConnectionsContext
 const ConnectionsPageContent: React.FC = () => {
-  const [connections, setConnections] = useState<Connection[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  // Load connections from localStorage on mount
-  useEffect(() => {
-    loadConnections();
-  }, []);
-
-  const loadConnections = () => {
-    try {
-      setIsLoading(true);
-      const savedConnections = JSON.parse(localStorage.getItem('prism-connections') || '[]');
-      setConnections(savedConnections);
-      setError(null);
-      console.log('Loaded connections:', savedConnections.length);
-    } catch (error) {
-      console.error('Failed to load connections:', error);
-      setError('Failed to load connections');
-      setConnections([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // Now we can safely use ConnectionsContext
+  const { 
+    connections, 
+    isLoading, 
+    error, 
+    createConnection,
+    testConnection,
+    syncConnection,
+    deleteConnection 
+  } = useConnections();
 
   const handleAddConnection = useCallback(() => {
     console.log('Opening add connection modal');
@@ -53,130 +29,70 @@ const ConnectionsPageContent: React.FC = () => {
   }, []);
 
   const handleConnectionAdded = useCallback(async (newConnectionData: any) => {
-    console.log('Adding new connection:', newConnectionData.name);
+    console.log('Adding new connection via ConnectionsContext:', newConnectionData.name);
     
     try {
-      // Create connection object
-      const connection: Connection = {
-        id: `conn_${Date.now()}`,
+      // Use ConnectionsContext instead of direct localStorage
+      await createConnection({
         name: newConnectionData.name,
         platform: newConnectionData.platform,
-        status: 'connected',
-        projectCount: 1,
-        lastSync: 'Just now',
-        createdAt: new Date().toISOString()
-      };
-
-      // Save to localStorage
-      const existingConnections = JSON.parse(localStorage.getItem('prism-connections') || '[]');
-      const updatedConnections = [...existingConnections, connection];
-      localStorage.setItem('prism-connections', JSON.stringify(updatedConnections));
-
-      // Update state
-      setConnections(updatedConnections);
+        config: newConnectionData.config || {},
+        metadata: newConnectionData.metadata || {}
+      });
+      
       setIsAddModalOpen(false);
-      setError(null);
-
-      console.log('Connection added successfully:', connection.id);
+      console.log('✅ Connection added successfully via ConnectionsContext');
     } catch (error) {
-      console.error('Failed to add connection:', error);
-      setError('Failed to add connection');
+      console.error('❌ Failed to add connection:', error);
+      // Error is handled by ConnectionsContext
     }
-  }, []);
+  }, [createConnection]);
 
   const handleTestConnection = useCallback(async (connectionId: string) => {
-    console.log('Testing connection:', connectionId);
+    console.log('Testing connection via ConnectionsContext:', connectionId);
     setActionLoading(connectionId);
     
     try {
-      // Simulate test (in real app, you'd call your test API)
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Update connection status
-      const updatedConnections = connections.map(conn => 
-        conn.id === connectionId 
-          ? { ...conn, status: 'connected' as const, lastSync: 'Just now' }
-          : conn
-      );
-      
-      setConnections(updatedConnections);
-      localStorage.setItem('prism-connections', JSON.stringify(updatedConnections));
-      
-      console.log('Connection test successful');
+      const result = await testConnection(connectionId);
+      console.log('Connection test result:', result);
     } catch (error) {
       console.error('Connection test failed:', error);
-      
-      // Update connection with error status
-      const updatedConnections = connections.map(conn => 
-        conn.id === connectionId 
-          ? { ...conn, status: 'error' as const, lastSyncError: 'Test failed' }
-          : conn
-      );
-      
-      setConnections(updatedConnections);
-      localStorage.setItem('prism-connections', JSON.stringify(updatedConnections));
     } finally {
       setActionLoading(null);
     }
-  }, [connections]);
+  }, [testConnection]);
 
   const handleSyncConnection = useCallback(async (connectionId: string) => {
-    console.log('Syncing connection:', connectionId);
+    console.log('Syncing connection via ConnectionsContext:', connectionId);
     setActionLoading(connectionId);
     
     try {
-      // Simulate sync (in real app, you'd call your sync API)
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Update connection
-      const updatedConnections = connections.map(conn => 
-        conn.id === connectionId 
-          ? { ...conn, lastSync: 'Just now', lastSyncError: undefined }
-          : conn
-      );
-      
-      setConnections(updatedConnections);
-      localStorage.setItem('prism-connections', JSON.stringify(updatedConnections));
-      
-      console.log('Connection sync successful');
+      const result = await syncConnection(connectionId);
+      console.log('Connection sync result:', result);
     } catch (error) {
       console.error('Connection sync failed:', error);
-      
-      const updatedConnections = connections.map(conn => 
-        conn.id === connectionId 
-          ? { ...conn, lastSyncError: 'Sync failed' }
-          : conn
-      );
-      
-      setConnections(updatedConnections);
-      localStorage.setItem('prism-connections', JSON.stringify(updatedConnections));
     } finally {
       setActionLoading(null);
     }
-  }, [connections]);
+  }, [syncConnection]);
 
   const handleDeleteConnection = useCallback(async (connectionId: string) => {
     if (!window.confirm('Are you sure you want to delete this connection? This action cannot be undone.')) {
       return;
     }
 
-    console.log('Deleting connection:', connectionId);
+    console.log('Deleting connection via ConnectionsContext:', connectionId);
     setActionLoading(connectionId);
     
     try {
-      // Remove from state and localStorage
-      const updatedConnections = connections.filter(conn => conn.id !== connectionId);
-      setConnections(updatedConnections);
-      localStorage.setItem('prism-connections', JSON.stringify(updatedConnections));
-      
-      console.log('Connection deleted successfully');
+      const result = await deleteConnection(connectionId);
+      console.log('Connection delete result:', result);
     } catch (error) {
-      console.error('Failed to delete connection:', error);
-      setError('Failed to delete connection');
+      console.error('Connection delete failed:', error);
     } finally {
       setActionLoading(null);
     }
-  }, [connections]);
+  }, [deleteConnection]);
 
   return (
     <MainLayout>
@@ -194,12 +110,6 @@ const ConnectionsPageContent: React.FC = () => {
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
               </svg>
               <span>{error}</span>
-              <button 
-                onClick={() => setError(null)}
-                className="ml-auto text-red-500 hover:text-red-700"
-              >
-                &times;
-              </button>
             </div>
           </div>
         )}
@@ -235,14 +145,14 @@ const ConnectionsPageContent: React.FC = () => {
           />
         )}
 
-        {/* Simple Instructions */}
+        {/* Instructions */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <h3 className="text-sm font-medium text-blue-800 mb-2">
             How Connections Work:
           </h3>
           <div className="text-sm text-blue-700 space-y-1">
             <p>1. Click "Add Connection" to connect a platform</p>
-            <p>2. Choose Monday.com, Jira, or TROFOS</p>
+            <p>2. Choose Monday.com or Jira</p>
             <p>3. Enter your credentials and test the connection</p>
             <p>4. Save the connection for generating reports</p>
             <p>5. Use "Test" or "Sync" to verify connections anytime</p>
@@ -253,15 +163,17 @@ const ConnectionsPageContent: React.FC = () => {
         {process.env.NODE_ENV === 'development' && (
           <div className="bg-gray-100 border border-gray-300 rounded-lg p-4">
             <h3 className="text-sm font-medium text-gray-700 mb-2">
-              Debug Info:
+              🐛 Debug Info (ConnectionsContext):
             </h3>
             <div className="text-xs text-gray-600 space-y-1">
               <p>Connections: {connections.length}</p>
+              <p>Connected: {connections.filter(c => c.status === 'connected').length}</p>
               <p>Is Loading: {isLoading ? 'Yes' : 'No'}</p>
               <p>Action Loading: {actionLoading || 'None'}</p>
               <p>Modal Open: {isAddModalOpen ? 'Yes' : 'No'}</p>
               <p>Error: {error || 'None'}</p>
-              <p>Storage Key: prism-connections</p>
+              <p>Storage: User-specific (prism-connections-USER_ID)</p>
+              <p>Statuses: {connections.map(c => c.status).join(', ') || 'None'}</p>
             </div>
           </div>
         )}
@@ -270,9 +182,9 @@ const ConnectionsPageContent: React.FC = () => {
   );
 };
 
-// Main component that provides ConnectionsProvider only when needed
+// Main component that provides ConnectionsProvider (same pattern as CreateReportPage)
 const ConnectionsPage: React.FC = () => {
-  console.log('ConnectionsPage: Rendering with internal ConnectionsProvider');
+  console.log('🔄 ConnectionsPage: Rendering with internal ConnectionsProvider');
   
   return (
     <ConnectionsProvider>

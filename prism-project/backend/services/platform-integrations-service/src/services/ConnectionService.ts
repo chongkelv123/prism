@@ -1,5 +1,5 @@
 // backend/services/platform-integrations-service/src/services/ConnectionService.ts
-// FIXED VERSION - Updated Monday.com validation to use "apiToken" instead of "apiKey"
+// COMPLETE FIXED VERSION - Updated Monday.com API integration with proper typing
 
 import { Connection, IConnection } from '../models/Connection';
 import logger from '../utils/logger';
@@ -39,12 +39,76 @@ interface JiraUserResponse {
   accountId: string;
 }
 
+interface MondayBoard {
+  id: string;
+  name: string;
+  description?: string;
+  state?: string;
+  items_count?: number;
+  items?: Array<{
+    id: string;
+    name: string;
+    created_at?: string;
+    updated_at?: string;
+    state?: string;
+  }>;
+  groups?: Array<{
+    id: string;
+    title: string;
+    position?: number;
+  }>;
+  columns?: Array<{
+    id: string;
+    title: string;
+    type: string;
+  }>;
+}
+
+interface MondayUser {
+  name: string;
+  email: string;
+  id: string;
+}
+
 interface MondayApiResponse {
   data?: {
-    me?: any;
-    boards?: any[];
+    me?: MondayUser;
+    boards?: MondayBoard[];
   };
   errors?: Array<{ message: string }>;
+}
+
+// Helper function to safely parse Monday.com API response
+function parseMondayApiResponse(data: unknown): MondayApiResponse {
+  if (!data || typeof data !== 'object') {
+    return {};
+  }
+  
+  const response = data as Record<string, unknown>;
+  const result: MondayApiResponse = {};
+  
+  // Parse errors
+  if ('errors' in response && Array.isArray(response.errors)) {
+    result.errors = response.errors as Array<{ message: string }>;
+  }
+  
+  // Parse data
+  if ('data' in response && response.data && typeof response.data === 'object') {
+    const responseData = response.data as Record<string, unknown>;
+    result.data = {};
+    
+    // Parse user data
+    if ('me' in responseData && responseData.me && typeof responseData.me === 'object') {
+      result.data.me = responseData.me as MondayUser;
+    }
+    
+    // Parse boards data
+    if ('boards' in responseData && Array.isArray(responseData.boards)) {
+      result.data.boards = responseData.boards as MondayBoard[];
+    }
+  }
+  
+  return result;
 }
 
 export class ConnectionService {
@@ -123,6 +187,19 @@ export class ConnectionService {
       
     } catch (error) {
       logger.error('Failed to get connections:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a specific connection
+   */
+  async getConnection(userId: string, connectionId: string): Promise<IConnection | null> {
+    try {
+      const connection = await Connection.findOne({ _id: connectionId, userId });
+      return connection;
+    } catch (error) {
+      logger.error('Failed to get connection:', error);
       throw error;
     }
   }
@@ -485,109 +562,128 @@ export class ConnectionService {
     }
   }
 
-  // ===== MONDAY.COM PLATFORM METHODS =====
+  // ===== MONDAY.COM PLATFORM METHODS (FIXED) =====
 
   /**
-   * Test Monday.com connection
-   * FIXED: Updated to use "apiToken" instead of "apiKey"
+   * Test Monday.com connection - ENHANCED VERSION
    */
   private async testMondayConnection(config: any): Promise<ConnectionTestResult> {
     try {
       logger.info('Testing Monday.com connection...');
       
-      const { apiToken } = config;  // FIXED: Use apiToken instead of apiKey
+      const { apiToken } = config;
       
       if (!apiToken) {
         return {
           success: false,
-          message: 'Missing required Monday.com configuration (apiToken)'
+          message: 'Missing Monday.com API token'
         };
       }
 
-      const query = `query { me { name email } }`;
+      const query = 'query { me { name email id } }';
       
       const response = await fetch('https://api.monday.com/v2', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiToken}`,  // FIXED: Use apiToken
-          'Content-Type': 'application/json'
+          'Authorization': `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
+          'API-Version': '2024-01'  // CRITICAL: Add API version header
         },
         body: JSON.stringify({ query })
       });
 
-      if (response.ok) {
-        const data = await response.json() as MondayApiResponse;
-        
-        if (data.errors) {
-          return {
-            success: false,
-            message: `Monday.com API error: ${data.errors[0].message}`
-          };
-        }
-        
-        return {
-          success: true,
-          message: `Connected as ${data.data?.me?.name}`,
-          details: data.data?.me
-        };
-      } else {
+      if (!response.ok) {
         return {
           success: false,
           message: `Monday.com connection failed: ${response.status} ${response.statusText}`
         };
       }
+
+      const rawData = await response.json();
+      const data = parseMondayApiResponse(rawData);
       
-    } catch (error: any) {
-      logger.error('Monday.com connection test failed:', error);
+      if (data.errors && data.errors.length > 0) {
+        return {
+          success: false,
+          message: `Monday.com API error: ${data.errors[0].message}`
+        };
+      }
+      
+      if (!data.data?.me) {
+        return {
+          success: false,
+          message: 'Authentication failed - invalid API token'
+        };
+      }
+      
+      const userData = data.data.me;
+      return {
+        success: true,
+        message: `Connected as ${userData.name} (${userData.email})`,
+        details: userData
+      };
+      
+    } catch (error) {
       return {
         success: false,
-        message: error?.message || 'Monday.com connection test failed'
+        message: error instanceof Error ? error.message : 'Monday.com connection test failed'
       };
     }
   }
 
   /**
-   * Sync Monday.com connection to get board count
-   * FIXED: Updated to use "apiToken" instead of "apiKey"
+   * Sync Monday.com connection - ENHANCED VERSION
    */
   private async syncMondayConnection(connection: IConnection): Promise<ConnectionSyncResult> {
     try {
       logger.info('Syncing Monday.com connection...');
       
-      const { apiToken } = connection.config;  // FIXED: Use apiToken instead of apiKey
-      const query = `query { boards { name id } }`;
+      const { apiToken } = connection.config;
+      const query = `
+        query { 
+          boards(limit: 100, state: active) { 
+            id 
+            name 
+            items_count
+            state
+          } 
+        }`;
       
       const response = await fetch('https://api.monday.com/v2', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiToken}`,  // FIXED: Use apiToken
-          'Content-Type': 'application/json'
+          'Authorization': `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
+          'API-Version': '2024-01'  // CRITICAL: Add API version header
         },
         body: JSON.stringify({ query })
       });
 
-      if (response.ok) {
-        const data = await response.json() as MondayApiResponse;
-        
-        if (data.errors) {
-          return {
-            success: false,
-            message: `Monday.com sync error: ${data.errors[0].message}`
-          };
-        }
-        
-        return {
-          success: true,
-          message: 'Monday.com sync successful',
-          projectCount: data.data?.boards?.length || 0,
-          lastSync: new Date()
-        };
-      } else {
+      if (!response.ok) {
         return {
           success: false,
-          message: `Failed to sync Monday.com boards: ${response.status}`
+          message: `Failed to sync Monday.com boards: ${response.status} ${response.statusText}`
         };
       }
+
+      const rawData = await response.json();
+      const data = parseMondayApiResponse(rawData);
+      
+      if (data.errors && data.errors.length > 0) {
+        return {
+          success: false,
+          message: `Monday.com sync error: ${data.errors[0].message}`
+        };
+      }
+      
+      const boards = data.data?.boards || [];
+      
+      return {
+        success: true,
+        message: 'Monday.com sync successful',
+        projectCount: boards.length,
+        lastSync: new Date()
+      };
       
     } catch (error: any) {
       logger.error('Monday.com sync failed:', error);
@@ -599,46 +695,111 @@ export class ConnectionService {
   }
 
   /**
-   * Get Monday.com project data
-   * FIXED: Updated to use "apiToken" instead of "apiKey"
+   * Get Monday.com project data (boards) - ENHANCED VERSION
    */
-  private async getMondayProjectData(connection: IConnection, projectId?: string): Promise<any> {
+  private async getMondayProjectData(connection: IConnection, projectId?: string): Promise<MondayBoard[]> {
     try {
-      const { apiToken } = connection.config;  // FIXED: Use apiToken instead of apiKey
+      logger.info('📊 Fetching Monday.com data...');
+      
+      const { apiToken } = connection.config;
+      
+      if (!apiToken) {
+        throw new Error('Monday.com API token not configured');
+      }
       
       let query: string;
       
       if (projectId) {
-        // Get specific board
-        query = `query { boards(ids: [${projectId}]) { name id items { name } } }`;
+        // Get specific board with enhanced data
+        query = `
+          query($boardId: ID!) {
+            boards(ids: [$boardId]) { 
+              id 
+              name 
+              description
+              state
+              items_count
+              groups {
+                id
+                title
+                position
+              }
+              columns {
+                id
+                title
+                type
+              }
+              items(limit: 50) { 
+                id 
+                name 
+                created_at
+                updated_at
+                state
+              }
+            } 
+          }`;
       } else {
-        // Get all boards
-        query = `query { boards { name id items { name } } }`;
+        // Get all boards with basic info
+        query = `
+          query {
+            boards(limit: 100, state: active) { 
+              id 
+              name 
+              description
+              state
+              items_count
+              groups {
+                id
+                title
+              }
+              columns {
+                id
+                title
+                type
+              }
+            } 
+          }`;
+      }
+      
+      logger.info('📡 Making Monday.com API request...');
+      
+      const requestBody: any = { query };
+      if (projectId) {
+        requestBody.variables = { boardId: projectId };
       }
       
       const response = await fetch('https://api.monday.com/v2', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiToken}`,  // FIXED: Use apiToken
-          'Content-Type': 'application/json'
+          'Authorization': `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
+          'API-Version': '2024-01'  // CRITICAL: Add API version header
         },
-        body: JSON.stringify({ query })
+        body: JSON.stringify(requestBody)
       });
 
-      if (response.ok) {
-        const data = await response.json() as MondayApiResponse;
-        
-        if (data.errors) {
-          throw new Error(`Monday.com API error: ${data.errors[0].message}`);
-        }
-        
-        return data.data?.boards;
-      } else {
-        throw new Error(`Failed to get Monday.com data: ${response.status}`);
+      if (!response.ok) {
+        throw new Error(`Monday.com API request failed: ${response.status} ${response.statusText}`);
+      }
+
+      const rawData = await response.json();
+      const data = parseMondayApiResponse(rawData);
+      
+      if (data.errors && data.errors.length > 0) {
+        throw new Error(`Monday.com API error: ${data.errors[0].message}`);
       }
       
+      const boards = data.data?.boards || [];
+      
+      logger.info('✅ Monday.com data retrieved:', {
+        boardCount: boards.length,
+        boardNames: boards.map(b => b.name).slice(0, 3)
+      });
+      
+      return boards;
+      
     } catch (error) {
-      logger.error('Failed to get Monday.com project data:', error);
+      logger.error('❌ Failed to get Monday.com project data:', error);
       throw error;
     }
   }

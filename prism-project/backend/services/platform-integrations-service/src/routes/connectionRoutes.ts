@@ -1,7 +1,5 @@
-// =============================================================================
-// 2. BACKEND: Enhanced Connection Routes (MINIMAL ADDITIONS)
-// File: backend/services/platform-integrations-service/src/routes/connectionRoutes.ts
-// =============================================================================
+// backend/services/platform-integrations-service/src/routes/connectionRoutes.ts
+// FIXED VERSION - Added missing projects endpoint
 
 import { Router, Request, Response } from 'express';
 import { ConnectionService } from '../services/ConnectionService';
@@ -38,7 +36,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       name,
       platform,
       config,
-      metadata: metadata || {} // Optional metadata
+      metadata: metadata || {}
     };
 
     const connection = await connectionService.createConnection(userId, connectionData);
@@ -73,14 +71,13 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
     const connections = await connectionService.getConnections(userId);
     
-    // Return safe connections (no sensitive config)
+    // Return connections without sensitive config data
     const safeConnections = connections.map(conn => ({
       id: conn.id,
       name: conn.name,
       platform: conn.platform,
       status: conn.status,
       projectCount: conn.projectCount,
-      metadata: conn.metadata,
       lastSync: conn.lastSync,
       lastSyncError: conn.lastSyncError,
       createdAt: conn.createdAt
@@ -93,95 +90,171 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-// UPDATE: Update connection metadata
-router.put('/:connectionId/metadata', async (req: AuthRequest, res: Response) => {
+// READ: Get specific connection details
+router.get('/:connectionId', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const { connectionId } = req.params;
-    const { metadata } = req.body;
 
     if (!userId) {
       return res.status(401).json({ message: 'User ID required' });
     }
 
-    const success = await connectionService.updateConnectionMetadata(userId, connectionId, metadata);
+    const connection = await connectionService.getConnection(userId, connectionId);
     
-    if (!success) {
+    if (!connection) {
       return res.status(404).json({ message: 'Connection not found' });
     }
 
-    res.json({ success: true, message: 'Metadata updated successfully' });
+    // Return connection without sensitive config data
+    const safeConnection = {
+      id: connection.id,
+      name: connection.name,
+      platform: connection.platform,
+      status: connection.status,
+      projectCount: connection.projectCount,
+      lastSync: connection.lastSync,
+      lastSyncError: connection.lastSyncError,
+      createdAt: connection.createdAt
+    };
+
+    res.json(safeConnection);
   } catch (error) {
-    logger.error('Update metadata error:', error);
-    res.status(500).json({ message: 'Failed to update metadata' });
+    logger.error('Get connection error:', error);
+    res.status(500).json({ message: 'Failed to get connection' });
   }
 });
 
-// MIGRATION: Bulk import from localStorage
-router.post('/import', async (req: AuthRequest, res: Response) => {
+// ⭐ **CRITICAL FIX**: Missing Projects Endpoint
+router.get('/:connectionId/projects', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { connections } = req.body;
+    const { connectionId } = req.params;
+    const { projectId } = req.query;
+
+    logger.info('🔍 Projects endpoint called:', {
+      userId,
+      connectionId,
+      projectId: projectId || 'all projects'
+    });
 
     if (!userId) {
       return res.status(401).json({ message: 'User ID required' });
     }
 
-    if (!Array.isArray(connections)) {
-      return res.status(400).json({ message: 'Connections must be an array' });
-    }
-
-    logger.info(`Importing ${connections.length} connections for user ${userId}`);
-
-    const importResults = [];
+    // Get connection first to verify it exists and belongs to user
+    const connection = await connectionService.getConnection(userId, connectionId);
     
-    for (const connData of connections) {
-      try {
-        // Transform localStorage format to backend format
-        const connectionData = {
-          name: connData.name || `${connData.platform} Connection`,
-          platform: connData.platform,
-          config: connData.credentials || connData.config || {},
-          metadata: {
-            selectedProjects: [],
-            defaultTemplate: 'standard',
-            reportPreferences: {
-              includeCharts: true,
-              includeTeamInfo: true,
-              dateRange: 30
-            }
-          }
-        };
-
-        const connection = await connectionService.createConnection(userId, connectionData);
-        importResults.push({
-          success: true,
-          originalId: connData.id,
-          newId: connection.id,
-          name: connection.name
-        });
-      } catch (error) {
-        logger.error(`Failed to import connection ${connData.name}:`, error);
-        importResults.push({
-          success: false,
-          originalId: connData.id,
-          name: connData.name,
-          error: error instanceof Error ? error.message : 'Import failed'
-        });
-      }
+    if (!connection) {
+      logger.warn('❌ Connection not found:', { userId, connectionId });
+      return res.status(404).json({ message: 'Connection not found' });
     }
 
-    const successCount = importResults.filter(r => r.success).length;
-    const failureCount = importResults.filter(r => !r.success).length;
+    if (connection.status !== 'connected') {
+      logger.warn('❌ Connection not active:', { 
+        connectionId, 
+        status: connection.status 
+      });
+      return res.status(400).json({ 
+        message: 'Connection is not active',
+        status: connection.status 
+      });
+    }
 
-    res.json({
-      success: true,
-      message: `Import completed: ${successCount} successful, ${failureCount} failed`,
-      results: importResults
+    // Get project data using ConnectionService
+    logger.info('🔄 Fetching project data from external API...');
+    const projectData = await connectionService.getProjectData(
+      userId, 
+      connectionId, 
+      projectId as string
+    );
+
+    // Transform data for consistent format
+    let projects = Array.isArray(projectData) ? projectData : [projectData];
+    
+    // Add additional fields for frontend consumption
+    projects = projects.map((project: any) => ({
+      id: project.id || project.key || project.board_id,
+      name: project.name || project.displayName || project.title,
+      platform: connection.platform,
+      description: project.description || project.summary || '',
+      status: project.status || 'active',
+      metrics: project.metrics || [],
+      team: project.team || project.members || [],
+      tasks: project.tasks || project.items || project.issues || [],
+      lastUpdated: project.updated || project.modified || new Date().toISOString(),
+      // Raw data for debugging
+      _raw: project
+    }));
+
+    logger.info('✅ Project data retrieved successfully:', {
+      connectionId,
+      platform: connection.platform,
+      projectCount: projects.length,
+      projectNames: projects.map(p => p.name).slice(0, 3) // First 3 names for debugging
+    });
+
+    res.json(projects);
+
+  } catch (error) {
+    logger.error('❌ Failed to get project data:', {
+      connectionId: req.params.connectionId,
+      userId: req.user?.userId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    });
+
+    // Provide helpful error response
+    const message = error instanceof Error ? error.message : 'Failed to get project data';
+    res.status(500).json({ 
+      message,
+      error: 'Project data retrieval failed',
+      connectionId: req.params.connectionId
+    });
+  }
+});
+
+// TEST: Test connection
+router.post('/:connectionId/test', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { connectionId } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'User ID required' });
+    }
+
+    const testResult = await connectionService.testConnection(userId, connectionId);
+    
+    res.json({ 
+      success: testResult.success,
+      status: testResult.success ? 'connected' : 'error',
+      message: testResult.message || (testResult.success ? 'Connection successful' : 'Connection failed')
     });
   } catch (error) {
-    logger.error('Bulk import error:', error);
-    res.status(500).json({ message: 'Failed to import connections' });
+    logger.error('Test connection error:', error);
+    const message = error instanceof Error ? error.message : 'Connection test failed';
+    res.status(500).json({ success: false, message });
+  }
+});
+
+// SYNC: Sync connection data
+router.post('/:connectionId/sync', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { connectionId } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'User ID required' });
+    }
+
+    const syncResult = await connectionService.syncConnection(userId, connectionId);
+    
+    res.json(syncResult);
+  } catch (error) {
+    logger.error('Sync connection error:', error);
+    const message = error instanceof Error ? error.message : 'Connection sync failed';
+    res.status(500).json({ success: false, message });
   }
 });
 
@@ -196,11 +269,12 @@ router.delete('/:connectionId', async (req: AuthRequest, res: Response) => {
     }
 
     await connectionService.deleteConnection(userId, connectionId);
-    res.json({ success: true, message: 'Connection deleted successfully' });
+    
+    res.status(204).send();
   } catch (error) {
     logger.error('Delete connection error:', error);
     const message = error instanceof Error ? error.message : 'Failed to delete connection';
-    res.status(500).json({ success: false, message });
+    res.status(500).json({ message });
   }
 });
 

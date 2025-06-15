@@ -123,223 +123,154 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     }
   }, []);
 
-  // Load connections with unified localStorage key strategy
   const loadConnections = useCallback(async () => {
-    if (!isAuthenticated || !user?.id) {
-      console.log('👤 Not authenticated or no user ID, clearing connections');
-      setConnections([]);
-      return;
-    }
-
-    // Auto-migrate legacy data
-    ConnectionMigration.autoMigrateConnections(user.id);
-
-    // First check if service is available
-    const serviceHealthy = await checkServiceHealth();
-    
-    if (!serviceHealthy) {
-      console.log('🚨 Service unavailable, using fallback mode');
-      
-      try {
-        const userStorageKey = `prism-connections-${user.id}`;
-        const globalStorageKey = 'prism-connections';
-        
-        // Try user-specific cache first
-        let cachedData = localStorage.getItem(userStorageKey);
-        
-        if (cachedData) {
-          const cachedConnections = JSON.parse(cachedData);
-          const validatedConnections = ConnectionMigration.migrateAndValidateConnections(cachedConnections);
-          setConnections(validatedConnections);
-          console.log(`📦 Loaded ${validatedConnections.length} connections from user cache`);
-          setError(validatedConnections.length > 0 ? 'Working offline - using cached data' : null);
-        } else {
-          // Fallback to global cache and migrate
-          cachedData = localStorage.getItem(globalStorageKey);
-          if (cachedData) {
-            const cachedConnections = JSON.parse(cachedData);
-            const validatedConnections = ConnectionMigration.migrateAndValidateConnections(cachedConnections);
-            
-            console.log(`🔄 Migrating ${validatedConnections.length} connections from global cache`);
-            
-            // Save to user-specific cache
-            localStorage.setItem(userStorageKey, JSON.stringify(validatedConnections));
-            setConnections(validatedConnections);
-            console.log(`✅ Migrated connections to user cache for user ${user.id}`);
-            setError('Working offline - using cached data');
-          } else {
-            setConnections([]);
-            setError(null);
-          }
-        }
-      } catch (cacheError) {
-        console.error('💾 Cache load failed:', cacheError);
-        setConnections([]);
-        setError('Failed to load connections');
+    if (!isAuthenticated || !user?.id) return;
+    if (!isServiceAvailable) {
+      // Load from cache
+      const userStorageKey = `prism-connections-${user.id}`;
+      const cachedData = localStorage.getItem(userStorageKey);
+      if (cachedData) {
+        setConnections(JSON.parse(cachedData));
       }
       return;
     }
 
-    // Backend is available - proceed with normal loading
     try {
       setIsLoading(true);
-      setError(null);
-      
-      console.log('🔄 Loading connections from backend for user:', user.id);
+      console.log('🔄 Loading from backend...');
       
       const response = await apiClient.get('/api/connections');
       const backendConnections = response.data || [];
       
-      console.log(`✅ Loaded ${backendConnections.length} connections from backend`);
+      console.log('✅ Backend loaded:', backendConnections.length, 'connections');
       
-      // Validate backend data
-      const validatedConnections = ConnectionMigration.migrateAndValidateConnections(backendConnections);
+      // Transform to ensure proper format
+      const connections = backendConnections.map(conn => ({
+        id: conn.id,
+        name: conn.name,
+        platform: conn.platform,
+        status: conn.status || 'connected',
+        projectCount: conn.projectCount || 1,
+        lastSync: conn.lastSync || new Date().toISOString(),
+        createdAt: conn.createdAt || new Date().toISOString(),
+        metadata: conn.metadata || {}
+      }));
       
-      // Update state and user-specific cache
-      setConnections(validatedConnections);
+      setConnections(connections);
+      
+      // Update cache
       const userStorageKey = `prism-connections-${user.id}`;
-      localStorage.setItem(userStorageKey, JSON.stringify(validatedConnections));
+      localStorage.setItem(userStorageKey, JSON.stringify(connections));
       
-    } catch (error: any) {
+    } catch (error) {
       console.error('❌ Backend load failed:', error);
-      
-      if (error.response?.status === 401) {
-        logout();
-        return;
-      }
-      
-      // Fallback to user-specific cache with migration support
-      try {
-        const userStorageKey = `prism-connections-${user.id}`;
-        const globalStorageKey = 'prism-connections';
-        
-        let cachedData = localStorage.getItem(userStorageKey);
-        
-        if (!cachedData) {
-          // Try to migrate from global cache
-          cachedData = localStorage.getItem(globalStorageKey);
-          if (cachedData) {
-            console.log('🔄 Migrating from global cache due to backend failure');
-            localStorage.setItem(userStorageKey, cachedData);
-          }
-        }
-        
-        if (cachedData) {
-          const cachedConnections = JSON.parse(cachedData);
-          const validatedConnections = ConnectionMigration.migrateAndValidateConnections(cachedConnections);
-          
-          setConnections(validatedConnections);
-          console.log(`📦 Loaded ${validatedConnections.length} connections from cache (with migration)`);
-          setError('Working offline - using cached data');
-        } else {
-          setConnections([]);
-          setError('Unable to load connections');
-        }
-      } catch (cacheError) {
-        console.error('💾 Cache load failed:', cacheError);
-        setConnections([]);
-        setError('Failed to load connections');
+      // Fallback to cache
+      const userStorageKey = `prism-connections-${user.id}`;
+      const cachedData = localStorage.getItem(userStorageKey);
+      if (cachedData) {
+        setConnections(JSON.parse(cachedData));
+        setError('Working offline');
       }
     } finally {
       setIsLoading(false);
     }
-  }, [isAuthenticated, user?.id, logout, checkServiceHealth]);
+  }, [isAuthenticated, user?.id, isServiceAvailable]);
 
-// Add this debug logging to ConnectionsContext.tsx createConnection method
-const createConnection = useCallback(async (connectionData: ConnectionConfig): Promise<void> => {
-  if (!isAuthenticated || !user?.id) {
-    throw new Error('Authentication required');
-  }
+  // Add this debug logging to ConnectionsContext.tsx createConnection method
+  const createConnection = useCallback(async (connectionData: ConnectionConfig): Promise<void> => {
+    if (!isAuthenticated || !user?.id) {
+      throw new Error('Authentication required');
+    }
 
-  try {
-    setIsLoading(true);
-    console.log('➕ Creating connection for user:', user.id, connectionData.name);
-    
-    // DEBUG: Log the exact data being sent to backend
-    console.log('🔍 CONNECTION DATA DEBUG:');
-    console.log('  - name:', connectionData.name);
-    console.log('  - platform:', connectionData.platform);
-    console.log('  - config keys:', Object.keys(connectionData.config || {}));
-    console.log('  - config values:', connectionData.config);
-    console.log('  - metadata:', connectionData.metadata);
-    
-    if (isServiceAvailable) {
-      // Try backend first
-      console.log('🌐 Sending to backend...');
+    try {
+      setIsLoading(true);
+      console.log('➕ Creating connection for user:', user.id, connectionData.name);
       
-      try {
-        const response = await apiClient.post('/api/connections', connectionData);
-        const newConnection = response;
+      // DEBUG: Log the exact data being sent to backend
+      console.log('🔍 CONNECTION DATA DEBUG:');
+      console.log('  - name:', connectionData.name);
+      console.log('  - platform:', connectionData.platform);
+      console.log('  - config keys:', Object.keys(connectionData.config || {}));
+      console.log('  - config values:', connectionData.config);
+      console.log('  - metadata:', connectionData.metadata);
+      
+      if (isServiceAvailable) {
+        // Try backend first
+        console.log('🌐 Sending to backend...');
         
-        console.log('✅ Backend response:', newConnection);
+        try {
+          const response = await apiClient.post('/api/connections', connectionData);
+          const newConnection = response;
+          
+          console.log('✅ Backend response:', newConnection);
+          
+          // Validate the new connection
+          const validatedConnection = ConnectionMigration.migrateAndValidateConnections([newConnection])[0];
+          
+          // Update state and cache
+          const updatedConnections = [...connections, validatedConnection];
+          setConnections(updatedConnections);
+          
+          const userStorageKey = `prism-connections-${user.id}`;
+          localStorage.setItem(userStorageKey, JSON.stringify(updatedConnections));
+          
+          console.log('✅ Connection created successfully in backend');
+          setError(null);
+          
+        } catch (backendError: any) {
+          console.error('🚨 Backend Error Details:');
+          console.error('  - Status:', backendError.response?.status);
+          console.error('  - Status Text:', backendError.response?.statusText);
+          console.error('  - Error Data:', backendError.response?.data);
+          console.error('  - Error Message:', backendError.message);
+          console.error('  - Full Error:', backendError);
+          
+          // Check if it's a validation error vs server error
+          if (backendError.response?.status === 400) {
+            throw new Error(backendError.response?.data?.message || 'Invalid connection data');
+          } else if (backendError.response?.status === 500) {
+            throw new Error(backendError.response?.data?.message || 'Server error during connection creation');
+          } else {
+            throw new Error('Failed to create connection on server');
+          }
+        }
+          
+      } else {
+        // Fallback to localStorage with user association
+        console.log('📴 Service unavailable, using localStorage fallback');
+        const newConnection: Connection = {
+          id: `conn_${user.id}_${Date.now()}`,
+          name: connectionData.name,
+          platform: connectionData.platform,
+          status: 'connected',
+          projectCount: 1,
+          lastSync: 'Just now',
+          createdAt: new Date().toISOString(),
+          metadata: connectionData.metadata
+        };
         
-        // Validate the new connection
-        const validatedConnection = ConnectionMigration.migrateAndValidateConnections([newConnection])[0];
-        
-        // Update state and cache
-        const updatedConnections = [...connections, validatedConnection];
+        const updatedConnections = [...connections, newConnection];
         setConnections(updatedConnections);
         
         const userStorageKey = `prism-connections-${user.id}`;
         localStorage.setItem(userStorageKey, JSON.stringify(updatedConnections));
         
-        console.log('✅ Connection created successfully in backend');
-        setError(null);
-        
-      } catch (backendError: any) {
-        console.error('🚨 Backend Error Details:');
-        console.error('  - Status:', backendError.response?.status);
-        console.error('  - Status Text:', backendError.response?.statusText);
-        console.error('  - Error Data:', backendError.response?.data);
-        console.error('  - Error Message:', backendError.message);
-        console.error('  - Full Error:', backendError);
-        
-        // Check if it's a validation error vs server error
-        if (backendError.response?.status === 400) {
-          throw new Error(backendError.response?.data?.message || 'Invalid connection data');
-        } else if (backendError.response?.status === 500) {
-          throw new Error(backendError.response?.data?.message || 'Server error during connection creation');
-        } else {
-          throw new Error('Failed to create connection on server');
-        }
+        console.log('✅ Connection created successfully in localStorage (offline mode)');
       }
-        
-    } else {
-      // Fallback to localStorage with user association
-      console.log('📴 Service unavailable, using localStorage fallback');
-      const newConnection: Connection = {
-        id: `conn_${user.id}_${Date.now()}`,
-        name: connectionData.name,
-        platform: connectionData.platform,
-        status: 'connected',
-        projectCount: 1,
-        lastSync: 'Just now',
-        createdAt: new Date().toISOString(),
-        metadata: connectionData.metadata
-      };
       
-      const updatedConnections = [...connections, newConnection];
-      setConnections(updatedConnections);
+    } catch (error: any) {
+      console.error('❌ Failed to create connection:', error);
       
-      const userStorageKey = `prism-connections-${user.id}`;
-      localStorage.setItem(userStorageKey, JSON.stringify(updatedConnections));
+      let errorMessage = 'Failed to create connection';
+      if (error.message) {
+        errorMessage = error.message;
+      }
       
-      console.log('✅ Connection created successfully in localStorage (offline mode)');
+      throw new Error(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
-    
-  } catch (error: any) {
-    console.error('❌ Failed to create connection:', error);
-    
-    let errorMessage = 'Failed to create connection';
-    if (error.message) {
-      errorMessage = error.message;
-    }
-    
-    throw new Error(errorMessage);
-  } finally {
-    setIsLoading(false);
-  }
-}, [connections, isAuthenticated, user?.id, isServiceAvailable]);
+  }, [connections, isAuthenticated, user?.id, isServiceAvailable]);
 
   // Delete connection with user association
   const deleteConnection = useCallback(async (connectionId: string): Promise<{ success: boolean; message: string }> => {

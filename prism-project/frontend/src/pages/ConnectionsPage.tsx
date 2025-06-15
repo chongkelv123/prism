@@ -1,6 +1,6 @@
-// frontend/src/pages/ConnectionsPage.tsx - DEBUG VERSION TO FIND THE ISSUE
+// frontend/src/pages/ConnectionsPage.tsx - FIXED VERSION (No ConnectionsProvider)
 import React, { useState, useCallback } from 'react';
-import { ConnectionsProvider, useConnections } from '../contexts/ConnectionsContext';
+import { useConnections } from '../contexts/ConnectionsContext';
 import { useAuth } from '../contexts/AuthContext';
 import MainLayout from '../components/layout/MainLayout';
 import ConnectionsHeader from '../components/feature-specific/connections/ConnectionsHeader';
@@ -8,15 +8,15 @@ import ConnectionsList from '../components/feature-specific/connections/Connecti
 import AddConnectionModal from '../components/feature-specific/connections/AddConnectionModal';
 import ServiceAvailabilityBanner from '../components/common/ServiceAvailabilityBanner';
 
-// Internal component that uses ConnectionsContext
-const ConnectionsPageContent: React.FC = () => {
+// Main component that uses shared ConnectionsContext from router
+const ConnectionsPage: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // Get auth info for debugging
   const { user, isAuthenticated } = useAuth();
 
-  // Now we can safely use ConnectionsContext
+  // Use the shared ConnectionsContext from router (NO local provider)
   const { 
     connections, 
     isLoading, 
@@ -28,112 +28,72 @@ const ConnectionsPageContent: React.FC = () => {
     isServiceAvailable 
   } = useConnections();
 
+  console.log('ConnectionsPage: Using shared ConnectionsContext - connections:', connections.length);
+
   const handleAddConnection = useCallback(() => {
-    console.log('🔘 Opening add connection modal');
+    console.log('Opening add connection modal');
     setIsAddModalOpen(true);
   }, []);
 
   const handleConnectionAdded = useCallback(async (newConnectionData: any) => {
-    console.log('🔄 ===== CONNECTION CREATION DEBUG =====');
-    console.log('🔄 Input data:', {
+    console.log('===== CONNECTION CREATION DEBUG =====');
+    console.log('Input data:', {
       name: newConnectionData.name,
       platform: newConnectionData.platform,
       hasConfig: !!newConnectionData.config,
       configKeys: newConnectionData.config ? Object.keys(newConnectionData.config) : []
     });
-    
-    // Debug auth state
-    console.log('🔐 Auth state:', {
-      isAuthenticated,
-      userId: user?.id,
-      userEmail: user?.email
-    });
-    
-    // Debug service state
-    console.log('🌐 Service state:', {
-      isServiceAvailable,
-      connectionsCount: connections.length,
-      isLoading,
-      error
-    });
-    
-    // Debug localStorage before
-    console.log('💾 LocalStorage BEFORE:');
-    console.log('  Global:', localStorage.getItem('prism-connections'));
-    console.log('  User:', localStorage.getItem(`prism-connections-${user?.id}`));
-    
+
     try {
-      console.log('⏳ Calling createConnection...');
-      
-      await createConnection({
-        name: newConnectionData.name,
-        platform: newConnectionData.platform,
-        config: newConnectionData.config || {},
-        metadata: newConnectionData.metadata || {}
-      });
-      
-      console.log('✅ createConnection completed successfully');
-      
-      // Debug localStorage after
-      console.log('💾 LocalStorage AFTER:');
-      console.log('  Global:', localStorage.getItem('prism-connections'));
-      console.log('  User:', localStorage.getItem(`prism-connections-${user?.id}`));
-      
+      setActionLoading('create');
+      await createConnection(newConnectionData);
       setIsAddModalOpen(false);
-      console.log('🔄 ===== CONNECTION CREATION COMPLETE =====');
-      
-    } catch (error) {
-      console.error('❌ ===== CONNECTION CREATION FAILED =====');
-      console.error('❌ Error details:', error);
-      console.error('❌ Error message:', error instanceof Error ? error.message : 'Unknown error');
-      console.error('❌ ===== END ERROR =====');
-      
-      // Show error to user
-      alert(`Failed to create connection: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.log('Connection creation completed successfully');
+    } catch (error: any) {
+      console.error('Connection creation failed:', error);
+    } finally {
+      setActionLoading(null);
     }
-  }, [createConnection, isAuthenticated, user?.id, isServiceAvailable, connections, isLoading, error]);
+  }, [createConnection]);
 
   const handleTestConnection = useCallback(async (connectionId: string) => {
-    console.log('Testing connection via ConnectionsContext:', connectionId);
-    setActionLoading(connectionId);
-    
+    console.log('Testing connection:', connectionId);
     try {
+      setActionLoading(`test-${connectionId}`);
       const result = await testConnection(connectionId);
-      console.log('Connection test result:', result);
+      console.log('Test result:', result);
     } catch (error) {
-      console.error('Connection test failed:', error);
+      console.error('Test failed:', error);
     } finally {
       setActionLoading(null);
     }
   }, [testConnection]);
 
   const handleSyncConnection = useCallback(async (connectionId: string) => {
-    console.log('Syncing connection via ConnectionsContext:', connectionId);
-    setActionLoading(connectionId);
-    
+    console.log('Syncing connection:', connectionId);
     try {
+      setActionLoading(`sync-${connectionId}`);
       const result = await syncConnection(connectionId);
-      console.log('Connection sync result:', result);
+      console.log('Sync result:', result);
     } catch (error) {
-      console.error('Connection sync failed:', error);
+      console.error('Sync failed:', error);
     } finally {
       setActionLoading(null);
     }
   }, [syncConnection]);
 
   const handleDeleteConnection = useCallback(async (connectionId: string) => {
-    if (!window.confirm('Are you sure you want to delete this connection? This action cannot be undone.')) {
+    if (!window.confirm('Are you sure you want to delete this connection?')) {
       return;
     }
 
-    console.log('Deleting connection via ConnectionsContext:', connectionId);
-    setActionLoading(connectionId);
-    
+    console.log('Deleting connection:', connectionId);
     try {
+      setActionLoading(`delete-${connectionId}`);
       const result = await deleteConnection(connectionId);
-      console.log('Connection delete result:', result);
+      console.log('Delete result:', result);
     } catch (error) {
-      console.error('Connection delete failed:', error);
+      console.error('Delete failed:', error);
     } finally {
       setActionLoading(null);
     }
@@ -144,72 +104,50 @@ const ConnectionsPageContent: React.FC = () => {
       <div className="space-y-6">
         {/* Service Availability Banner */}
         <ServiceAvailabilityBanner />
-        
-        <ConnectionsHeader onAddConnection={handleAddConnection} />
-        
-        {/* Error Display */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-            <div className="flex items-center">
-              <svg className="h-5 w-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-              <span>{error}</span>
-            </div>
-          </div>
-        )}
-        
-        {/* Loading State */}
-        {isLoading && (
-          <div className="flex justify-center items-center py-12">
-            <div className="flex items-center space-x-3">
-              <div className="animate-spin h-6 w-6 border-t-2 border-b-2 border-blue-500 rounded-full"></div>
-              <span className="text-gray-600">Loading connections...</span>
-            </div>
-          </div>
-        )}
-        
-        {/* Connections List */}
-        {!isLoading && (
-          <ConnectionsList 
-            connections={connections}
-            isLoading={actionLoading !== null}
-            onTestConnection={handleTestConnection}
-            onSyncConnection={handleSyncConnection}
-            onDeleteConnection={handleDeleteConnection}
-            actionLoadingId={actionLoading}
-          />
-        )}
-        
-        {/* Add Connection Modal */}
-        {isAddModalOpen && (
-          <AddConnectionModal
-            isOpen={isAddModalOpen}
-            onClose={() => setIsAddModalOpen(false)}
-            onConnectionAdded={handleConnectionAdded}
-          />
-        )}
 
-        {/* Enhanced Debug Info */}
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <h3 className="text-sm font-medium text-yellow-800 mb-2">
-            🐛 DEBUG INFO:
+        {/* Page Header */}
+        <ConnectionsHeader onAddConnection={handleAddConnection} />
+
+        {/* Connections List */}
+        <ConnectionsList
+          connections={connections}
+          isLoading={isLoading}
+          error={error}
+          onTestConnection={handleTestConnection}
+          onSyncConnection={handleSyncConnection}
+          onDeleteConnection={handleDeleteConnection}
+          actionLoading={actionLoading}
+        />
+
+        {/* Add Connection Modal */}
+        <AddConnectionModal
+          isOpen={isAddModalOpen}
+          onClose={() => setIsAddModalOpen(false)}
+          onConnectionAdded={handleConnectionAdded}
+          isLoading={actionLoading === 'create'}
+        />
+
+        {/* Debug Info Panel */}
+        <div className="mt-8 bg-gray-50 border border-gray-200 rounded-lg p-4">
+          <h3 className="text-sm font-medium text-gray-700 mb-3">
+            Connections Debug Panel (Shared Context)
           </h3>
-          <div className="text-xs text-yellow-700 space-y-1">
-            <p><strong>Auth:</strong> {isAuthenticated ? '✅ Authenticated' : '❌ Not authenticated'}</p>
+          <div className="text-xs text-gray-600 space-y-1">
+            <p><strong>Authenticated:</strong> {isAuthenticated ? 'Yes' : 'No'}</p>
             <p><strong>User ID:</strong> {user?.id || 'None'}</p>
-            <p><strong>Service Available:</strong> {isServiceAvailable ? '✅ Available' : '❌ Unavailable'}</p>
+            <p><strong>Service Available:</strong> {isServiceAvailable ? 'Yes' : 'No'}</p>
             <p><strong>Connections:</strong> {connections.length}</p>
             <p><strong>Connected:</strong> {connections.filter(c => c.status === 'connected').length}</p>
             <p><strong>Loading:</strong> {isLoading ? 'Yes' : 'No'}</p>
             <p><strong>Error:</strong> {error || 'None'}</p>
             <p><strong>Storage Keys:</strong> prism-connections-{user?.id || 'NO_USER'}</p>
+            <p><strong>Context Source:</strong> Shared from Router</p>
           </div>
           
           <div className="mt-3 flex space-x-2">
             <button
               onClick={() => {
-                console.log('📊 Current state:', {
+                console.log('Current state (SHARED CONTEXT):', {
                   connections,
                   isLoading,
                   error,
@@ -226,7 +164,7 @@ const ConnectionsPageContent: React.FC = () => {
               onClick={() => {
                 const globalData = localStorage.getItem('prism-connections');
                 const userData = localStorage.getItem(`prism-connections-${user?.id}`);
-                console.log('💾 Storage debug:', { globalData, userData });
+                console.log('Storage debug:', { globalData, userData });
               }}
               className="px-2 py-1 text-xs bg-yellow-200 text-yellow-800 rounded"
             >
@@ -246,21 +184,11 @@ const ConnectionsPageContent: React.FC = () => {
             <p>3. Enter your credentials and test the connection</p>
             <p>4. Save the connection for generating reports</p>
             <p>5. Use "Test" or "Sync" to verify connections anytime</p>
+            <p><strong>Now using shared context - connections persist across pages!</strong></p>
           </div>
         </div>
       </div>
     </MainLayout>
-  );
-};
-
-// Main component that provides ConnectionsProvider (same pattern as CreateReportPage)
-const ConnectionsPage: React.FC = () => {
-  console.log('🔄 ConnectionsPage: Rendering with internal ConnectionsProvider');
-  
-  return (
-    <ConnectionsProvider>
-      <ConnectionsPageContent />
-    </ConnectionsProvider>
   );
 };
 

@@ -1,6 +1,7 @@
-// frontend/src/router.tsx - FIXED VERSION (No Nested ConnectionsProvider)
+// frontend/src/router.tsx - FIXED VERSION (Shared ConnectionsProvider)
 import { createBrowserRouter, Outlet } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { ConnectionsProvider } from './contexts/ConnectionsContext';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -23,16 +24,22 @@ const AppProviders = () => {
   );
 };
 
-// Simple protected layout without any additional providers
+// Protected layout WITH shared ConnectionsProvider for all authenticated pages
 const ProtectedLayout = () => {
-  return <Outlet />;
+  console.log('ProtectedLayout: Providing shared ConnectionsProvider for all pages');
+  
+  return (
+    <ConnectionsProvider>
+      <Outlet />
+    </ConnectionsProvider>
+  );
 };
 
 const router = createBrowserRouter([
   {
     element: <AppProviders />,
     children: [
-      // Public routes - MUST come first to avoid conflicts
+      // Public routes
       {
         path: '/landing',
         element: <LandingPage />,
@@ -46,13 +53,13 @@ const router = createBrowserRouter([
         element: <RegisterPage />,
       },
       
-      // Protected routes group - ALL routes use the same simple layout
+      // Protected routes group - ALL routes share the same ConnectionsProvider
       {
         path: '/',
         element: <ProtectedRoute />,
         children: [
           {
-            // Single protected layout for ALL authenticated routes
+            // Shared ConnectionsProvider for ALL authenticated routes
             element: <ProtectedLayout />,
             children: [
               {
@@ -69,7 +76,7 @@ const router = createBrowserRouter([
               },
               {
                 path: 'connections',
-                element: <ConnectionsPage />, // ConnectionsProvider will be inside this component
+                element: <ConnectionsPage />, // NO ConnectionsProvider here anymore
               },
               {
                 path: 'reports',
@@ -77,7 +84,7 @@ const router = createBrowserRouter([
               },
               {
                 path: 'reports/create',
-                element: <CreateReportPage />,
+                element: <CreateReportPage />, // NO ConnectionsProvider here anymore
               },
             ],
           },

@@ -42,14 +42,22 @@ const ReportWizard: React.FC = () => {
     const connected = connections.filter(conn => conn.status === 'connected');
     console.log('  - Connected platforms:', connected.length);
     console.log('  - Connected details:', connected);
-    
+
+    // Check if there's a mismatch between total and connected
+    if (connections.length > 0 && connected.length === 0) {
+      console.warn('STATUS MISMATCH: Connections exist but none are "connected"');
+      console.warn('   Connection statuses:', connections.map(c => `${c.name}: "${c.status}"`));
+      console.warn('   Expected status: "connected"');
+    }
   }, [connections, connectionsLoading, connectionsError]);
 
   // Filter only connected platforms with additional validation
   const connectedPlatforms = connections.filter(conn => {
     const isConnected = conn.status === 'connected';
     if (!isConnected) {
-      console.log(`🚫 Filtering out connection "${conn.name}" - status: "${conn.status}"`);
+    console.log(`Filtering out connection "${conn.name}" - status: "${conn.status}" (expected: "connected")`);
+    } else {
+      console.log(`Including connection "${conn.name}" - status: "${conn.status}"`);
     }
     return isConnected;
   });

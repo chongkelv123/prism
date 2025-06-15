@@ -36,15 +36,15 @@ interface ConnectionsContextType {
   isLoading: boolean;
   error: string | null;
   isServiceAvailable: boolean;
-  
+
   // Core operations
   createConnection: (connectionData: ConnectionConfig) => Promise<void>;
   deleteConnection: (connectionId: string) => Promise<{ success: boolean; message: string }>;
   refreshConnections: () => Promise<void>;
-  
+
   // Service operations
   checkServiceHealth: () => Promise<boolean>;
-  validatePlatformConfig: (platform: string, config: Record<string, any>) => Promise<{valid: boolean, message: string}>;
+  validatePlatformConfig: (platform: string, config: Record<string, any>) => Promise<{ valid: boolean, message: string }>;
   testConnection: (connectionId: string) => Promise<{ success: boolean; message: string }>;
   syncConnection: (connectionId: string) => Promise<{ success: boolean; message: string }>;
   getProjectData: (connectionId: string, projectId?: string) => Promise<any>;
@@ -65,14 +65,14 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isServiceAvailable, setIsServiceAvailable] = useState<boolean>(false);
-  
+
   const { isAuthenticated, user, logout } = useAuth();
 
   // Check service health - FIXED ENDPOINTS
   const checkServiceHealth = useCallback(async (): Promise<boolean> => {
     try {
       console.log('🏥 Checking platform integrations service health...');
-      
+
       // First check API Gateway health
       const gatewayResponse = await fetch('/api/health', {
         method: 'GET',
@@ -80,16 +80,16 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
           'Accept': 'application/json',
         },
       });
-      
+
       if (!gatewayResponse.ok) {
         throw new Error(`API Gateway unhealthy: ${gatewayResponse.status}`);
       }
-      
+
       console.log('✅ API Gateway health check passed');
-      
+
       // Then check Platform Integrations Service through gateway
       const serviceResponse = await apiClient.get('/api/platform-integrations/health');
-      
+
       if (serviceResponse) {
         console.log('✅ Platform integrations service is healthy:', serviceResponse);
         setIsServiceAvailable(true);
@@ -98,13 +98,13 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       } else {
         throw new Error('Invalid response from platform integrations service');
       }
-      
+
     } catch (error: any) {
       console.error('❌ Service health check failed:', error);
       setIsServiceAvailable(false);
-      
+
       let errorMessage = 'Platform integrations service is not available';
-      
+
       // Enhanced error detection
       if (error.response?.status === 503) {
         errorMessage = 'Platform integrations service is temporarily unavailable';
@@ -117,64 +117,204 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       } else if (error.message) {
         errorMessage = error.message;
       }
-      
+
       setError(errorMessage);
       return false;
     }
   }, []);
 
+  // Fixed loadConnections function for ConnectionsContext.tsx
+  // Replace your existing loadConnections function with this corrected version
+
   const loadConnections = useCallback(async () => {
-    if (!isAuthenticated || !user?.id) return;
+    if (!isAuthenticated || !user?.id) {
+      console.log('🚪 User not authenticated, skipping connection load');
+      return;
+    }
+
     if (!isServiceAvailable) {
-      // Load from cache
-      const userStorageKey = `prism-connections-${user.id}`;
-      const cachedData = localStorage.getItem(userStorageKey);
-      if (cachedData) {
-        setConnections(JSON.parse(cachedData));
+      console.log('📴 Service unavailable, loading from cache');
+      try {
+        const userStorageKey = `prism-connections-${user.id}`;
+        let cachedData = localStorage.getItem(userStorageKey);
+
+        if (cachedData) {
+          const cachedConnections = JSON.parse(cachedData);
+          const validatedConnections = ConnectionMigration.migrateAndValidateConnections(cachedConnections);
+          setConnections(validatedConnections);
+          console.log(`✅ Loaded ${validatedConnections.length} connections from user cache`);
+          setError('Working offline - using cached data');
+        } else {
+          // Fallback to global cache and migrate
+          cachedData = localStorage.getItem('prism-connections');
+          if (cachedData) {
+            const cachedConnections = JSON.parse(cachedData);
+            const validatedConnections = ConnectionMigration.migrateAndValidateConnections(cachedConnections);
+
+            console.log(`🔄 Migrating ${validatedConnections.length} connections from global cache`);
+
+            // Save to user-specific cache
+            localStorage.setItem(userStorageKey, JSON.stringify(validatedConnections));
+            setConnections(validatedConnections);
+            console.log(`✅ Migrated connections to user cache for user ${user.id}`);
+            setError('Working offline - using cached data');
+          } else {
+            setConnections([]);
+            setError(null);
+          }
+        }
+      } catch (cacheError) {
+        console.error('💾 Cache load failed:', cacheError);
+        setConnections([]);
+        setError('Failed to load connections');
       }
       return;
     }
 
+    // Backend is available - proceed with loading
     try {
       setIsLoading(true);
-      console.log('🔄 Loading from backend...');
+      setError(null);
       
+      console.log('🔄 Loading connections from backend for user:', user.id);
+
       const response = await apiClient.get('/api/connections');
-      const backendConnections = response.data || [];
-      
-      console.log('✅ Backend loaded:', backendConnections.length, 'connections');
-      
-      // Transform to ensure proper format
-      const connections = backendConnections.map(conn => ({
-        id: conn.id,
-        name: conn.name,
-        platform: conn.platform,
-        status: conn.status || 'connected',
-        projectCount: conn.projectCount || 1,
-        lastSync: conn.lastSync || new Date().toISOString(),
-        createdAt: conn.createdAt || new Date().toISOString(),
-        metadata: conn.metadata || {}
-      }));
-      
-      setConnections(connections);
-      
-      // Update cache
+
+      // FIXED: Handle both direct response and wrapped response
+      let backendConnections;
+      if (Array.isArray(response)) {
+        // apiClient returns data directly
+        backendConnections = response;
+        console.log('📍 apiClient returned direct array');
+      } else if (response && Array.isArray(response.data)) {
+        // apiClient returns wrapped response
+        backendConnections = response.data;
+        console.log('📍 apiClient returned wrapped response');
+      } else {
+        // Fallback
+        backendConnections = [];
+        console.log('⚠️ Unexpected apiClient response structure:', response);
+      }
+
+      console.log(`✅ Backend API Response:`, {
+        responseType: Array.isArray(response) ? 'direct array' : 'wrapped object',
+        connectionCount: backendConnections.length,
+        rawResponse: response,
+        extractedData: backendConnections
+      });
+
+      // CRITICAL: Transform backend data to frontend format
+      const transformedConnections = backendConnections.map((conn: any, index: number) => {
+        console.log(`🔄 Transforming connection ${index + 1}:`, {
+          id: conn.id,
+          name: conn.name,
+          platform: conn.platform,
+          status: conn.status,
+          originalData: conn
+        });
+
+        return {
+          id: conn.id || conn._id || `unknown_${Date.now()}_${index}`,
+          name: conn.name || 'Unnamed Connection',
+          platform: conn.platform || 'unknown',
+          status: conn.status || 'connected', // Default to connected
+          projectCount: conn.projectCount || 1,
+          lastSync: conn.lastSync ?
+            (typeof conn.lastSync === 'string' ? conn.lastSync : new Date(conn.lastSync).toISOString())
+            : new Date().toISOString(),
+          lastSyncError: conn.lastSyncError || undefined,
+          createdAt: conn.createdAt ?
+            (typeof conn.createdAt === 'string' ? conn.createdAt : new Date(conn.createdAt).toISOString())
+            : new Date().toISOString(),
+          metadata: conn.metadata || {}
+        };
+      });
+
+      console.log(`✅ Transformed ${transformedConnections.length} connections:`, transformedConnections);
+
+      // Validate using existing migration utility
+      const validatedConnections = ConnectionMigration.migrateAndValidateConnections(transformedConnections);
+
+      console.log(`✅ Validated ${validatedConnections.length} connections after migration check`);
+
+      // CRITICAL: Update React state
+      console.log('🔄 Updating React state with validated connections...');
+      setConnections(validatedConnections);
+
+      // CRITICAL: Update localStorage
       const userStorageKey = `prism-connections-${user.id}`;
-      localStorage.setItem(userStorageKey, JSON.stringify(connections));
-      
-    } catch (error) {
+      localStorage.setItem(userStorageKey, JSON.stringify(validatedConnections));
+      console.log(`💾 Updated localStorage key "${userStorageKey}" with ${validatedConnections.length} connections`);
+
+      // Verify localStorage was updated
+      const verifyStorage = localStorage.getItem(userStorageKey);
+      const verifyCount = verifyStorage ? JSON.parse(verifyStorage).length : 0;
+      console.log(`✅ localStorage verification: ${verifyCount} connections stored`);
+
+      console.log('🎉 SUCCESS: Connections loaded from backend and stored in state + localStorage');
+
+      // Clear any errors
+      setError(null);
+
+    } catch (error: any) {
       console.error('❌ Backend load failed:', error);
-      // Fallback to cache
-      const userStorageKey = `prism-connections-${user.id}`;
-      const cachedData = localStorage.getItem(userStorageKey);
-      if (cachedData) {
-        setConnections(JSON.parse(cachedData));
-        setError('Working offline');
+
+      // Enhanced error logging
+      if (error.response) {
+        console.error('❌ Response error details:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data
+        });
+
+        if (error.response.status === 401) {
+          console.log('🔐 Authentication failed, logging out');
+          logout();
+          return;
+        }
+      }
+
+      // Fallback to user-specific cache
+      try {
+        const userStorageKey = `prism-connections-${user.id}`;
+        let cachedData = localStorage.getItem(userStorageKey);
+
+        if (cachedData) {
+          const cachedConnections = JSON.parse(cachedData);
+          const validatedConnections = ConnectionMigration.migrateAndValidateConnections(cachedConnections);
+
+          setConnections(validatedConnections);
+          console.log(`✅ Loaded ${validatedConnections.length} connections from user cache as fallback`);
+          setError('Working offline - using cached data');
+        } else {
+          // Try global cache migration
+          cachedData = localStorage.getItem('prism-connections');
+          if (cachedData) {
+            const cachedConnections = JSON.parse(cachedData);
+            const validatedConnections = ConnectionMigration.migrateAndValidateConnections(cachedConnections);
+
+            console.log(`🔄 Migrating ${validatedConnections.length} connections from global cache`);
+
+            // Save to user-specific cache
+            localStorage.setItem(userStorageKey, JSON.stringify(validatedConnections));
+            setConnections(validatedConnections);
+            console.log(`✅ Migrated connections to user cache for user ${user.id}`);
+            setError('Working offline - using cached data');
+          } else {
+            console.log('📭 No connections found in backend or cache');
+            setConnections([]);
+            setError('Failed to load connections');
+          }
+        }
+      } catch (cacheError) {
+        console.error('💾 Cache fallback failed:', cacheError);
+        setConnections([]);
+        setError('Failed to load connections');
       }
     } finally {
       setIsLoading(false);
     }
-  }, [isAuthenticated, user?.id, isServiceAvailable]);
+  }, [isAuthenticated, user?.id, isServiceAvailable, logout]);
 
   // Add this debug logging to ConnectionsContext.tsx createConnection method
   const createConnection = useCallback(async (connectionData: ConnectionConfig): Promise<void> => {
@@ -185,7 +325,7 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     try {
       setIsLoading(true);
       console.log('➕ Creating connection for user:', user.id, connectionData.name);
-      
+
       // DEBUG: Log the exact data being sent to backend
       console.log('🔍 CONNECTION DATA DEBUG:');
       console.log('  - name:', connectionData.name);
@@ -193,30 +333,30 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       console.log('  - config keys:', Object.keys(connectionData.config || {}));
       console.log('  - config values:', connectionData.config);
       console.log('  - metadata:', connectionData.metadata);
-      
+
       if (isServiceAvailable) {
         // Try backend first
         console.log('🌐 Sending to backend...');
-        
+
         try {
           const response = await apiClient.post('/api/connections', connectionData);
           const newConnection = response;
-          
+
           console.log('✅ Backend response:', newConnection);
-          
+
           // Validate the new connection
           const validatedConnection = ConnectionMigration.migrateAndValidateConnections([newConnection])[0];
-          
+
           // Update state and cache
           const updatedConnections = [...connections, validatedConnection];
           setConnections(updatedConnections);
-          
+
           const userStorageKey = `prism-connections-${user.id}`;
           localStorage.setItem(userStorageKey, JSON.stringify(updatedConnections));
-          
+
           console.log('✅ Connection created successfully in backend');
           setError(null);
-          
+
         } catch (backendError: any) {
           console.error('🚨 Backend Error Details:');
           console.error('  - Status:', backendError.response?.status);
@@ -224,7 +364,7 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
           console.error('  - Error Data:', backendError.response?.data);
           console.error('  - Error Message:', backendError.message);
           console.error('  - Full Error:', backendError);
-          
+
           // Check if it's a validation error vs server error
           if (backendError.response?.status === 400) {
             throw new Error(backendError.response?.data?.message || 'Invalid connection data');
@@ -234,7 +374,7 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
             throw new Error('Failed to create connection on server');
           }
         }
-          
+
       } else {
         // Fallback to localStorage with user association
         console.log('📴 Service unavailable, using localStorage fallback');
@@ -248,24 +388,24 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
           createdAt: new Date().toISOString(),
           metadata: connectionData.metadata
         };
-        
+
         const updatedConnections = [...connections, newConnection];
         setConnections(updatedConnections);
-        
+
         const userStorageKey = `prism-connections-${user.id}`;
         localStorage.setItem(userStorageKey, JSON.stringify(updatedConnections));
-        
+
         console.log('✅ Connection created successfully in localStorage (offline mode)');
       }
-      
+
     } catch (error: any) {
       console.error('❌ Failed to create connection:', error);
-      
+
       let errorMessage = 'Failed to create connection';
       if (error.message) {
         errorMessage = error.message;
       }
-      
+
       throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
@@ -281,31 +421,31 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     try {
       setIsLoading(true);
       console.log('🗑️ Deleting connection for user:', user.id, connectionId);
-      
+
       if (isServiceAvailable) {
         // Try backend first
         await apiClient.delete(`/api/connections/${connectionId}`);
         console.log('✅ Connection deleted from backend');
       }
-      
+
       // Update state and user-specific cache regardless
       const updatedConnections = connections.filter(conn => conn.id !== connectionId);
       setConnections(updatedConnections);
-      
+
       const userStorageKey = `prism-connections-${user.id}`;
       localStorage.setItem(userStorageKey, JSON.stringify(updatedConnections));
-      
+
       console.log('✅ Connection deleted successfully');
       return { success: true, message: 'Connection deleted successfully' };
-      
+
     } catch (error: any) {
       console.error('❌ Failed to delete connection:', error);
-      
+
       let errorMessage = 'Failed to delete connection';
       if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
       }
-      
+
       return { success: false, message: errorMessage };
     } finally {
       setIsLoading(false);
@@ -319,13 +459,13 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   // Platform operations
   const validatePlatformConfig = useCallback(async (
-    platform: string, 
+    platform: string,
     config: Record<string, any>
-  ): Promise<{valid: boolean, message: string}> => {
+  ): Promise<{ valid: boolean, message: string }> => {
     if (!isServiceAvailable) {
-      return { 
-        valid: false, 
-        message: 'Platform integrations service is not available' 
+      return {
+        valid: false,
+        message: 'Platform integrations service is not available'
       };
     }
 
@@ -333,9 +473,9 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       const response = await apiClient.post(`/api/platforms/${platform}/validate`, { config });
       return response.data;
     } catch (error: any) {
-      return { 
-        valid: false, 
-        message: error.response?.data?.message || 'Validation failed' 
+      return {
+        valid: false,
+        message: error.response?.data?.message || 'Validation failed'
       };
     }
   }, [isServiceAvailable]);
@@ -385,10 +525,10 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       throw new Error('Platform integrations service is not available');
     }
 
-    const url = projectId 
+    const url = projectId
       ? `/api/connections/${connectionId}/projects?projectId=${projectId}`
       : `/api/connections/${connectionId}/projects`;
-    
+
     const response = await apiClient.get(url);
     return response.data;
   }, [isServiceAvailable]);

@@ -29,16 +29,16 @@ const ReportWizard: React.FC = () => {
     console.log('  - Connections loading:', connectionsLoading);
     console.log('  - Connections error:', connectionsError);
     console.log('  - Raw connections:', connections);
-    
+
     if (connections.length > 0) {
-      console.log('  - Connection statuses:', connections.map(c => ({ 
-        id: c.id, 
-        name: c.name, 
-        status: c.status, 
-        platform: c.platform 
+      console.log('  - Connection statuses:', connections.map(c => ({
+        id: c.id,
+        name: c.name,
+        status: c.status,
+        platform: c.platform
       })));
     }
-    
+
     const connected = connections.filter(conn => conn.status === 'connected');
     console.log('  - Connected platforms:', connected.length);
     console.log('  - Connected details:', connected);
@@ -55,7 +55,7 @@ const ReportWizard: React.FC = () => {
   const connectedPlatforms = connections.filter(conn => {
     const isConnected = conn.status === 'connected';
     if (!isConnected) {
-    console.log(`Filtering out connection "${conn.name}" - status: "${conn.status}" (expected: "connected")`);
+      console.log(`Filtering out connection "${conn.name}" - status: "${conn.status}" (expected: "connected")`);
     } else {
       console.log(`Including connection "${conn.name}" - status: "${conn.status}"`);
     }
@@ -84,17 +84,17 @@ const ReportWizard: React.FC = () => {
 
     setIsLoadingProjects(true);
     console.log('🔄 Loading projects for connection:', wizardData.connectionId);
-    
+
     try {
       const projectData = await getProjectData(wizardData.connectionId);
       console.log('📊 Raw project data received:', projectData);
       console.log('📊 Data type:', typeof projectData);
       console.log('📊 Is array:', Array.isArray(projectData));
-      
+
       // Ensure we have an array
       let projects = Array.isArray(projectData) ? projectData : [projectData];
       console.log('📋 Projects after array conversion:', projects.length, 'items');
-      
+
       // ROBUST FILTERING: Remove any invalid items and ensure all required properties
       const validProjects = projects
         .filter((project, index) => {
@@ -103,18 +103,18 @@ const ReportWizard: React.FC = () => {
             console.warn(`⚠️  Project ${index} is not a valid object:`, project);
             return false;
           }
-          
+
           // Check required properties
           if (!project.id) {
             console.warn(`⚠️  Project ${index} missing 'id':`, project);
             return false;
           }
-          
+
           if (!project.name) {
             console.warn(`⚠️  Project ${index} missing 'name':`, project);
             return false;
           }
-          
+
           console.log(`✅ Project ${index} is valid:`, { id: project.id, name: project.name, platform: project.platform });
           return true;
         })
@@ -133,17 +133,17 @@ const ReportWizard: React.FC = () => {
             // Keep all other properties
             ...project
           };
-          
+
           console.log(`🔧 Processed project ${index}:`, safeProject.id, safeProject.name);
           return safeProject;
         });
-      
+
       console.log(`✅ Final valid projects count: ${validProjects.length}`);
       console.log('📋 Project IDs:', validProjects.map(p => p.id));
       console.log('📋 Project names:', validProjects.map(p => p.name));
-      
+
       setAvailableProjects(validProjects);
-      
+
     } catch (error) {
       console.error('❌ Failed to load projects:', error);
       console.error('❌ Error details:', error.message, error.stack);
@@ -154,10 +154,16 @@ const ReportWizard: React.FC = () => {
   };
 
   const updateWizardData = (key: string, value: any) => {
-    setWizardData(prev => ({
-      ...prev,
-      [key]: value
-    }));
+    console.log('🔧 Updating wizard data:', { key, value, currentStep });
+
+    setWizardData(prev => {
+      const updated = {
+        ...prev,
+        [key]: value
+      };
+      console.log('📊 Wizard data updated:', updated);
+      return updated;
+    });
   };
 
   const handleNext = () => {
@@ -189,13 +195,13 @@ const ReportWizard: React.FC = () => {
       // Get selected connection and project data
       const selectedConnection = connections.find(c => c.id === wizardData.connectionId);
       const selectedProject = availableProjects.find(p => p.id === wizardData.projectId);
-      
+
       if (!selectedConnection || !selectedProject) {
         throw new Error('Invalid connection or project selection');
       }
 
       // Create report title based on connection and project
-      const reportTitle = wizardData.configuration.title || 
+      const reportTitle = wizardData.configuration.title ||
         `${selectedProject.name} - ${selectedConnection.name} Report`;
 
       const report = await reportService.generateReport({
@@ -216,7 +222,7 @@ const ReportWizard: React.FC = () => {
       const checkStatus = async () => {
         try {
           const status = await reportService.getReportStatus(report.id);
-          
+
           if (status.status === 'completed') {
             setGenerationComplete(true);
             setIsGenerating(false);
@@ -247,7 +253,7 @@ const ReportWizard: React.FC = () => {
       // Get real project data for the report
       const selectedProject = availableProjects.find(p => p.id === wizardData.projectId);
       const selectedConnection = connections.find(c => c.id === wizardData.connectionId);
-      
+
       const reportData = {
         title: wizardData.configuration.title || `${selectedProject?.name} Report`,
         platform: selectedConnection?.platform,
@@ -354,21 +360,19 @@ const ReportWizard: React.FC = () => {
         {[1, 2, 3, 4].map((step) => (
           <div key={step} className="flex items-center">
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                currentStep > step
-                  ? 'bg-green-500 text-white'
-                  : currentStep === step
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${currentStep > step
+                ? 'bg-green-500 text-white'
+                : currentStep === step
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-200 text-gray-600'
-              }`}
+                }`}
             >
               {currentStep > step ? <Check size={16} /> : step}
             </div>
             {step < 4 && (
               <div
-                className={`w-16 h-1 mx-2 ${
-                  currentStep > step ? 'bg-green-500' : 'bg-gray-200'
-                }`}
+                className={`w-16 h-1 mx-2 ${currentStep > step ? 'bg-green-500' : 'bg-gray-200'
+                  }`}
               />
             )}
           </div>
@@ -384,7 +388,7 @@ const ReportWizard: React.FC = () => {
     <div className="max-w-4xl mx-auto p-6">
       <div className="bg-white rounded-lg shadow-lg p-8">
         {currentStep <= 4 && renderProgressBar()}
-        
+
         {connectionsLoading && (
           <div className="text-center py-8">
             <Loader className="animate-spin h-8 w-8 mx-auto mb-4 text-blue-600" />
@@ -406,11 +410,10 @@ const ReportWizard: React.FC = () => {
           <button
             onClick={handleBack}
             disabled={currentStep === 1}
-            className={`flex items-center px-6 py-2 rounded-lg ${
-              currentStep === 1
-                ? 'text-gray-400 cursor-not-allowed'
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
+            className={`flex items-center px-6 py-2 rounded-lg ${currentStep === 1
+              ? 'text-gray-400 cursor-not-allowed'
+              : 'text-gray-600 hover:bg-gray-100'
+              }`}
           >
             <ArrowLeft size={16} className="mr-1" />
             Back
@@ -419,11 +422,10 @@ const ReportWizard: React.FC = () => {
           <button
             onClick={handleNext}
             disabled={!isStepComplete(currentStep) || (isGenerating && !generationComplete && !generationError)}
-            className={`flex items-center px-6 py-2 rounded-lg ${
-              !isStepComplete(currentStep) || (isGenerating && !generationComplete && !generationError)
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
+            className={`flex items-center px-6 py-2 rounded-lg ${!isStepComplete(currentStep) || (isGenerating && !generationComplete && !generationError)
+              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
           >
             {getButtonText()}
             {currentStep < 4 && <ArrowRight size={16} className="ml-1" />}
@@ -474,17 +476,16 @@ const ConnectionSelection: React.FC<{
     <div>
       <h2 className="text-xl font-semibold text-gray-900 mb-4">Select Connection</h2>
       <p className="text-gray-600 mb-6">Choose which platform connection to use for your report</p>
-      
+
       <div className="space-y-3">
         {connections.map((connection) => (
           <div
             key={connection.id}
             onClick={() => onSelectConnection(connection.id)}
-            className={`p-4 border rounded-lg cursor-pointer transition-all ${
-              selectedConnectionId === connection.id
-                ? 'border-blue-500 bg-blue-50'
-                : 'border-gray-200 hover:border-gray-300'
-            }`}
+            className={`p-4 border rounded-lg cursor-pointer transition-all ${selectedConnectionId === connection.id
+              ? 'border-blue-500 bg-blue-50'
+              : 'border-gray-200 hover:border-gray-300'
+              }`}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center">
@@ -529,17 +530,17 @@ const ProjectSelection: React.FC<{
       console.warn('⚠️  Projects prop is not an array:', typeof projects, projects);
       return [];
     }
-    
+
     return projects.filter((project, index) => {
-      const isValid = project && 
-                     typeof project === 'object' && 
-                     project.id && 
-                     project.name;
-      
+      const isValid = project &&
+        typeof project === 'object' &&
+        project.id &&
+        project.name;
+
       if (!isValid) {
         console.warn(`⚠️  Invalid project at index ${index}:`, project);
       }
-      
+
       return isValid;
     });
   }, [projects]);
@@ -585,12 +586,12 @@ const ProjectSelection: React.FC<{
     <div>
       <h2 className="text-xl font-semibold text-gray-900 mb-4">Choose Project</h2>
       <p className="text-gray-600 mb-6">Select which project to include in your report</p>
-      
+
       {/* Debug info */}
       <div className="mb-4 text-sm text-gray-500">
         Found {safeProjects.length} valid projects
       </div>
-      
+
       <div className="space-y-3">
         {safeProjects.map((project, index) => {
           // Additional safety check before rendering
@@ -603,17 +604,16 @@ const ProjectSelection: React.FC<{
             <div
               key={`${project.platform}-${project.id}-${index}`} // More unique key
               onClick={() => onSelectProject(project.id)}
-              className={`p-4 border rounded-lg cursor-pointer transition-all ${
-                selectedProjectId === project.id
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
+              className={`p-4 border rounded-lg cursor-pointer transition-all ${selectedProjectId === project.id
+                ? 'border-blue-500 bg-blue-50'
+                : 'border-gray-200 hover:border-gray-300'
+                }`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center">
                   <span className="text-2xl mr-3">
-                    {project.platform === 'jira' ? '🔄' : 
-                     project.platform === 'monday' ? '📊' : '📁'}
+                    {project.platform === 'jira' ? '🔄' :
+                      project.platform === 'monday' ? '📊' : '📁'}
                   </span>
                   <div>
                     <h3 className="font-medium text-gray-900">{project.name}</h3>
@@ -645,11 +645,16 @@ const ProjectSelection: React.FC<{
   );
 };
 
-// Template Selection Component
+// Template Selection Component - Enhanced with Better Feedback
 const TemplateSelection: React.FC<{
   selectedTemplateId: string,
   onSelectTemplate: (templateId: string) => void
 }> = ({ selectedTemplateId, onSelectTemplate }) => {
+  console.log('🎨 TemplateSelection rendering with:', {
+    selectedTemplateId,
+    hasOnSelectTemplate: !!onSelectTemplate
+  });
+
   const templates = [
     {
       id: 'standard',
@@ -671,32 +676,61 @@ const TemplateSelection: React.FC<{
     }
   ];
 
+  // Enhanced click handler with debugging
+  const handleTemplateClick = (templateId: string, templateName: string) => {
+    console.log('🖱️ Template clicked:', { templateId, templateName });
+    try {
+      onSelectTemplate(templateId);
+      console.log('✅ onSelectTemplate called successfully');
+    } catch (err) {
+      console.error('❌ Error in onSelectTemplate:', err);
+    }
+  };
+
   return (
     <div>
       <h2 className="text-xl font-semibold text-gray-900 mb-4">Select Template</h2>
       <p className="text-gray-600 mb-6">Choose a report template that best fits your needs</p>
-      
+
+      <div className="mb-4 text-sm text-gray-500">
+        {selectedTemplateId ? `Selected: ${templates.find(t => t.id === selectedTemplateId)?.name || selectedTemplateId}` : 'No template selected'}
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {templates.map((template) => (
-          <div
-            key={template.id}
-            onClick={() => onSelectTemplate(template.id)}
-            className={`p-6 border rounded-lg cursor-pointer transition-all ${
-              selectedTemplateId === template.id
-                ? 'border-blue-500 bg-blue-50'
-                : 'border-gray-200 hover:border-gray-300'
-            }`}
-          >
-            <div className="text-center">
-              <div className="text-4xl mb-4">{template.preview}</div>
-              <h3 className="font-medium text-gray-900 mb-2">{template.name}</h3>
-              <p className="text-sm text-gray-500 mb-4">{template.description}</p>
-              {selectedTemplateId === template.id && (
-                <Check size={20} className="text-blue-600 mx-auto" />
-              )}
+        {templates.map((template) => {
+          const isSelected = selectedTemplateId === template.id;
+          console.log(`🎨 Rendering template ${template.id}:`, { isSelected });
+
+          return (
+            <div
+              key={template.id}
+              onClick={() => handleTemplateClick(template.id, template.name)}
+              className={`p-6 border rounded-lg cursor-pointer transition-all hover:shadow-md ${isSelected
+                  ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                  : 'border-gray-200 hover:border-gray-300'
+                }`}
+            >
+              <div className="text-center">
+                <div className="text-4xl mb-4">{template.preview}</div>
+                <h3 className="font-medium text-gray-900 mb-2">{template.name}</h3>
+                <p className="text-sm text-gray-500 mb-4">{template.description}</p>
+                {isSelected && (
+                  <div className="flex items-center justify-center">
+                    <Check size={20} className="text-blue-600 mr-2" />
+                    <span className="text-sm text-blue-600 font-medium">Selected</span>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
+      </div>
+
+      {/* Debug info */}
+      <div className="mt-6 p-3 bg-gray-50 rounded text-xs text-gray-600">
+        <p>Debug: Template selection step</p>
+        <p>Selected template ID: {selectedTemplateId || 'none'}</p>
+        <p>Available templates: {templates.length}</p>
       </div>
     </div>
   );
@@ -718,7 +752,7 @@ const ReportConfiguration: React.FC<{
     <div>
       <h2 className="text-xl font-semibold text-gray-900 mb-4">Configure Report</h2>
       <p className="text-gray-600 mb-6">Customize your report settings</p>
-      
+
       <div className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">

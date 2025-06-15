@@ -1,5 +1,5 @@
 // backend/services/platform-integrations-service/src/services/ConnectionService.ts
-// COMPLETE FIXED VERSION - Updated Monday.com API integration with proper typing
+// COMPLETE FIXED VERSION - Updated Monday.com API integration with proper typing and data transformation
 
 import { Connection, IConnection } from '../models/Connection';
 import logger from '../utils/logger';
@@ -348,7 +348,7 @@ export class ConnectionService {
   }
 
   /**
-   * Get project data from a connection
+   * Get project data from a connection with proper data transformation
    */
   async getProjectData(userId: string, connectionId: string, projectId?: string): Promise<any> {
     try {
@@ -364,26 +364,192 @@ export class ConnectionService {
         throw new Error('Connection is not active');
       }
 
-      // Get project data based on platform
-      let projectData: any;
+      // Get raw project data based on platform
+      let rawProjectData: any;
       
       switch (connection.platform) {
         case 'jira':
-          projectData = await this.getJiraProjectData(connection, projectId);
+          rawProjectData = await this.getJiraProjectData(connection, projectId);
           break;
         case 'monday':
-          projectData = await this.getMondayProjectData(connection, projectId);
+          rawProjectData = await this.getMondayProjectData(connection, projectId);
           break;
         default:
           throw new Error(`Unsupported platform: ${connection.platform}`);
       }
 
-      return projectData;
+      // Transform the data to a consistent format for the frontend
+      const transformedProjects = this.transformProjectData(rawProjectData, connection.platform);
+      
+      logger.info(`✅ Transformed ${transformedProjects.length} projects for frontend`);
+      
+      return transformedProjects;
       
     } catch (error) {
       logger.error('Failed to get project data:', error);
       throw error;
     }
+  }
+
+  /**
+   * Transform raw project data to consistent frontend format
+   */
+  private transformProjectData(rawData: any, platform: string): any[] {
+    try {
+      logger.info(`🔄 Transforming ${platform} project data...`);
+      
+      // Ensure we have an array
+      const dataArray = Array.isArray(rawData) ? rawData : [rawData];
+      
+      // Filter out any null/undefined items
+      const validItems = dataArray.filter(item => item != null);
+      
+      if (validItems.length === 0) {
+        logger.warn(`⚠️  No valid project data to transform for ${platform}`);
+        return [];
+      }
+      
+      const transformedProjects = validItems.map((item, index) => {
+        try {
+          let transformedProject: any;
+          
+          switch (platform) {
+            case 'jira':
+              transformedProject = this.transformJiraProject(item);
+              break;
+            case 'monday':
+              transformedProject = this.transformMondayProject(item);
+              break;
+            default:
+              throw new Error(`Unsupported platform: ${platform}`);
+          }
+          
+          // Ensure all required fields are present
+          return {
+            id: transformedProject.id || `${platform}_${index}`,
+            name: transformedProject.name || 'Unnamed Project',
+            platform: platform,
+            description: transformedProject.description || '',
+            status: transformedProject.status || 'active',
+            metrics: transformedProject.metrics || [],
+            team: transformedProject.team || [],
+            tasks: transformedProject.tasks || [],
+            lastUpdated: transformedProject.lastUpdated || new Date().toISOString(),
+            // Keep original data for debugging
+            _raw: item
+          };
+          
+        } catch (itemError) {
+          logger.error(`Failed to transform project item ${index}:`, itemError);
+          // Return a fallback project object to prevent frontend crashes
+          return {
+            id: `${platform}_fallback_${index}`,
+            name: `${platform.charAt(0).toUpperCase() + platform.slice(1)} Project ${index + 1}`,
+            platform: platform,
+            description: 'Project data could not be fully loaded',
+            status: 'active',
+            metrics: [],
+            team: [],
+            tasks: [],
+            lastUpdated: new Date().toISOString(),
+            _error: itemError instanceof Error ? itemError.message : 'Unknown error',
+            _raw: item
+          };
+        }
+      });
+      
+      logger.info(`✅ Successfully transformed ${transformedProjects.length} projects`);
+      return transformedProjects;
+      
+    } catch (error) {
+      logger.error('Failed to transform project data:', error);
+      // Return empty array to prevent frontend crashes
+      return [];
+    }
+  }
+
+  /**
+   * Transform Jira project data to standard format
+   */
+  private transformJiraProject(jiraProject: any): any {
+    // Jira project structure: { id, key, name, description, projectTypeKey, etc. }
+    return {
+      id: jiraProject.key || jiraProject.id || 'unknown',
+      name: jiraProject.name || jiraProject.displayName || 'Unnamed Jira Project',
+      description: jiraProject.description || '',
+      status: 'active',
+      projectKey: jiraProject.key,
+      projectType: jiraProject.projectTypeKey || 'unknown',
+      lead: jiraProject.lead ? {
+        id: jiraProject.lead.accountId || jiraProject.lead.key,
+        name: jiraProject.lead.displayName || jiraProject.lead.name,
+        email: jiraProject.lead.emailAddress
+      } : null,
+      metrics: [
+        {
+          name: 'Project Type',
+          value: jiraProject.projectTypeKey || 'Standard',
+          type: 'text'
+        },
+        {
+          name: 'Project Style',
+          value: jiraProject.style || 'Classic',
+          type: 'text'
+        }
+      ],
+      team: jiraProject.lead ? [{
+        id: jiraProject.lead.accountId || jiraProject.lead.key,
+        name: jiraProject.lead.displayName || jiraProject.lead.name,
+        role: 'Project Lead',
+        email: jiraProject.lead.emailAddress,
+        avatar: jiraProject.lead.avatarUrls?.['48x48']
+      }] : [],
+      tasks: [], // Issues would need separate API call
+      lastUpdated: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Transform Monday.com board data to standard format
+   */
+  private transformMondayProject(mondayBoard: any): any {
+    // Monday.com board structure: { id, name, description, items_count, groups, columns, items, etc. }
+    return {
+      id: mondayBoard.id || 'unknown',
+      name: mondayBoard.name || 'Unnamed Monday.com Board',
+      description: mondayBoard.description || '',
+      status: mondayBoard.state || 'active',
+      boardState: mondayBoard.state,
+      itemsCount: mondayBoard.items_count || 0,
+      groups: mondayBoard.groups || [],
+      columns: mondayBoard.columns || [],
+      metrics: [
+        {
+          name: 'Items Count',
+          value: mondayBoard.items_count || 0,
+          type: 'number'
+        },
+        {
+          name: 'Groups',
+          value: mondayBoard.groups?.length || 0,
+          type: 'number'
+        },
+        {
+          name: 'Columns',
+          value: mondayBoard.columns?.length || 0,
+          type: 'number'
+        }
+      ],
+      team: [], // Would need separate API call to get board subscribers
+      tasks: (mondayBoard.items || []).map((item: any, index: number) => ({
+        id: item.id || `item_${index}`,
+        title: item.name || 'Unnamed Item',
+        status: item.state || 'active',
+        created: item.created_at,
+        updated: item.updated_at
+      })),
+      lastUpdated: new Date().toISOString()
+    };
   }
 
   // ===== PRIVATE VALIDATION METHODS =====

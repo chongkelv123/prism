@@ -78,18 +78,75 @@ const ReportWizard: React.FC = () => {
     }
   }, [wizardData.connectionId, currentStep]);
 
+  // ENHANCED PROJECT LOADING WITH DEFENSIVE HANDLING
   const loadProjectsForConnection = async () => {
     if (!wizardData.connectionId) return;
 
     setIsLoadingProjects(true);
+    console.log('🔄 Loading projects for connection:', wizardData.connectionId);
+    
     try {
       const projectData = await getProjectData(wizardData.connectionId);
+      console.log('📊 Raw project data received:', projectData);
+      console.log('📊 Data type:', typeof projectData);
+      console.log('📊 Is array:', Array.isArray(projectData));
       
-      // Handle both single project and array of projects
-      const projects = Array.isArray(projectData) ? projectData : [projectData];
-      setAvailableProjects(projects);
+      // Ensure we have an array
+      let projects = Array.isArray(projectData) ? projectData : [projectData];
+      console.log('📋 Projects after array conversion:', projects.length, 'items');
+      
+      // ROBUST FILTERING: Remove any invalid items and ensure all required properties
+      const validProjects = projects
+        .filter((project, index) => {
+          // Check if project exists and is an object
+          if (!project || typeof project !== 'object') {
+            console.warn(`⚠️  Project ${index} is not a valid object:`, project);
+            return false;
+          }
+          
+          // Check required properties
+          if (!project.id) {
+            console.warn(`⚠️  Project ${index} missing 'id':`, project);
+            return false;
+          }
+          
+          if (!project.name) {
+            console.warn(`⚠️  Project ${index} missing 'name':`, project);
+            return false;
+          }
+          
+          console.log(`✅ Project ${index} is valid:`, { id: project.id, name: project.name, platform: project.platform });
+          return true;
+        })
+        .map((project, index) => {
+          // Ensure all properties exist with fallbacks
+          const safeProject = {
+            id: String(project.id || `fallback_${Date.now()}_${index}`),
+            name: String(project.name || 'Unnamed Project'),
+            platform: String(project.platform || 'unknown'),
+            description: String(project.description || ''),
+            status: String(project.status || 'active'),
+            metrics: Array.isArray(project.metrics) ? project.metrics : [],
+            team: Array.isArray(project.team) ? project.team : [],
+            tasks: Array.isArray(project.tasks) ? project.tasks : [],
+            lastUpdated: project.lastUpdated || new Date().toISOString(),
+            // Keep all other properties
+            ...project
+          };
+          
+          console.log(`🔧 Processed project ${index}:`, safeProject.id, safeProject.name);
+          return safeProject;
+        });
+      
+      console.log(`✅ Final valid projects count: ${validProjects.length}`);
+      console.log('📋 Project IDs:', validProjects.map(p => p.id));
+      console.log('📋 Project names:', validProjects.map(p => p.name));
+      
+      setAvailableProjects(validProjects);
+      
     } catch (error) {
-      console.error('Failed to load projects:', error);
+      console.error('❌ Failed to load projects:', error);
+      console.error('❌ Error details:', error.message, error.stack);
       setAvailableProjects([]);
     } finally {
       setIsLoadingProjects(false);
@@ -453,13 +510,42 @@ const ConnectionSelection: React.FC<{
   );
 };
 
-// Project Selection Component
+// ENHANCED Project Selection Component with Defensive Handling
 const ProjectSelection: React.FC<{
   projects: any[],
   selectedProjectId: string,
   onSelectProject: (projectId: string) => void,
   isLoading: boolean
 }> = ({ projects, selectedProjectId, onSelectProject, isLoading }) => {
+  console.log('🎨 ProjectSelection rendering with:', {
+    projectsCount: projects?.length || 0,
+    isArray: Array.isArray(projects),
+    projects: projects
+  });
+
+  // DEFENSIVE: Ensure projects is an array and filter out invalid items
+  const safeProjects = React.useMemo(() => {
+    if (!Array.isArray(projects)) {
+      console.warn('⚠️  Projects prop is not an array:', typeof projects, projects);
+      return [];
+    }
+    
+    return projects.filter((project, index) => {
+      const isValid = project && 
+                     typeof project === 'object' && 
+                     project.id && 
+                     project.name;
+      
+      if (!isValid) {
+        console.warn(`⚠️  Invalid project at index ${index}:`, project);
+      }
+      
+      return isValid;
+    });
+  }, [projects]);
+
+  console.log('🔍 Safe projects:', safeProjects.length, safeProjects.map(p => ({ id: p.id, name: p.name })));
+
   if (isLoading) {
     return (
       <div className="text-center py-8">
@@ -469,7 +555,7 @@ const ProjectSelection: React.FC<{
     );
   }
 
-  if (projects.length === 0) {
+  if (safeProjects.length === 0) {
     return (
       <div className="text-center py-8">
         <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -477,8 +563,20 @@ const ProjectSelection: React.FC<{
         </div>
         <h3 className="text-lg font-medium text-gray-900 mb-2">No Projects Found</h3>
         <p className="text-gray-600">
-          No projects were found for the selected connection.
+          No valid projects were found for the selected connection.
         </p>
+        {/* Debug info */}
+        {projects && projects.length > 0 && (
+          <div className="mt-4 text-sm text-gray-500">
+            <p>Debug: Found {projects.length} raw projects, but {safeProjects.length} are valid.</p>
+            <details className="mt-2 text-left">
+              <summary className="cursor-pointer">Show raw data</summary>
+              <pre className="mt-2 text-xs bg-gray-100 p-2 rounded overflow-auto max-h-40">
+                {JSON.stringify(projects, null, 2)}
+              </pre>
+            </details>
+          </div>
+        )}
       </div>
     );
   }
@@ -488,35 +586,60 @@ const ProjectSelection: React.FC<{
       <h2 className="text-xl font-semibold text-gray-900 mb-4">Choose Project</h2>
       <p className="text-gray-600 mb-6">Select which project to include in your report</p>
       
+      {/* Debug info */}
+      <div className="mb-4 text-sm text-gray-500">
+        Found {safeProjects.length} valid projects
+      </div>
+      
       <div className="space-y-3">
-        {projects.map((project) => (
-          <div
-            key={project.id}
-            onClick={() => onSelectProject(project.id)}
-            className={`p-4 border rounded-lg cursor-pointer transition-all ${
-              selectedProjectId === project.id
-                ? 'border-blue-500 bg-blue-50'
-                : 'border-gray-200 hover:border-gray-300'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-medium text-gray-900">{project.name}</h3>
-                <p className="text-sm text-gray-500">
-                  {project.description || 'No description available'}
-                </p>
-                <div className="flex items-center mt-2 space-x-4 text-xs text-gray-500">
-                  <span>{project.status || 'Active'}</span>
-                  {project.progress && <span>{project.progress}% Complete</span>}
-                  {project.teamSize && <span>{project.teamSize} team members</span>}
+        {safeProjects.map((project, index) => {
+          // Additional safety check before rendering
+          if (!project || !project.id || !project.name) {
+            console.error(`❌ Invalid project in render loop at index ${index}:`, project);
+            return null;
+          }
+
+          return (
+            <div
+              key={`${project.platform}-${project.id}-${index}`} // More unique key
+              onClick={() => onSelectProject(project.id)}
+              className={`p-4 border rounded-lg cursor-pointer transition-all ${
+                selectedProjectId === project.id
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <span className="text-2xl mr-3">
+                    {project.platform === 'jira' ? '🔄' : 
+                     project.platform === 'monday' ? '📊' : '📁'}
+                  </span>
+                  <div>
+                    <h3 className="font-medium text-gray-900">{project.name}</h3>
+                    <p className="text-sm text-gray-500 capitalize">
+                      {project.platform} • ID: {project.id}
+                    </p>
+                    {project.description && project.description.length > 0 && (
+                      <p className="text-xs text-gray-400 mt-1">
+                        {project.description.substring(0, 100)}
+                        {project.description.length > 100 ? '...' : ''}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full">
+                    {project.status || 'Active'}
+                  </span>
+                  {selectedProjectId === project.id && (
+                    <Check size={20} className="text-blue-600" />
+                  )}
                 </div>
               </div>
-              {selectedProjectId === project.id && (
-                <Check size={20} className="text-blue-600" />
-              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

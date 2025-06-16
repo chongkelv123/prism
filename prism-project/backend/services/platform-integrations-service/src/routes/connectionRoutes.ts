@@ -6,6 +6,9 @@ import { ConnectionService } from '../services/ConnectionService';
 import { authenticateJWT } from '../middleware/auth';
 import logger from '../utils/logger';
 
+// Add this at the top of your connectionRoutes.ts file, after the imports
+console.log('🔍 ConnectionRoutes: Loading connection routes...');
+
 interface AuthRequest extends Request {
   user?: { userId: string };
 }
@@ -87,41 +90,6 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   } catch (error) {
     logger.error('Get connections error:', error);
     res.status(500).json({ message: 'Failed to get connections' });
-  }
-});
-
-// READ: Get specific connection details
-router.get('/:connectionId', async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user?.userId;
-    const { connectionId } = req.params;
-
-    if (!userId) {
-      return res.status(401).json({ message: 'User ID required' });
-    }
-
-    const connection = await connectionService.getConnection(userId, connectionId);
-    
-    if (!connection) {
-      return res.status(404).json({ message: 'Connection not found' });
-    }
-
-    // Return connection without sensitive config data
-    const safeConnection = {
-      id: connection.id,
-      name: connection.name,
-      platform: connection.platform,
-      status: connection.status,
-      projectCount: connection.projectCount,
-      lastSync: connection.lastSync,
-      lastSyncError: connection.lastSyncError,
-      createdAt: connection.createdAt
-    };
-
-    res.json(safeConnection);
-  } catch (error) {
-    logger.error('Get connection error:', error);
-    res.status(500).json({ message: 'Failed to get connection' });
   }
 });
 
@@ -211,6 +179,41 @@ router.get('/:connectionId/projects', async (req: AuthRequest, res: Response) =>
       error: 'Project data retrieval failed',
       connectionId: req.params.connectionId
     });
+  }
+});
+
+// READ: Get specific connection details
+router.get('/:connectionId', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { connectionId } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'User ID required' });
+    }
+
+    const connection = await connectionService.getConnection(userId, connectionId);
+    
+    if (!connection) {
+      return res.status(404).json({ message: 'Connection not found' });
+    }
+
+    // Return connection without sensitive config data
+    const safeConnection = {
+      id: connection.id,
+      name: connection.name,
+      platform: connection.platform,
+      status: connection.status,
+      projectCount: connection.projectCount,
+      lastSync: connection.lastSync,
+      lastSyncError: connection.lastSyncError,
+      createdAt: connection.createdAt
+    };
+
+    res.json(safeConnection);
+  } catch (error) {
+    logger.error('Get connection error:', error);
+    res.status(500).json({ message: 'Failed to get connection' });
   }
 });
 

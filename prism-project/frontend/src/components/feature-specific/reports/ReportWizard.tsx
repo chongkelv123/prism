@@ -83,11 +83,14 @@ const ReportWizard: React.FC = () => {
     if (!wizardData.connectionId) return;
 
     setIsLoadingProjects(true);
-    console.log('🔄 Loading projects for connection:', wizardData.connectionId);
+
+    // 🔍 DEBUG 1: Is this function being called?
+    console.log('DEBUG 1 - Loading projects for connection:', wizardData.connectionId);
 
     try {
       const projectData = await getProjectData(wizardData.connectionId);
-      console.log('📊 Raw project data received:', projectData);
+      // 🔍 DEBUG 2: What data did we get back?
+      console.log('DEBUG 2 - Raw project data:', projectData);
       console.log('📊 Data type:', typeof projectData);
       console.log('📊 Is array:', Array.isArray(projectData));
 
@@ -145,7 +148,8 @@ const ReportWizard: React.FC = () => {
       setAvailableProjects(validProjects);
 
     } catch (error) {
-      console.error('❌ Failed to load projects:', error);
+      // 🔍 DEBUG 3: Any errors?
+      console.log('DEBUG 3 - Error loading projects:', error);      
       console.error('❌ Error details:', error.message, error.stack);
       setAvailableProjects([]);
     } finally {
@@ -706,8 +710,8 @@ const TemplateSelection: React.FC<{
               key={template.id}
               onClick={() => handleTemplateClick(template.id, template.name)}
               className={`p-6 border rounded-lg cursor-pointer transition-all hover:shadow-md ${isSelected
-                  ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
-                  : 'border-gray-200 hover:border-gray-300'
+                ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                : 'border-gray-200 hover:border-gray-300'
                 }`}
             >
               <div className="text-center">

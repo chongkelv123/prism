@@ -14,17 +14,17 @@ const app = express();
 
 // Middleware
 app.use(helmet());
-app.use(cors({ 
+app.use(cors({
   origin: true,
-  credentials: true 
+  credentials: true
 }));
 app.use(express.json());
 
 // Request logging
 app.use((req, res, next) => {
-  logger.info(`${req.method} ${req.path}`, { 
-    headers: req.headers, 
-    body: req.method !== 'GET' ? req.body : undefined 
+  logger.info(`${req.method} ${req.path}`, {
+    headers: req.headers,
+    body: req.method !== 'GET' ? req.body : undefined
   });
   next();
 });
@@ -74,7 +74,7 @@ app.get('/api/platform-integrations/health', (req, res) => {
     description: 'PRISM Platform Integrations Service',
     capabilities: [
       'Connection management',
-      'Platform validation', 
+      'Platform validation',
       'Data synchronization',
       'Multi-platform support'
     ],
@@ -86,7 +86,7 @@ app.get('/api/platform-integrations/health', (req, res) => {
         features: ['Boards', 'Items', 'Status Updates', 'Team Members']
       },
       {
-        id: 'jira', 
+        id: 'jira',
         name: 'Jira Cloud',
         status: 'supported',
         features: ['Issues', 'Projects', 'Sprints', 'Workflows']
@@ -94,7 +94,7 @@ app.get('/api/platform-integrations/health', (req, res) => {
       {
         id: 'trofos',
         name: 'TROFOS',
-        status: 'supported', 
+        status: 'supported',
         features: ['Projects', 'Backlogs', 'Resources', 'Metrics']
       }
     ],
@@ -137,7 +137,7 @@ app.get('/api/platform-integrations/info', (req, res) => {
     ],
     endpoints: {
       health: '/api/platform-integrations/health',
-      status: '/api/platform-integrations/status', 
+      status: '/api/platform-integrations/status',
       platforms: '/api/platforms',
       connections: '/api/connections'
     },
@@ -160,7 +160,7 @@ app.use('/api/*', (req, res) => {
     service: 'platform-integrations',
     availableRoutes: [
       'GET /health',
-      'GET /status', 
+      'GET /status',
       'GET /api/platform-integrations/health',
       'GET /api/platform-integrations/status',
       'GET /api/platform-integrations/info',
@@ -178,7 +178,7 @@ app.use('/api/*', (req, res) => {
 // Global error handler
 app.use((err: any, req: any, res: any, next: any) => {
   logger.error('Unhandled error:', err);
-  
+
   if (!res.headersSent) {
     res.status(500).json({
       error: 'Internal server error',
@@ -197,7 +197,7 @@ async function start() {
   try {
     // Connect to database (but continue if fails in development)
     await connectDB();
-    
+
     app.listen(PORT, () => {
       logger.info(`Platform Integrations service running on port ${PORT}`);
       logger.info(`Health endpoints:`);
@@ -210,6 +210,10 @@ async function start() {
       logger.info(`  - POST /api/platforms/:platformId/validate`);
       logger.info(`  - GET /api/connections (auth required)`);
       logger.info(`  - POST /api/connections (auth required)`);
+      logger.info(`  - GET /api/connections/:connectionId/projects (auth required)`);  // ← ADD THIS
+      logger.info(`  - POST /api/connections/:connectionId/test (auth required)`);     // ← ADD THIS
+      logger.info(`  - POST /api/connections/:connectionId/sync (auth required)`);     // ← ADD THIS
+      logger.info(`  - DELETE /api/connections/:connectionId (auth required)`);       // ← ADD THIS
       logger.info(`Ready to receive requests!`);
     });
   } catch (err) {
@@ -234,7 +238,7 @@ process.on('SIGTERM', shutdown);
 setTimeout(() => {
   logger.info('Platform Integrations Service startup complete');
   logger.info('Testing internal health endpoint...');
-  
+
   // Self-health check
   const http = require('http');
   const options = {
@@ -243,7 +247,7 @@ setTimeout(() => {
     path: '/health',
     method: 'GET'
   };
-  
+
   const req = http.request(options, (res: any) => {
     if (res.statusCode === 200) {
       logger.info(`Self-health check passed: ${res.statusCode}`);
@@ -251,10 +255,10 @@ setTimeout(() => {
       logger.warn(`Self-health check failed: ${res.statusCode}`);
     }
   });
-  
+
   req.on('error', (err: any) => {
     logger.error('Self-health check error:', err.message);
   });
-  
+
   req.end();
 }, 2000);

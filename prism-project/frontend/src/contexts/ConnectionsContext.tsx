@@ -530,7 +530,7 @@ export const ConnectionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       : `/api/connections/${connectionId}/projects`;
 
     const response = await apiClient.get(url);
-    return response.data;
+    return response;
   }, [isServiceAvailable]);
 
   // Initialize on auth state change

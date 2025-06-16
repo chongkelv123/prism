@@ -1,33 +1,84 @@
 // frontend/src/components/feature-specific/reports/ReportWizard.tsx - COMPLETE FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowRight, Check, FileText, CheckCircle, Clock, X, AlertCircle, Loader } from 'lucide-react';
-import reportService from '../../../services/report.service';
+import reportService, { ReportGenerationRequest } from '../../../services/report.service';
 import { useConnections } from '../../../contexts/ConnectionsContext';
+
+// FIXED: Add proper TypeScript interfaces
+interface Connection {
+  id: string;
+  name: string;
+  platform: 'monday' | 'jira' | 'trofos';
+  status: 'connected' | 'disconnected' | 'error' | 'active'; // FIXED: Added 'active' status
+  projectCount: number;
+  lastSync?: string;
+  lastSyncError?: string;
+  createdAt: string;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  platform: string;
+  description?: string;
+  status?: string;
+  metrics?: any[];
+  team?: any[];
+  tasks?: any[];
+  lastUpdated?: string;
+}
+
+interface WizardData {
+  connectionId: string;
+  projectId: string;
+  templateId: string;
+  configuration: {
+    title?: string;
+    includeMetrics?: boolean;
+    includeTasks?: boolean;
+    includeTimeline?: boolean;
+    includeResources?: boolean;
+    [key: string]: any;
+  };
+}
 
 const ReportWizard: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(1);
-  const [wizardData, setWizardData] = useState({
+  const [wizardData, setWizardData] = useState<WizardData>({
     connectionId: '',
     projectId: '',
     templateId: '',
-    configuration: {}
+    configuration: {
+      includeMetrics: true,
+      includeTasks: true,
+      includeTimeline: true,
+      includeResources: true
+    }
   });
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationComplete, setGenerationComplete] = useState(false);
   const [generationError, setGenerationError] = useState(false);
   const [reportId, setReportId] = useState<string | null>(null);
-  const [availableProjects, setAvailableProjects] = useState<any[]>([]);
+  const [availableProjects, setAvailableProjects] = useState<Project[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
 
-  const { connections, getProjectData, isLoading: connectionsLoading, error: connectionsError } = useConnections();
+  const { 
+    connections, 
+    getProjectData, 
+    isLoading: connectionsLoading, 
+    error: connectionsError,
+    isServiceAvailable
+  } = useConnections();
+  
   const totalSteps = 4;
 
-  // DEBUGGING: Add comprehensive logging
+  // ENHANCED DEBUGGING: Add comprehensive logging
   useEffect(() => {
     console.log('🔍 ReportWizard Debug Info:');
     console.log('  - Total connections:', connections.length);
     console.log('  - Connections loading:', connectionsLoading);
     console.log('  - Connections error:', connectionsError);
+    console.log('  - Service available:', isServiceAvailable);
     console.log('  - Raw connections:', connections);
 
     if (connections.length > 0) {
@@ -39,125 +90,162 @@ const ReportWizard: React.FC = () => {
       })));
     }
 
-    const connected = connections.filter(conn => conn.status === 'connected');
-    console.log('  - Connected platforms:', connected.length);
-    console.log('  - Connected details:', connected);
+    // FIXED: Enhanced status filtering to accept multiple valid statuses
+    const validStatuses = ['connected', 'active', 'success'];
+    const connectedCount = connections.filter(conn => 
+      validStatuses.includes(conn.status?.toLowerCase())
+    ).length;
+    
+    console.log('  - Connected platforms:', connectedCount);
 
-    // Check if there's a mismatch between total and connected
-    if (connections.length > 0 && connected.length === 0) {
-      console.warn('STATUS MISMATCH: Connections exist but none are "connected"');
+    // Check if there's a status mismatch
+    if (connections.length > 0 && connectedCount === 0) {
+      console.warn('⚠️ STATUS MISMATCH: Connections exist but none have valid status');
       console.warn('   Connection statuses:', connections.map(c => `${c.name}: "${c.status}"`));
-      console.warn('   Expected status: "connected"');
+      console.warn('   Expected statuses:', validStatuses);
     }
-  }, [connections, connectionsLoading, connectionsError]);
+  }, [connections, connectionsLoading, connectionsError, isServiceAvailable]);
 
-  // Filter only connected platforms with additional validation
-  const connectedPlatforms = connections.filter(conn => {
-    const isConnected = conn.status === 'connected';
-    if (!isConnected) {
-      console.log(`Filtering out connection "${conn.name}" - status: "${conn.status}" (expected: "connected")`);
-    } else {
-      console.log(`Including connection "${conn.name}" - status: "${conn.status}"`);
-    }
-    return isConnected;
-  });
+  // FIXED: Enhanced connection filtering with multiple valid statuses
+  const connectedPlatforms = React.useMemo(() => {
+    const validStatuses = ['connected', 'active', 'success'];
+    
+    return connections.filter(conn => {
+      const isConnected = validStatuses.includes(conn.status?.toLowerCase());
+      
+      if (!isConnected) {
+        console.log(`Filtering out connection "${conn.name}" - status: "${conn.status}" (expected one of: ${validStatuses.join(', ')})`);
+      } else {
+        console.log(`Including connection "${conn.name}" - status: "${conn.status}"`);
+      }
+      
+      return isConnected;
+    });
+  }, [connections]);
 
   // DEBUGGING: Log the filtered result
   useEffect(() => {
     console.log('🎯 ReportWizard connectedPlatforms result:', connectedPlatforms.length);
     if (connectedPlatforms.length === 0 && connections.length > 0) {
-      console.warn('⚠️  No connected platforms found but connections exist!');
+      console.warn('⚠️ No connected platforms found but connections exist!');
       console.warn('   This indicates a status field issue.');
       console.warn('   Check connection status values:', connections.map(c => c.status));
     }
   }, [connectedPlatforms, connections]);
 
+  // FIXED: Enhanced project loading trigger
   useEffect(() => {
-    if (wizardData.connectionId && currentStep === 2) {
+    console.log('🎯 Project loading trigger check:', {
+      connectionId: wizardData.connectionId,
+      currentStep,
+      isLoadingProjects,
+      hasGetProjectData: typeof getProjectData === 'function',
+      serviceAvailable: isServiceAvailable
+    });
+
+    if (wizardData.connectionId && 
+        currentStep === 2 && 
+        !isLoadingProjects &&
+        typeof getProjectData === 'function' &&
+        isServiceAvailable) {
+      console.log('🚀 Triggering project load for connection:', wizardData.connectionId);
       loadProjectsForConnection();
     }
-  }, [wizardData.connectionId, currentStep]);
+  }, [wizardData.connectionId, currentStep, isServiceAvailable]);
 
   // ENHANCED PROJECT LOADING WITH DEFENSIVE HANDLING
   const loadProjectsForConnection = async () => {
-    if (!wizardData.connectionId) return;
+    if (!wizardData.connectionId) {
+      console.warn('❌ No connection ID provided for project loading');
+      return;
+    }
 
+    console.log('🔄 Starting project load for connection:', wizardData.connectionId);
     setIsLoadingProjects(true);
-
-    // 🔍 DEBUG 1: Is this function being called?
-    console.log('DEBUG 1 - Loading projects for connection:', wizardData.connectionId);
+    setAvailableProjects([]); // Clear previous projects
 
     try {
+      console.log('📡 Calling getProjectData API...');
       const projectData = await getProjectData(wizardData.connectionId);
-      // 🔍 DEBUG 2: What data did we get back?
-      console.log('DEBUG 2 - Raw project data:', projectData);
-      console.log('📊 Data type:', typeof projectData);
-      console.log('📊 Is array:', Array.isArray(projectData));
+      
+      console.log('📊 Raw API response:', {
+        type: typeof projectData,
+        isArray: Array.isArray(projectData),
+        length: Array.isArray(projectData) ? projectData.length : 'N/A',
+        data: projectData
+      });
 
-      // Ensure we have an array
-      let projects = Array.isArray(projectData) ? projectData : [projectData];
-      console.log('📋 Projects after array conversion:', projects.length, 'items');
+      // DEFENSIVE: Handle different response formats
+      let projects: any[] = [];
+      
+      if (Array.isArray(projectData)) {
+        projects = projectData;
+      } else if (projectData && Array.isArray(projectData.projects)) {
+        projects = projectData.projects;
+      } else if (projectData && typeof projectData === 'object') {
+        // Single project returned
+        projects = [projectData];
+      } else {
+        console.error('❌ Unexpected project data format:', projectData);
+        projects = [];
+      }
 
-      // ROBUST FILTERING: Remove any invalid items and ensure all required properties
-      const validProjects = projects
+      // ENHANCED: Validate and transform project data
+      const validProjects: Project[] = projects
         .filter((project, index) => {
-          // Check if project exists and is an object
-          if (!project || typeof project !== 'object') {
-            console.warn(`⚠️  Project ${index} is not a valid object:`, project);
-            return false;
+          const isValid = project && 
+                         typeof project === 'object' && 
+                         (project.id || project.key || project.board_id) && 
+                         (project.name || project.displayName || project.title);
+          
+          if (!isValid) {
+            console.warn(`⚠️ Invalid project at index ${index}:`, project);
           }
-
-          // Check required properties
-          if (!project.id) {
-            console.warn(`⚠️  Project ${index} missing 'id':`, project);
-            return false;
-          }
-
-          if (!project.name) {
-            console.warn(`⚠️  Project ${index} missing 'name':`, project);
-            return false;
-          }
-
-          console.log(`✅ Project ${index} is valid:`, { id: project.id, name: project.name, platform: project.platform });
-          return true;
+          return isValid;
         })
-        .map((project, index) => {
-          // Ensure all properties exist with fallbacks
-          const safeProject = {
-            id: String(project.id || `fallback_${Date.now()}_${index}`),
-            name: String(project.name || 'Unnamed Project'),
-            platform: String(project.platform || 'unknown'),
-            description: String(project.description || ''),
-            status: String(project.status || 'active'),
+        .map((project, index): Project => {
+          // Normalize project data for consistent frontend usage
+          const normalizedProject: Project = {
+            id: project.id || project.key || project.board_id || `project-${index}`,
+            name: project.name || project.displayName || project.title || `Unnamed Project ${index + 1}`,
+            platform: project.platform || 'unknown',
+            description: project.description || project.summary || '',
+            status: project.status || 'active',
             metrics: Array.isArray(project.metrics) ? project.metrics : [],
             team: Array.isArray(project.team) ? project.team : [],
             tasks: Array.isArray(project.tasks) ? project.tasks : [],
-            lastUpdated: project.lastUpdated || new Date().toISOString(),
-            // Keep all other properties
-            ...project
+            lastUpdated: project.lastUpdated || project.updated || new Date().toISOString()
           };
-
-          console.log(`🔧 Processed project ${index}:`, safeProject.id, safeProject.name);
-          return safeProject;
+          
+          console.log(`✅ Normalized project ${index + 1}:`, {
+            id: normalizedProject.id,
+            name: normalizedProject.name,
+            platform: normalizedProject.platform
+          });
+          
+          return normalizedProject;
         });
 
-      console.log(`✅ Final valid projects count: ${validProjects.length}`);
-      console.log('📋 Project IDs:', validProjects.map(p => p.id));
-      console.log('📋 Project names:', validProjects.map(p => p.name));
-
+      console.log(`🎉 Successfully loaded ${validProjects.length} valid projects`);
+      console.log('Project names:', validProjects.map(p => p.name));
+      
       setAvailableProjects(validProjects);
-
-    } catch (error) {
-      // 🔍 DEBUG 3: Any errors?
-      console.log('DEBUG 3 - Error loading projects:', error);      
-      console.error('❌ Error details:', error.message, error.stack);
+      
+    } catch (error: any) {
+      console.error('❌ Project loading failed:', {
+        connectionId: wizardData.connectionId,
+        error: error.message,
+        stack: error.stack
+      });
+      
       setAvailableProjects([]);
+      
     } finally {
       setIsLoadingProjects(false);
     }
   };
 
-  const updateWizardData = (key: string, value: any) => {
+  const updateWizardData = (key: keyof WizardData, value: any) => {
     console.log('🔧 Updating wizard data:', { key, value, currentStep });
 
     setWizardData(prev => {
@@ -192,12 +280,13 @@ const ReportWizard: React.FC = () => {
     }
   };
 
+  // FIXED: Corrected API interface to match reportService
   const handleGenerateReport = async () => {
     setIsGenerating(true);
 
     try {
       // Get selected connection and project data
-      const selectedConnection = connections.find(c => c.id === wizardData.connectionId);
+      const selectedConnection = connectedPlatforms.find(c => c.id === wizardData.connectionId);
       const selectedProject = availableProjects.find(p => p.id === wizardData.projectId);
 
       if (!selectedConnection || !selectedProject) {
@@ -208,16 +297,23 @@ const ReportWizard: React.FC = () => {
       const reportTitle = wizardData.configuration.title ||
         `${selectedProject.name} - ${selectedConnection.name} Report`;
 
-      const report = await reportService.generateReport({
-        platform: selectedConnection.platform,
-        connectionId: wizardData.connectionId,
-        projectId: wizardData.projectId,
+      // FIXED: Correct the API call to match reportService interface
+      const reportRequest: ReportGenerationRequest = {
+        platformId: selectedConnection.platform, // FIXED: Use platformId instead of platform
         templateId: wizardData.templateId,
         configuration: {
           ...wizardData.configuration,
-          title: reportTitle
+          title: reportTitle,
+          connectionId: wizardData.connectionId, // Include connection ID in configuration
+          projectId: wizardData.projectId,       // Include project ID in configuration
+          connectionName: selectedConnection.name,
+          projectName: selectedProject.name
         }
-      });
+      };
+
+      console.log('🎨 Generating report with request:', reportRequest);
+
+      const report = await reportService.generateReport(reportRequest);
 
       setReportId(report.id);
       setCurrentStep(5);
@@ -245,7 +341,7 @@ const ReportWizard: React.FC = () => {
 
       checkStatus();
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to generate report', error);
       setGenerationError(true);
       setIsGenerating(false);
@@ -256,7 +352,7 @@ const ReportWizard: React.FC = () => {
     if (reportId) {
       // Get real project data for the report
       const selectedProject = availableProjects.find(p => p.id === wizardData.projectId);
-      const selectedConnection = connections.find(c => c.id === wizardData.connectionId);
+      const selectedConnection = connectedPlatforms.find(c => c.id === wizardData.connectionId);
 
       const reportData = {
         title: wizardData.configuration.title || `${selectedProject?.name} Report`,
@@ -320,6 +416,7 @@ const ReportWizard: React.FC = () => {
             connections={connectedPlatforms}
             selectedConnectionId={wizardData.connectionId}
             onSelectConnection={(connectionId) => updateWizardData('connectionId', connectionId)}
+            isLoading={connectionsLoading}
           />
         );
       case 2:
@@ -364,19 +461,21 @@ const ReportWizard: React.FC = () => {
         {[1, 2, 3, 4].map((step) => (
           <div key={step} className="flex items-center">
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${currentStep > step
-                ? 'bg-green-500 text-white'
-                : currentStep === step
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                currentStep > step
+                  ? 'bg-green-500 text-white'
+                  : currentStep === step
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-200 text-gray-600'
-                }`}
+              }`}
             >
               {currentStep > step ? <Check size={16} /> : step}
             </div>
             {step < 4 && (
               <div
-                className={`w-16 h-1 mx-2 ${currentStep > step ? 'bg-green-500' : 'bg-gray-200'
-                  }`}
+                className={`w-16 h-1 mx-2 ${
+                  currentStep > step ? 'bg-green-500' : 'bg-gray-200'
+                }`}
               />
             )}
           </div>
@@ -388,8 +487,37 @@ const ReportWizard: React.FC = () => {
     </div>
   );
 
+  // ENHANCED: Add debug panel for troubleshooting
+  const renderDebugPanel = () => (
+    <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+      <h3 className="text-sm font-bold text-yellow-800 mb-2">🐛 DEBUG PANEL</h3>
+      <div className="text-xs text-yellow-700 space-y-1">
+        <p>Current Step: {currentStep}</p>
+        <p>Connection ID: {wizardData.connectionId || 'None'}</p>
+        <p>Project ID: {wizardData.projectId || 'None'}</p>
+        <p>Template ID: {wizardData.templateId || 'None'}</p>
+        <p>Total Connections: {connections.length}</p>
+        <p>Connected Platforms: {connectedPlatforms.length}</p>
+        <p>Available Projects: {availableProjects.length}</p>
+        <p>Loading Projects: {isLoadingProjects ? 'Yes' : 'No'}</p>
+        <p>Service Available: {isServiceAvailable ? 'Yes' : 'No'}</p>
+        {connections.length > 0 && (
+          <details className="mt-2">
+            <summary className="cursor-pointer font-medium">Connection Details</summary>
+            <pre className="mt-2 text-xs bg-yellow-100 p-2 rounded overflow-auto max-h-32">
+              {JSON.stringify(connections.map(c => ({ id: c.id, name: c.name, status: c.status })), null, 2)}
+            </pre>
+          </details>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="max-w-4xl mx-auto p-6">
+      {/* Debug panel - remove in production */}
+      {process.env.NODE_ENV === 'development' && renderDebugPanel()}
+      
       <div className="bg-white rounded-lg shadow-lg p-8">
         {currentStep <= 4 && renderProgressBar()}
 
@@ -414,10 +542,11 @@ const ReportWizard: React.FC = () => {
           <button
             onClick={handleBack}
             disabled={currentStep === 1}
-            className={`flex items-center px-6 py-2 rounded-lg ${currentStep === 1
-              ? 'text-gray-400 cursor-not-allowed'
-              : 'text-gray-600 hover:bg-gray-100'
-              }`}
+            className={`flex items-center px-6 py-2 rounded-lg ${
+              currentStep === 1
+                ? 'text-gray-400 cursor-not-allowed'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
           >
             <ArrowLeft size={16} className="mr-1" />
             Back
@@ -426,10 +555,11 @@ const ReportWizard: React.FC = () => {
           <button
             onClick={handleNext}
             disabled={!isStepComplete(currentStep) || (isGenerating && !generationComplete && !generationError)}
-            className={`flex items-center px-6 py-2 rounded-lg ${!isStepComplete(currentStep) || (isGenerating && !generationComplete && !generationError)
-              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
+            className={`flex items-center px-6 py-2 rounded-lg ${
+              !isStepComplete(currentStep) || (isGenerating && !generationComplete && !generationError)
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
           >
             {getButtonText()}
             {currentStep < 4 && <ArrowRight size={16} className="ml-1" />}
@@ -441,12 +571,13 @@ const ReportWizard: React.FC = () => {
   );
 };
 
-// Connection Selection Component
+// FIXED: Enhanced Connection Selection Component with proper types
 const ConnectionSelection: React.FC<{
-  connections: any[],
-  selectedConnectionId: string,
-  onSelectConnection: (connectionId: string) => void
-}> = ({ connections, selectedConnectionId, onSelectConnection }) => {
+  connections: Connection[];
+  selectedConnectionId: string;
+  onSelectConnection: (connectionId: string) => void;
+  isLoading: boolean;
+}> = ({ connections, selectedConnectionId, onSelectConnection, isLoading }) => {
   const getPlatformIcon = (platform: string) => {
     switch (platform) {
       case 'monday': return '📊';
@@ -455,6 +586,15 @@ const ConnectionSelection: React.FC<{
       default: return '🔗';
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-8">
+        <Loader className="animate-spin h-8 w-8 mx-auto mb-4 text-blue-600" />
+        <p className="text-gray-600">Loading connections...</p>
+      </div>
+    );
+  }
 
   if (connections.length === 0) {
     return (
@@ -486,17 +626,20 @@ const ConnectionSelection: React.FC<{
           <div
             key={connection.id}
             onClick={() => onSelectConnection(connection.id)}
-            className={`p-4 border rounded-lg cursor-pointer transition-all ${selectedConnectionId === connection.id
-              ? 'border-blue-500 bg-blue-50'
-              : 'border-gray-200 hover:border-gray-300'
-              }`}
+            className={`p-4 border rounded-lg cursor-pointer transition-all ${
+              selectedConnectionId === connection.id
+                ? 'border-blue-500 bg-blue-50'
+                : 'border-gray-200 hover:border-gray-300'
+            }`}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center">
                 <span className="text-2xl mr-3">{getPlatformIcon(connection.platform)}</span>
                 <div>
                   <h3 className="font-medium text-gray-900">{connection.name}</h3>
-                  <p className="text-sm text-gray-500 capitalize">{connection.platform}</p>
+                  <p className="text-sm text-gray-500 capitalize">
+                    {connection.platform} • {connection.projectCount || 0} projects
+                  </p>
                 </div>
               </div>
               <div className="flex items-center space-x-2">
@@ -515,73 +658,47 @@ const ConnectionSelection: React.FC<{
   );
 };
 
-// ENHANCED Project Selection Component with Defensive Handling
+// ENHANCED Project Selection Component with proper types and defensive handling
 const ProjectSelection: React.FC<{
-  projects: any[],
-  selectedProjectId: string,
-  onSelectProject: (projectId: string) => void,
-  isLoading: boolean
+  projects: Project[];
+  selectedProjectId: string;
+  onSelectProject: (projectId: string) => void;
+  isLoading: boolean;
 }> = ({ projects, selectedProjectId, onSelectProject, isLoading }) => {
   console.log('🎨 ProjectSelection rendering with:', {
     projectsCount: projects?.length || 0,
     isArray: Array.isArray(projects),
-    projects: projects
+    selectedId: selectedProjectId,
+    isLoading
   });
-
-  // DEFENSIVE: Ensure projects is an array and filter out invalid items
-  const safeProjects = React.useMemo(() => {
-    if (!Array.isArray(projects)) {
-      console.warn('⚠️  Projects prop is not an array:', typeof projects, projects);
-      return [];
-    }
-
-    return projects.filter((project, index) => {
-      const isValid = project &&
-        typeof project === 'object' &&
-        project.id &&
-        project.name;
-
-      if (!isValid) {
-        console.warn(`⚠️  Invalid project at index ${index}:`, project);
-      }
-
-      return isValid;
-    });
-  }, [projects]);
-
-  console.log('🔍 Safe projects:', safeProjects.length, safeProjects.map(p => ({ id: p.id, name: p.name })));
 
   if (isLoading) {
     return (
       <div className="text-center py-8">
         <Loader className="animate-spin h-8 w-8 mx-auto mb-4 text-blue-600" />
         <p className="text-gray-600">Loading projects...</p>
+        <p className="text-xs text-gray-400 mt-2">
+          Fetching project data from API...
+        </p>
       </div>
     );
   }
 
-  if (safeProjects.length === 0) {
+  if (projects.length === 0) {
     return (
       <div className="text-center py-8">
         <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <FileText size={24} className="text-gray-400" />
         </div>
         <h3 className="text-lg font-medium text-gray-900 mb-2">No Projects Found</h3>
-        <p className="text-gray-600">
-          No valid projects were found for the selected connection.
+        <p className="text-gray-600 mb-4">
+          No projects were found for the selected connection. This could mean:
         </p>
-        {/* Debug info */}
-        {projects && projects.length > 0 && (
-          <div className="mt-4 text-sm text-gray-500">
-            <p>Debug: Found {projects.length} raw projects, but {safeProjects.length} are valid.</p>
-            <details className="mt-2 text-left">
-              <summary className="cursor-pointer">Show raw data</summary>
-              <pre className="mt-2 text-xs bg-gray-100 p-2 rounded overflow-auto max-h-40">
-                {JSON.stringify(projects, null, 2)}
-              </pre>
-            </details>
-          </div>
-        )}
+        <ul className="text-sm text-gray-500 text-left max-w-md mx-auto space-y-1">
+          <li>• The connection has no projects configured</li>
+          <li>• There was an error loading project data</li>
+          <li>• The platform integration needs to be refreshed</li>
+        </ul>
       </div>
     );
   }
@@ -591,74 +708,61 @@ const ProjectSelection: React.FC<{
       <h2 className="text-xl font-semibold text-gray-900 mb-4">Choose Project</h2>
       <p className="text-gray-600 mb-6">Select which project to include in your report</p>
 
-      {/* Debug info */}
       <div className="mb-4 text-sm text-gray-500">
-        Found {safeProjects.length} valid projects
+        Found {projects.length} projects
       </div>
 
       <div className="space-y-3">
-        {safeProjects.map((project, index) => {
-          // Additional safety check before rendering
-          if (!project || !project.id || !project.name) {
-            console.error(`❌ Invalid project in render loop at index ${index}:`, project);
-            return null;
-          }
-
-          return (
-            <div
-              key={`${project.platform}-${project.id}-${index}`} // More unique key
-              onClick={() => onSelectProject(project.id)}
-              className={`p-4 border rounded-lg cursor-pointer transition-all ${selectedProjectId === project.id
+        {projects.map((project) => (
+          <div
+            key={project.id}
+            onClick={() => onSelectProject(project.id)}
+            className={`p-4 border rounded-lg cursor-pointer transition-all ${
+              selectedProjectId === project.id
                 ? 'border-blue-500 bg-blue-50'
                 : 'border-gray-200 hover:border-gray-300'
-                }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <span className="text-2xl mr-3">
-                    {project.platform === 'jira' ? '🔄' :
-                      project.platform === 'monday' ? '📊' : '📁'}
-                  </span>
-                  <div>
-                    <h3 className="font-medium text-gray-900">{project.name}</h3>
-                    <p className="text-sm text-gray-500 capitalize">
-                      {project.platform} • ID: {project.id}
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <span className="text-2xl mr-3">
+                  {project.platform === 'jira' ? '🔄' :
+                   project.platform === 'monday' ? '📊' : '📁'}
+                </span>
+                <div>
+                  <h3 className="font-medium text-gray-900">{project.name}</h3>
+                  <p className="text-sm text-gray-500 capitalize">
+                    {project.platform} • ID: {project.id}
+                  </p>
+                  {project.description && project.description.length > 0 && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      {project.description.substring(0, 100)}
+                      {project.description.length > 100 ? '...' : ''}
                     </p>
-                    {project.description && project.description.length > 0 && (
-                      <p className="text-xs text-gray-400 mt-1">
-                        {project.description.substring(0, 100)}
-                        {project.description.length > 100 ? '...' : ''}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full">
-                    {project.status || 'Active'}
-                  </span>
-                  {selectedProjectId === project.id && (
-                    <Check size={20} className="text-blue-600" />
                   )}
                 </div>
               </div>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full">
+                  {project.status || 'Active'}
+                </span>
+                {selectedProjectId === project.id && (
+                  <Check size={20} className="text-blue-600" />
+                )}
+              </div>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     </div>
   );
 };
 
-// Template Selection Component - Enhanced with Better Feedback
+// Template Selection Component
 const TemplateSelection: React.FC<{
-  selectedTemplateId: string,
-  onSelectTemplate: (templateId: string) => void
+  selectedTemplateId: string;
+  onSelectTemplate: (templateId: string) => void;
 }> = ({ selectedTemplateId, onSelectTemplate }) => {
-  console.log('🎨 TemplateSelection rendering with:', {
-    selectedTemplateId,
-    hasOnSelectTemplate: !!onSelectTemplate
-  });
-
   const templates = [
     {
       id: 'standard',
@@ -680,61 +784,32 @@ const TemplateSelection: React.FC<{
     }
   ];
 
-  // Enhanced click handler with debugging
-  const handleTemplateClick = (templateId: string, templateName: string) => {
-    console.log('🖱️ Template clicked:', { templateId, templateName });
-    try {
-      onSelectTemplate(templateId);
-      console.log('✅ onSelectTemplate called successfully');
-    } catch (err) {
-      console.error('❌ Error in onSelectTemplate:', err);
-    }
-  };
-
   return (
     <div>
       <h2 className="text-xl font-semibold text-gray-900 mb-4">Select Template</h2>
       <p className="text-gray-600 mb-6">Choose a report template that best fits your needs</p>
 
-      <div className="mb-4 text-sm text-gray-500">
-        {selectedTemplateId ? `Selected: ${templates.find(t => t.id === selectedTemplateId)?.name || selectedTemplateId}` : 'No template selected'}
-      </div>
-
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {templates.map((template) => {
-          const isSelected = selectedTemplateId === template.id;
-          console.log(`🎨 Rendering template ${template.id}:`, { isSelected });
-
-          return (
-            <div
-              key={template.id}
-              onClick={() => handleTemplateClick(template.id, template.name)}
-              className={`p-6 border rounded-lg cursor-pointer transition-all hover:shadow-md ${isSelected
-                ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+        {templates.map((template) => (
+          <div
+            key={template.id}
+            onClick={() => onSelectTemplate(template.id)}
+            className={`p-6 border rounded-lg cursor-pointer transition-all ${
+              selectedTemplateId === template.id
+                ? 'border-blue-500 bg-blue-50'
                 : 'border-gray-200 hover:border-gray-300'
-                }`}
-            >
-              <div className="text-center">
-                <div className="text-4xl mb-4">{template.preview}</div>
-                <h3 className="font-medium text-gray-900 mb-2">{template.name}</h3>
-                <p className="text-sm text-gray-500 mb-4">{template.description}</p>
-                {isSelected && (
-                  <div className="flex items-center justify-center">
-                    <Check size={20} className="text-blue-600 mr-2" />
-                    <span className="text-sm text-blue-600 font-medium">Selected</span>
-                  </div>
-                )}
-              </div>
+            }`}
+          >
+            <div className="text-center">
+              <div className="text-4xl mb-4">{template.preview}</div>
+              <h3 className="font-medium text-gray-900 mb-2">{template.name}</h3>
+              <p className="text-sm text-gray-500 mb-4">{template.description}</p>
+              {selectedTemplateId === template.id && (
+                <Check size={20} className="text-blue-600 mx-auto" />
+              )}
             </div>
-          );
-        })}
-      </div>
-
-      {/* Debug info */}
-      <div className="mt-6 p-3 bg-gray-50 rounded text-xs text-gray-600">
-        <p>Debug: Template selection step</p>
-        <p>Selected template ID: {selectedTemplateId || 'none'}</p>
-        <p>Available templates: {templates.length}</p>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -742,8 +817,8 @@ const TemplateSelection: React.FC<{
 
 // Report Configuration Component
 const ReportConfiguration: React.FC<{
-  configuration: any,
-  onUpdateConfiguration: (config: any) => void
+  configuration: WizardData['configuration'];
+  onUpdateConfiguration: (config: WizardData['configuration']) => void;
 }> = ({ configuration, onUpdateConfiguration }) => {
   const updateConfig = (key: string, value: any) => {
     onUpdateConfiguration({
@@ -806,9 +881,9 @@ const ReportConfiguration: React.FC<{
 
 // Report Generation Component
 const ReportGeneration: React.FC<{
-  isGenerating: boolean,
-  generationComplete: boolean,
-  generationError: boolean
+  isGenerating: boolean;
+  generationComplete: boolean;
+  generationError: boolean;
 }> = ({ isGenerating, generationComplete, generationError }) => {
   return (
     <div className="text-center py-8">

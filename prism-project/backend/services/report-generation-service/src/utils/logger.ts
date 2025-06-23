@@ -1,12 +1,34 @@
-import { createLogger, format, transports } from 'winston';
+// backend/services/report-generation-service/src/utils/logger.ts
+import winston from 'winston';
 
-export default createLogger({
-  level: 'info',
-  format: format.combine(
-    format.timestamp(),
-    format.printf(({ timestamp, level, message, ...meta }) =>
-      `${timestamp} [${level}]: ${message} ${Object.keys(meta).length ? JSON.stringify(meta) : ''}`
-    )
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.errors({ stack: true }),
+    winston.format.splat(),
+    winston.format.json()
   ),
-  transports: [new transports.Console()]
+  defaultMeta: { service: 'report-generation-service' },
+  transports: [
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.simple()
+      )
+    })
+  ]
 });
+
+// Add file transport in production
+if (process.env.NODE_ENV === 'production') {
+  logger.add(new winston.transports.File({ 
+    filename: 'error.log', 
+    level: 'error' 
+  }));
+  logger.add(new winston.transports.File({ 
+    filename: 'combined.log' 
+  }));
+}
+
+export default logger;

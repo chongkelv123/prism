@@ -62,14 +62,14 @@ const ReportWizard: React.FC = () => {
   const [availableProjects, setAvailableProjects] = useState<Project[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
 
-  const { 
-    connections, 
-    getProjectData, 
-    isLoading: connectionsLoading, 
+  const {
+    connections,
+    getProjectData,
+    isLoading: connectionsLoading,
     error: connectionsError,
     isServiceAvailable
   } = useConnections();
-  
+
   const totalSteps = 4;
 
   // ENHANCED DEBUGGING: Add comprehensive logging
@@ -92,10 +92,10 @@ const ReportWizard: React.FC = () => {
 
     // FIXED: Enhanced status filtering to accept multiple valid statuses
     const validStatuses = ['connected', 'active', 'success'];
-    const connectedCount = connections.filter(conn => 
+    const connectedCount = connections.filter(conn =>
       validStatuses.includes(conn.status?.toLowerCase())
     ).length;
-    
+
     console.log('  - Connected platforms:', connectedCount);
 
     // Check if there's a status mismatch
@@ -109,16 +109,16 @@ const ReportWizard: React.FC = () => {
   // FIXED: Enhanced connection filtering with multiple valid statuses
   const connectedPlatforms = React.useMemo(() => {
     const validStatuses = ['connected', 'active', 'success'];
-    
+
     return connections.filter(conn => {
       const isConnected = validStatuses.includes(conn.status?.toLowerCase());
-      
+
       if (!isConnected) {
         console.log(`Filtering out connection "${conn.name}" - status: "${conn.status}" (expected one of: ${validStatuses.join(', ')})`);
       } else {
         console.log(`Including connection "${conn.name}" - status: "${conn.status}"`);
       }
-      
+
       return isConnected;
     });
   }, [connections]);
@@ -143,11 +143,11 @@ const ReportWizard: React.FC = () => {
       serviceAvailable: isServiceAvailable
     });
 
-    if (wizardData.connectionId && 
-        currentStep === 2 && 
-        !isLoadingProjects &&
-        typeof getProjectData === 'function' &&
-        isServiceAvailable) {
+    if (wizardData.connectionId &&
+      currentStep === 2 &&
+      !isLoadingProjects &&
+      typeof getProjectData === 'function' &&
+      isServiceAvailable) {
       console.log('🚀 Triggering project load for connection:', wizardData.connectionId);
       loadProjectsForConnection();
     }
@@ -167,7 +167,7 @@ const ReportWizard: React.FC = () => {
     try {
       console.log('📡 Calling getProjectData API...');
       const projectData = await getProjectData(wizardData.connectionId);
-      
+
       console.log('📊 Raw API response:', {
         type: typeof projectData,
         isArray: Array.isArray(projectData),
@@ -177,7 +177,7 @@ const ReportWizard: React.FC = () => {
 
       // DEFENSIVE: Handle different response formats
       let projects: any[] = [];
-      
+
       if (Array.isArray(projectData)) {
         projects = projectData;
       } else if (projectData && Array.isArray(projectData.projects)) {
@@ -193,11 +193,11 @@ const ReportWizard: React.FC = () => {
       // ENHANCED: Validate and transform project data
       const validProjects: Project[] = projects
         .filter((project, index) => {
-          const isValid = project && 
-                         typeof project === 'object' && 
-                         (project.id || project.key || project.board_id) && 
-                         (project.name || project.displayName || project.title);
-          
+          const isValid = project &&
+            typeof project === 'object' &&
+            (project.id || project.key || project.board_id) &&
+            (project.name || project.displayName || project.title);
+
           if (!isValid) {
             console.warn(`⚠️ Invalid project at index ${index}:`, project);
           }
@@ -216,30 +216,30 @@ const ReportWizard: React.FC = () => {
             tasks: Array.isArray(project.tasks) ? project.tasks : [],
             lastUpdated: project.lastUpdated || project.updated || new Date().toISOString()
           };
-          
+
           console.log(`✅ Normalized project ${index + 1}:`, {
             id: normalizedProject.id,
             name: normalizedProject.name,
             platform: normalizedProject.platform
           });
-          
+
           return normalizedProject;
         });
 
       console.log(`🎉 Successfully loaded ${validProjects.length} valid projects`);
       console.log('Project names:', validProjects.map(p => p.name));
-      
+
       setAvailableProjects(validProjects);
-      
+
     } catch (error: any) {
       console.error('❌ Project loading failed:', {
         connectionId: wizardData.connectionId,
         error: error.message,
         stack: error.stack
       });
-      
+
       setAvailableProjects([]);
-      
+
     } finally {
       setIsLoadingProjects(false);
     }
@@ -380,9 +380,37 @@ const ReportWizard: React.FC = () => {
         return !!wizardData.templateId;
       case 4:
         return true;
+      case 5:
+        return generationComplete || !!reportId; // ← FIXED: Handle step 5
       default:
         return false;
     }
+  };
+
+  const isButtonDisabled = (): boolean => {
+    if (currentStep === 5) {
+      // For step 5: button is enabled when generation is complete OR when there's an error (for retry)
+      return isGenerating && !generationComplete && !generationError;
+    } else {
+      // For other steps: use the original logic
+      return !isStepComplete(currentStep);
+    }
+  };
+
+  const getButtonClassName = (): string => {
+    const baseClasses = "flex items-center px-6 py-2 rounded-lg";
+
+    if (isButtonDisabled()) {
+      return `${baseClasses} bg-gray-300 text-gray-500 cursor-not-allowed`;
+    }
+
+    // Special styling for download button (step 5 when complete)
+    if (currentStep === 5 && generationComplete) {
+      return `${baseClasses} bg-green-600 text-white hover:bg-green-700`;
+    }
+
+    // Default active button styling
+    return `${baseClasses} bg-blue-600 text-white hover:bg-blue-700`;
   };
 
   const getStepTitle = (step: number): string => {
@@ -461,21 +489,19 @@ const ReportWizard: React.FC = () => {
         {[1, 2, 3, 4].map((step) => (
           <div key={step} className="flex items-center">
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                currentStep > step
-                  ? 'bg-green-500 text-white'
-                  : currentStep === step
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${currentStep > step
+                ? 'bg-green-500 text-white'
+                : currentStep === step
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-200 text-gray-600'
-              }`}
+                }`}
             >
               {currentStep > step ? <Check size={16} /> : step}
             </div>
             {step < 4 && (
               <div
-                className={`w-16 h-1 mx-2 ${
-                  currentStep > step ? 'bg-green-500' : 'bg-gray-200'
-                }`}
+                className={`w-16 h-1 mx-2 ${currentStep > step ? 'bg-green-500' : 'bg-gray-200'
+                  }`}
               />
             )}
           </div>
@@ -493,6 +519,13 @@ const ReportWizard: React.FC = () => {
       <h3 className="text-sm font-bold text-yellow-800 mb-2">🐛 DEBUG PANEL</h3>
       <div className="text-xs text-yellow-700 space-y-1">
         <p>Current Step: {currentStep}</p>
+        <p>Step Complete: {isStepComplete(currentStep) ? 'Yes' : 'No'}</p>
+        <p>Button Disabled: {isButtonDisabled() ? 'Yes' : 'No'}</p>
+        <p>Is Generating: {isGenerating ? 'Yes' : 'No'}</p>
+        <p>Generation Complete: {generationComplete ? 'Yes' : 'No'}</p>
+        <p>Generation Error: {generationError ? 'Yes' : 'No'}</p>
+        <p>Report ID: {reportId || 'None'}</p>
+        <p>Button Text: {getButtonText()}</p>
         <p>Connection ID: {wizardData.connectionId || 'None'}</p>
         <p>Project ID: {wizardData.projectId || 'None'}</p>
         <p>Template ID: {wizardData.templateId || 'None'}</p>
@@ -517,7 +550,7 @@ const ReportWizard: React.FC = () => {
     <div className="max-w-4xl mx-auto p-6">
       {/* Debug panel - remove in production */}
       {process.env.NODE_ENV === 'development' && renderDebugPanel()}
-      
+
       <div className="bg-white rounded-lg shadow-lg p-8">
         {currentStep <= 4 && renderProgressBar()}
 
@@ -542,11 +575,10 @@ const ReportWizard: React.FC = () => {
           <button
             onClick={handleBack}
             disabled={currentStep === 1}
-            className={`flex items-center px-6 py-2 rounded-lg ${
-              currentStep === 1
-                ? 'text-gray-400 cursor-not-allowed'
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
+            className={`flex items-center px-6 py-2 rounded-lg ${currentStep === 1
+              ? 'text-gray-400 cursor-not-allowed'
+              : 'text-gray-600 hover:bg-gray-100'
+              }`}
           >
             <ArrowLeft size={16} className="mr-1" />
             Back
@@ -554,12 +586,8 @@ const ReportWizard: React.FC = () => {
 
           <button
             onClick={handleNext}
-            disabled={!isStepComplete(currentStep) || (isGenerating && !generationComplete && !generationError)}
-            className={`flex items-center px-6 py-2 rounded-lg ${
-              !isStepComplete(currentStep) || (isGenerating && !generationComplete && !generationError)
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
+            disabled={isButtonDisabled()}
+            className={getButtonClassName()}
           >
             {getButtonText()}
             {currentStep < 4 && <ArrowRight size={16} className="ml-1" />}
@@ -626,11 +654,10 @@ const ConnectionSelection: React.FC<{
           <div
             key={connection.id}
             onClick={() => onSelectConnection(connection.id)}
-            className={`p-4 border rounded-lg cursor-pointer transition-all ${
-              selectedConnectionId === connection.id
-                ? 'border-blue-500 bg-blue-50'
-                : 'border-gray-200 hover:border-gray-300'
-            }`}
+            className={`p-4 border rounded-lg cursor-pointer transition-all ${selectedConnectionId === connection.id
+              ? 'border-blue-500 bg-blue-50'
+              : 'border-gray-200 hover:border-gray-300'
+              }`}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center">
@@ -717,17 +744,16 @@ const ProjectSelection: React.FC<{
           <div
             key={project.id}
             onClick={() => onSelectProject(project.id)}
-            className={`p-4 border rounded-lg cursor-pointer transition-all ${
-              selectedProjectId === project.id
-                ? 'border-blue-500 bg-blue-50'
-                : 'border-gray-200 hover:border-gray-300'
-            }`}
+            className={`p-4 border rounded-lg cursor-pointer transition-all ${selectedProjectId === project.id
+              ? 'border-blue-500 bg-blue-50'
+              : 'border-gray-200 hover:border-gray-300'
+              }`}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center">
                 <span className="text-2xl mr-3">
                   {project.platform === 'jira' ? '🔄' :
-                   project.platform === 'monday' ? '📊' : '📁'}
+                    project.platform === 'monday' ? '📊' : '📁'}
                 </span>
                 <div>
                   <h3 className="font-medium text-gray-900">{project.name}</h3>
@@ -794,11 +820,10 @@ const TemplateSelection: React.FC<{
           <div
             key={template.id}
             onClick={() => onSelectTemplate(template.id)}
-            className={`p-6 border rounded-lg cursor-pointer transition-all ${
-              selectedTemplateId === template.id
-                ? 'border-blue-500 bg-blue-50'
-                : 'border-gray-200 hover:border-gray-300'
-            }`}
+            className={`p-6 border rounded-lg cursor-pointer transition-all ${selectedTemplateId === template.id
+              ? 'border-blue-500 bg-blue-50'
+              : 'border-gray-200 hover:border-gray-300'
+              }`}
           >
             <div className="text-center">
               <div className="text-4xl mb-4">{template.preview}</div>

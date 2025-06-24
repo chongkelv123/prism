@@ -1,5 +1,6 @@
 // backend/services/report-generation-service/src/generators/StandardReportGenerator.ts
-// Standard Report Template (8-12 slides) - Windows Compatible (No Unicode/Symbols)
+// Enhanced Standard Report Template (8-12 slides) - Windows Compatible (No Unicode/Symbols)
+// ENHANCED: Uses real platform data instead of mock data - FIXED for PptxGenJS compatibility
 
 import PptxGenJS from 'pptxgenjs';
 import fs from 'fs';
@@ -18,9 +19,18 @@ export interface StandardReportConfig {
   [key: string]: any;
 }
 
+interface PlatformStatusMapping {
+  [key: string]: {
+    category: 'todo' | 'progress' | 'done' | 'blocked';
+    displayName: string;
+    color: string;
+  };
+}
+
 export class StandardReportGenerator {
   private readonly STORAGE_DIR: string;
   private analytics: AnalyticsMetrics;
+  private platformStatusMap: PlatformStatusMapping;
 
   constructor() {
     this.STORAGE_DIR = process.env.STORAGE_DIR || path.join(__dirname, '../../storage');
@@ -29,6 +39,164 @@ export class StandardReportGenerator {
     if (!fs.existsSync(this.STORAGE_DIR)) {
       fs.mkdirSync(this.STORAGE_DIR, { recursive: true });
     }
+
+    // Initialize platform-specific status mappings
+    this.initializePlatformMappings();
+  }
+
+  /**
+   * Initialize platform-specific status mappings
+   */
+  private initializePlatformMappings(): void {
+    this.platformStatusMap = {
+      // Jira Status Mappings
+      'to do': { category: 'todo', displayName: 'To Do', color: '6B7280' },
+      'todo': { category: 'todo', displayName: 'To Do', color: '6B7280' },
+      'open': { category: 'todo', displayName: 'Open', color: '6B7280' },
+      'new': { category: 'todo', displayName: 'New', color: '6B7280' },
+      'created': { category: 'todo', displayName: 'Created', color: '6B7280' },
+      'backlog': { category: 'todo', displayName: 'Backlog', color: '6B7280' },
+      
+      'in progress': { category: 'progress', displayName: 'In Progress', color: '3B82F6' },
+      'progress': { category: 'progress', displayName: 'In Progress', color: '3B82F6' },
+      'in review': { category: 'progress', displayName: 'In Review', color: '3B82F6' },
+      'review': { category: 'progress', displayName: 'In Review', color: '3B82F6' },
+      'testing': { category: 'progress', displayName: 'Testing', color: '3B82F6' },
+      'development': { category: 'progress', displayName: 'Development', color: '3B82F6' },
+      
+      'done': { category: 'done', displayName: 'Done', color: '10B981' },
+      'completed': { category: 'done', displayName: 'Completed', color: '10B981' },
+      'closed': { category: 'done', displayName: 'Closed', color: '10B981' },
+      'resolved': { category: 'done', displayName: 'Resolved', color: '10B981' },
+      'finished': { category: 'done', displayName: 'Finished', color: '10B981' },
+      
+      'blocked': { category: 'blocked', displayName: 'Blocked', color: 'EF4444' },
+      'stuck': { category: 'blocked', displayName: 'Stuck', color: 'EF4444' },
+      'on hold': { category: 'blocked', displayName: 'On Hold', color: 'EF4444' },
+      'waiting': { category: 'blocked', displayName: 'Waiting', color: 'EF4444' },
+      
+      // Monday.com Status Mappings
+      'working on it': { category: 'progress', displayName: 'Working On It', color: 'FDBA13' },
+      'waiting for review': { category: 'progress', displayName: 'Waiting for Review', color: '3B82F6' },
+      
+      // Default fallback
+      'unknown': { category: 'todo', displayName: 'Unknown', color: '9CA3AF' }
+    };
+  }
+
+  /**
+   * Get platform theme colors
+   */
+  private getPlatformTheme(platform: string): { primary: string; secondary: string; accent: string } {
+    switch (platform.toLowerCase()) {
+      case 'jira':
+        return { primary: '2684FF', secondary: '0052CC', accent: 'E3F2FD' };
+      case 'monday':
+      case 'monday.com':
+        return { primary: 'FF3366', secondary: 'D91A46', accent: 'FFEBEE' };
+      case 'trofos':
+        return { primary: '6366F1', secondary: '4F46E5', accent: 'EEF2FF' };
+      default:
+        return { primary: '374151', secondary: '1F2937', accent: 'F9FAFB' };
+    }
+  }
+
+  /**
+   * Normalize status to standard category
+   */
+  private normalizeStatus(status: string): { category: string; displayName: string; color: string } {
+    const normalizedStatus = status.toLowerCase().trim();
+    const mapping = this.platformStatusMap[normalizedStatus];
+    
+    if (mapping) {
+      return mapping;
+    }
+    
+    // Fallback logic for unmapped statuses
+    if (normalizedStatus.includes('done') || normalizedStatus.includes('complete') || normalizedStatus.includes('close')) {
+      return { category: 'done', displayName: status, color: '10B981' };
+    } else if (normalizedStatus.includes('progress') || normalizedStatus.includes('develop') || normalizedStatus.includes('work')) {
+      return { category: 'progress', displayName: status, color: '3B82F6' };
+    } else if (normalizedStatus.includes('block') || normalizedStatus.includes('stuck') || normalizedStatus.includes('wait')) {
+      return { category: 'blocked', displayName: status, color: 'EF4444' };
+    } else {
+      return { category: 'todo', displayName: status, color: '6B7280' };
+    }
+  }
+
+  /**
+   * Extract real team members from project data
+   */
+  private extractRealTeamMembers(projectData: ProjectData): Array<{ name: string; role: string; taskCount: number; utilization: number }> {
+    const tasks = projectData.tasks || [];
+    const team = projectData.team || [];
+    
+    // Get unique assignees from tasks
+    const assigneeMap = new Map<string, number>();
+    tasks.forEach(task => {
+      if (task.assignee && task.assignee !== 'Unassigned' && !task.assignee.startsWith('User')) {
+        const count = assigneeMap.get(task.assignee) || 0;
+        assigneeMap.set(task.assignee, count + 1);
+      }
+    });
+
+    // Create team member objects with real data
+    const teamMembers: Array<{ name: string; role: string; taskCount: number; utilization: number }> = [];
+    
+    // Add team members from team array
+    team.forEach(member => {
+      if (member.name && !member.name.startsWith('User')) {
+        const taskCount = assigneeMap.get(member.name) || 0;
+        teamMembers.push({
+          name: member.name,
+          role: member.role || 'Team Member',
+          taskCount,
+          utilization: Math.min(100, taskCount * 15) // Rough utilization calculation
+        });
+      }
+    });
+
+    // Add assignees not in team array
+    assigneeMap.forEach((taskCount, assigneeName) => {
+      if (!teamMembers.find(tm => tm.name === assigneeName)) {
+        teamMembers.push({
+          name: assigneeName,
+          role: 'Team Member',
+          taskCount,
+          utilization: Math.min(100, taskCount * 15)
+        });
+      }
+    });
+
+    return teamMembers.sort((a, b) => b.taskCount - a.taskCount);
+  }
+
+  /**
+   * Calculate real status distribution
+   */
+  private calculateStatusDistribution(projectData: ProjectData): Array<{ status: string; count: number; percentage: number; color: string }> {
+    const tasks = projectData.tasks || [];
+    if (tasks.length === 0) return [];
+
+    const statusMap = new Map<string, { count: number; color: string }>();
+    
+    tasks.forEach(task => {
+      const normalized = this.normalizeStatus(task.status);
+      const existing = statusMap.get(normalized.category);
+      statusMap.set(normalized.category, {
+        count: (existing?.count || 0) + 1,
+        color: normalized.color
+      });
+    });
+
+    const distribution = Array.from(statusMap.entries()).map(([status, data]) => ({
+      status: status.charAt(0).toUpperCase() + status.slice(1),
+      count: data.count,
+      percentage: Math.round((data.count / tasks.length) * 100),
+      color: data.color
+    }));
+
+    return distribution.sort((a, b) => b.count - a.count);
   }
 
   /**
@@ -40,9 +208,12 @@ export class StandardReportGenerator {
     progressCallback?: (progress: number) => Promise<void>
   ): Promise<string> {
     try {
-      logger.info('Generating Standard Report', {
+      logger.info('Generating Enhanced Standard Report', {
         platform: projectData.platform,
-        projectName: projectData.name
+        projectName: projectData.name,
+        taskCount: projectData.tasks?.length || 0,
+        teamSize: projectData.team?.length || 0,
+        usingFallback: projectData.fallbackData || false
       });
 
       // Calculate enhanced analytics
@@ -58,638 +229,625 @@ export class StandardReportGenerator {
       pptx.subject = `Standard Report - ${projectData.name}`;
       pptx.title = config.title || `${projectData.name} - Standard Report`;
 
+      const theme = this.getPlatformTheme(projectData.platform);
+
       // Generate slides
-      await this.createTitleSlide(pptx, projectData, config);
+      await this.createTitleSlide(pptx, projectData, config, theme);
       await progressCallback?.(10);
 
-      await this.createProjectOverviewSlide(pptx, projectData);
+      await this.createProjectOverviewSlide(pptx, projectData, theme);
       await progressCallback?.(20);
 
       if (config.includeMetrics !== false) {
-        await this.createMetricsDashboardSlide(pptx, projectData);
+        await this.createMetricsDashboardSlide(pptx, projectData, theme);
         await progressCallback?.(30);
       }
 
       if (config.includeTasks !== false) {
-        await this.createTaskAnalysisSlide(pptx, projectData);
+        await this.createTaskAnalysisSlide(pptx, projectData, theme);
         await progressCallback?.(40);
       }
 
       if (config.includeResources !== false) {
-        await this.createTeamPerformanceSlide(pptx, projectData);
+        await this.createTeamPerformanceSlide(pptx, projectData, theme);
         await progressCallback?.(50);
       }
 
       if (config.includeTimeline !== false) {
-        await this.createTimelineAnalysisSlide(pptx, projectData);
+        await this.createTimelineAnalysisSlide(pptx, projectData, theme);
         await progressCallback?.(60);
       }
 
-      await this.createRiskAssessmentSlide(pptx, projectData);
+      await this.createRiskAssessmentSlide(pptx, projectData, theme);
       await progressCallback?.(70);
 
-      await this.createProgressSummarySlide(pptx, projectData);
+      await this.createProgressSummarySlide(pptx, projectData, theme);
       await progressCallback?.(80);
 
-      await this.createNextStepsSlide(pptx, projectData);
+      await this.createNextStepsSlide(pptx, projectData, theme);
       await progressCallback?.(90);
 
-      // Add additional slides based on data availability
-      if (projectData.sprints && projectData.sprints.length > 0) {
-        await this.createSprintAnalysisSlide(pptx, projectData);
-      }
-
       // Save file
-      const reportId = uuidv4();
-      const fileName = `${reportId}_standard_report.pptx`;
-      const filePath = path.join(this.STORAGE_DIR, fileName);
-
-      await pptx.writeFile({ fileName: filePath });
+      const filename = `standard-report-${projectData.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pptx`;
+      const filepath = path.join(this.STORAGE_DIR, filename);
+      
+      await pptx.writeFile({ fileName: filepath });
       await progressCallback?.(100);
 
-      logger.info(`Standard Report generated: ${fileName}`);
-      return filePath;
+      logger.info('Standard Report generated successfully', {
+        filename,
+        platform: projectData.platform
+      });
+
+      return filename;
 
     } catch (error) {
       logger.error('Error generating Standard Report:', error);
-      throw new Error('Failed to generate Standard Report');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to generate Standard Report: ${errorMessage}`);
     }
   }
 
   /**
-   * Create title slide
+   * Create enhanced title slide with platform branding
    */
-  private async createTitleSlide(pptx: PptxGenJS, projectData: ProjectData, config: StandardReportConfig): Promise<void> {
+  private async createTitleSlide(
+    pptx: PptxGenJS, 
+    projectData: ProjectData, 
+    config: StandardReportConfig,
+    theme: { primary: string; secondary: string; accent: string }
+  ): Promise<void> {
     const slide = pptx.addSlide();
+    
+    // Background with platform theme
+    slide.background = { color: theme.accent };
 
-    // Background color based on platform
-    const bgColor = projectData.platform === 'jira' ? '2684FF' : 
-                   projectData.platform === 'monday' ? 'FF5100' : '6366F1';
-
-    slide.background = { color: bgColor };
-
-    // Title
-    slide.addText(config.title || `${projectData.name} - Standard Report`, {
-      x: 1,
-      y: 2,
-      w: 8,
-      h: 1.5,
-      fontSize: 44,
-      color: 'FFFFFF',
+    // Main title
+    slide.addText(config.title || `${projectData.name} Standard Report`, {
+      x: '10%',
+      y: '25%',
+      w: '80%',
+      h: '15%',
+      fontSize: 32,
+      color: theme.primary,
       bold: true,
       align: 'center'
     });
 
-    // Subtitle
-    slide.addText(`Project Management Report - ${projectData.platform.toUpperCase()}`, {
-      x: 1,
-      y: 3.8,
-      w: 8,
-      h: 0.8,
-      fontSize: 24,
-      color: 'E6E6E6',
+    // Subtitle with platform and real data indicators
+    const subtitle = `${projectData.platform.toUpperCase()} Platform Report | ${projectData.tasks?.length || 0} Tasks | ${this.extractRealTeamMembers(projectData).length} Team Members`;
+    slide.addText(subtitle, {
+      x: '10%',
+      y: '42%',
+      w: '80%',
+      h: '8%',
+      fontSize: 16,
+      color: theme.secondary,
       align: 'center'
     });
 
-    // Date and status
-    slide.addText(`Generated: ${new Date().toLocaleDateString()} | Status: ${projectData.status.toUpperCase()}`, {
-      x: 1,
-      y: 5,
-      w: 8,
-      h: 0.5,
-      fontSize: 16,
-      color: 'CCCCCC',
+    // Data source indicator
+    const dataSource = projectData.fallbackData ? 
+      'Report generated using demonstration data' : 
+      `Live data from ${projectData.platform} - Generated ${new Date().toLocaleDateString()}`;
+    
+    slide.addText(dataSource, {
+      x: '10%',
+      y: '55%',
+      w: '80%',
+      h: '6%',
+      fontSize: 12,
+      color: '6B7280',
+      align: 'center'
+    });
+
+    // Key metrics preview
+    slide.addText(`Completion Rate: ${this.analytics.completionRate}% | Team Efficiency: ${this.analytics.teamEfficiency}% | Quality Score: ${this.analytics.qualityScore}%`, {
+      x: '10%',
+      y: '70%',
+      w: '80%',
+      h: '8%',
+      fontSize: 14,
+      color: theme.primary,
+      bold: true,
       align: 'center'
     });
   }
 
   /**
-   * Create project overview slide
+   * Create enhanced project overview with real data
    */
-  private async createProjectOverviewSlide(pptx: PptxGenJS, projectData: ProjectData): Promise<void> {
+  private async createProjectOverviewSlide(
+    pptx: PptxGenJS, 
+    projectData: ProjectData,
+    theme: { primary: string; secondary: string; accent: string }
+  ): Promise<void> {
     const slide = pptx.addSlide();
-
-    // Title
-    slide.addText('Project Overview', {
+    
+    // Slide title
+    slide.addText('PROJECT OVERVIEW', {
       x: 0.5,
       y: 0.5,
       w: '90%',
       h: 0.8,
-      fontSize: 36,
-      color: '2D3748',
+      fontSize: 24,
+      color: theme.primary,
       bold: true
     });
 
-    // Key project information
-    const projectInfo = [
-      `Project Name: ${projectData.name}`,
-      `Platform: ${projectData.platform.toUpperCase()}`,
-      `Status: ${projectData.status}`,
-      `Total Tasks: ${projectData.tasks?.length || 0}`,
-      `Team Members: ${projectData.team?.length || 0}`,
-      `Last Updated: ${projectData.lastUpdated ? new Date(projectData.lastUpdated).toLocaleDateString() : 'Unknown'}`
-    ];
+    // Real project information
+    const realTeamMembers = this.extractRealTeamMembers(projectData);
+    const statusDistribution = this.calculateStatusDistribution(projectData);
+    const completedTasks = statusDistribution.find(s => s.status === 'Done')?.count || 0;
+    const totalTasks = projectData.tasks?.length || 0;
 
-    slide.addText(projectInfo.join('\n'), {
+    // Project summary with real data
+    const summaryText = [
+      `Platform: ${projectData.platform.toUpperCase()}`,
+      `Total Tasks: ${totalTasks}`,
+      `Completed Tasks: ${completedTasks}`,
+      `Team Size: ${realTeamMembers.length}`,
+      `Completion Rate: ${this.analytics.completionRate}%`,
+      `Project Health: ${this.getProjectHealth()}`
+    ].join('\n');
+
+    slide.addText(summaryText, {
       x: 0.5,
       y: 1.5,
       w: 4.5,
       h: 3,
-      fontSize: 18,
-      color: '2D3748',
+      fontSize: 14,
+      color: '374151',
       bullet: { type: 'bullet' }
     });
 
-    // Key metrics box
-    slide.addShape(pptx.ShapeType.roundRect, {
-      x: 5.5,
-      y: 1.5,
-      w: 4,
-      h: 3,
-      fill: { color: 'F7FAFC' },
-      line: { color: 'E2E8F0', width: 1 }
-    });
+    // Status distribution chart with real data
+    if (statusDistribution.length > 0) {
+      const chartData = statusDistribution.map(item => ({
+        name: item.status,
+        value: item.count,
+        labels: [`${item.status}: ${item.count} (${item.percentage}%)`]
+      }));
 
-    slide.addText('Key Metrics', {
-      x: 5.8,
-      y: 1.8,
-      w: 3.4,
-      h: 0.5,
-      fontSize: 20,
-      color: '2D3748',
-      bold: true
-    });
+      slide.addChart(pptx.ChartType.pie, chartData, {
+        x: 5.5,
+        y: 1.5,
+        w: 4,
+        h: 3,
+        showLegend: true,
+        legendPos: 'r',
+        title: 'Task Status Distribution'
+      });
+    }
 
-    const keyMetrics = [
-      `Completion Rate: ${this.analytics.completionRate}%`,
-      `Team Efficiency: ${this.analytics.teamEfficiency}%`,
-      `Quality Score: ${this.analytics.qualityScore}%`,
-      `Risk Level: ${this.analytics.riskLevel.toUpperCase()}`
-    ];
+    // Real team composition
+    if (realTeamMembers.length > 0) {
+      const topMembers = realTeamMembers.slice(0, 5);
+      const teamText = topMembers.map(member => 
+        `${member.name} (${member.role}): ${member.taskCount} tasks`
+      ).join('\n');
 
-    slide.addText(keyMetrics.join('\n'), {
-      x: 5.8,
-      y: 2.4,
-      w: 3.4,
-      h: 1.8,
-      fontSize: 16,
-      color: '4A5568',
-      bullet: { type: 'bullet' }
-    });
-
-    // Description
-    if (projectData.description) {
-      slide.addText('Project Description:', {
+      slide.addText('KEY TEAM MEMBERS', {
         x: 0.5,
-        y: 4.8,
+        y: 5,
         w: '90%',
         h: 0.5,
-        fontSize: 20,
-        color: '2D3748',
+        fontSize: 16,
+        color: theme.primary,
         bold: true
       });
 
-      slide.addText(projectData.description, {
+      slide.addText(teamText, {
         x: 0.5,
-        y: 5.3,
+        y: 5.5,
         w: '90%',
-        h: 1,
-        fontSize: 16,
-        color: '4A5568'
+        h: 1.5,
+        fontSize: 12,
+        color: '374151',
+        bullet: { type: 'bullet' }
       });
     }
   }
 
   /**
-   * Create metrics dashboard slide
+   * Create enhanced metrics dashboard with real calculations
    */
-  private async createMetricsDashboardSlide(pptx: PptxGenJS, projectData: ProjectData): Promise<void> {
+  private async createMetricsDashboardSlide(
+    pptx: PptxGenJS, 
+    projectData: ProjectData,
+    theme: { primary: string; secondary: string; accent: string }
+  ): Promise<void> {
     const slide = pptx.addSlide();
-
-    // Title
-    slide.addText('Key Metrics Dashboard', {
+    
+    slide.addText('METRICS DASHBOARD', {
       x: 0.5,
       y: 0.5,
       w: '90%',
       h: 0.8,
-      fontSize: 36,
-      color: '2D3748',
+      fontSize: 24,
+      color: theme.primary,
       bold: true
     });
 
-    // Create metrics cards
-    const metrics = [
-      { title: 'Completion Rate', value: `${this.analytics.completionRate}%`, color: '48BB78' },
-      { title: 'Team Efficiency', value: `${this.analytics.teamEfficiency}%`, color: '4299E1' },
-      { title: 'Quality Score', value: `${this.analytics.qualityScore}%`, color: '9F7AEA' },
-      { title: 'Timeline Adherence', value: `${this.analytics.timelineAdherence}%`, color: 'ED8936' }
+    // Real metrics from platform data
+    const realMetrics = [
+      {
+        name: 'Completion Rate',
+        value: `${this.analytics.completionRate}%`,
+        trend: this.analytics.velocityTrend,
+        color: this.analytics.completionRate >= 70 ? '10B981' : this.analytics.completionRate >= 50 ? 'F59E0B' : 'EF4444'
+      },
+      {
+        name: 'Team Efficiency',
+        value: `${this.analytics.teamEfficiency}%`,
+        trend: 'stable',
+        color: this.analytics.teamEfficiency >= 75 ? '10B981' : this.analytics.teamEfficiency >= 60 ? 'F59E0B' : 'EF4444'
+      },
+      {
+        name: 'Quality Score',
+        value: `${this.analytics.qualityScore}%`,
+        trend: 'increasing',
+        color: this.analytics.qualityScore >= 80 ? '10B981' : this.analytics.qualityScore >= 65 ? 'F59E0B' : 'EF4444'
+      },
+      {
+        name: 'Risk Level',
+        value: this.analytics.riskLevel.toUpperCase(),
+        trend: 'stable',
+        color: this.analytics.riskLevel === 'low' ? '10B981' : this.analytics.riskLevel === 'medium' ? 'F59E0B' : 'EF4444'
+      }
     ];
 
-    metrics.forEach((metric, index) => {
-      const x = 0.5 + (index % 2) * 4.75;
+    // Create metric cards
+    realMetrics.forEach((metric, index) => {
+      const x = 0.5 + (index % 2) * 4.7;
       const y = 1.5 + Math.floor(index / 2) * 1.8;
-
-      // Card background
-      slide.addShape(pptx.ShapeType.roundRect, {
-        x,
-        y,
-        w: 4,
-        h: 1.5,
-        fill: { color: 'FFFFFF' },
-        line: { color: 'E2E8F0', width: 2 }
-      });
-
-      // Metric title
-      slide.addText(metric.title, {
-        x: x + 0.3,
-        y: y + 0.2,
-        w: 3.4,
-        h: 0.4,
-        fontSize: 16,
-        color: '4A5568',
-        bold: true
-      });
 
       // Metric value
       slide.addText(metric.value, {
-        x: x + 0.3,
-        y: y + 0.7,
-        w: 3.4,
-        h: 0.6,
-        fontSize: 32,
-        color: metric.color,
-        bold: true
-      });
-    });
-
-    // Status distribution chart
-    slide.addText('Task Status Distribution', {
-      x: 0.5,
-      y: 5.2,
-      w: '90%',
-      h: 0.5,
-      fontSize: 20,
-      color: '2D3748',
-      bold: true
-    });
-
-    // Create simple status chart
-    const statusData = this.analytics.statusDistribution.slice(0, 4);
-    statusData.forEach((status, index) => {
-      const x = 1 + index * 2;
-      const barHeight = status.percentage / 100 * 1.5;
-
-      // Bar
-      slide.addShape(pptx.ShapeType.rect, {
         x,
-        y: 6.8 - barHeight,
-        w: 1.5,
-        h: barHeight,
-        fill: { color: ['4299E1', '48BB78', 'ED8936', 'E53E3E'][index] }
-      });
-
-      // Status label
-      slide.addText(status.status, {
-        x: x - 0.2,
-        y: 6.9,
-        w: 1.9,
-        h: 0.3,
-        fontSize: 12,
-        color: '2D3748',
+        y,
+        w: 4,
+        h: 0.8,
+        fontSize: 28,
+        color: metric.color,
+        bold: true,
         align: 'center'
       });
 
-      // Percentage
-      slide.addText(`${status.percentage}%`, {
-        x: x - 0.2,
-        y: 6.8 - barHeight - 0.4,
-        w: 1.9,
+      // Metric name
+      slide.addText(metric.name, {
+        x,
+        y: y + 0.8,
+        w: 4,
+        h: 0.5,
+        fontSize: 14,
+        color: '374151',
+        align: 'center'
+      });
+
+      // Trend indicator
+      slide.addText(`Trend: ${metric.trend}`, {
+        x,
+        y: y + 1.3,
+        w: 4,
         h: 0.3,
-        fontSize: 12,
-        color: '2D3748',
-        align: 'center',
-        bold: true
+        fontSize: 10,
+        color: '6B7280',
+        align: 'center'
       });
     });
+
+    // Additional platform-specific metrics
+    const platformMetrics = projectData.metrics || [];
+    if (platformMetrics.length > 0) {
+      slide.addText('PLATFORM METRICS', {
+        x: 0.5,
+        y: 5.5,
+        w: '90%',
+        h: 0.5,
+        fontSize: 16,
+        color: theme.primary,
+        bold: true
+      });
+
+      const metricText = platformMetrics.slice(0, 6).map(metric => 
+        `${metric.name}: ${metric.value}`
+      ).join(' | ');
+
+      slide.addText(metricText, {
+        x: 0.5,
+        y: 6,
+        w: '90%',
+        h: 1,
+        fontSize: 12,
+        color: '374151'
+      });
+    }
   }
 
   /**
-   * Create task analysis slide
+   * Create enhanced task analysis with real task data
    */
-  private async createTaskAnalysisSlide(pptx: PptxGenJS, projectData: ProjectData): Promise<void> {
+  private async createTaskAnalysisSlide(
+    pptx: PptxGenJS, 
+    projectData: ProjectData,
+    theme: { primary: string; secondary: string; accent: string }
+  ): Promise<void> {
     const slide = pptx.addSlide();
-
-    // Title
-    slide.addText('Task Analysis', {
+    
+    slide.addText('TASK ANALYSIS', {
       x: 0.5,
       y: 0.5,
       w: '90%',
       h: 0.8,
-      fontSize: 36,
-      color: '2D3748',
+      fontSize: 24,
+      color: theme.primary,
       bold: true
     });
 
-    // Task summary
     const tasks = projectData.tasks || [];
-    const completedTasks = tasks.filter(task => 
-      ['done', 'completed', 'closed', 'resolved'].includes(task.status.toLowerCase())
-    ).length;
-    const inProgressTasks = tasks.filter(task => 
-      ['in progress', 'working on it', 'doing'].includes(task.status.toLowerCase())
-    ).length;
-    const blockedTasks = tasks.filter(task => 
-      ['blocked', 'stuck', 'on hold'].includes(task.status.toLowerCase())
-    ).length;
+    const statusDistribution = this.calculateStatusDistribution(projectData);
 
-    const taskSummary = [
-      `Total Tasks: ${tasks.length}`,
-      `Completed: ${completedTasks} (${Math.round((completedTasks / tasks.length) * 100)}%)`,
-      `In Progress: ${inProgressTasks} (${Math.round((inProgressTasks / tasks.length) * 100)}%)`,
-      `Blocked: ${blockedTasks} (${Math.round((blockedTasks / tasks.length) * 100)}%)`,
-      `Velocity Trend: ${this.analytics.velocityTrend.toUpperCase()}`
-    ];
-
-    slide.addText(taskSummary.join('\n'), {
+    // Real task breakdown
+    slide.addText('TASK BREAKDOWN BY STATUS', {
       x: 0.5,
       y: 1.5,
       w: 4.5,
-      h: 2.5,
-      fontSize: 18,
-      color: '2D3748',
-      bullet: { type: 'bullet' }
-    });
-
-    // Recent tasks table
-    slide.addText('Recent Task Activity', {
-      x: 5.5,
-      y: 1.5,
-      w: 4,
       h: 0.5,
-      fontSize: 20,
-      color: '2D3748',
-      bold: true
-    });
-
-    // Create tasks table
-    const tableData: any[] = [
-      [
-        { text: 'Task', options: { bold: true, fontSize: 14, fill: { color: '4A5568' }, color: 'FFFFFF' } },
-        { text: 'Status', options: { bold: true, fontSize: 14, fill: { color: '4A5568' }, color: 'FFFFFF' } },
-        { text: 'Assignee', options: { bold: true, fontSize: 14, fill: { color: '4A5568' }, color: 'FFFFFF' } }
-      ]
-    ];
-
-    // Add recent tasks (last 5)
-    const recentTasks = tasks.slice(0, 5);
-    recentTasks.forEach(task => {
-      tableData.push([
-        { text: task.name.length > 25 ? task.name.substring(0, 25) + '...' : task.name, options: { fontSize: 12, color: '2D3748' } },
-        { text: task.status, options: { fontSize: 12, color: '2D3748' } },
-        { text: task.assignee || 'Unassigned', options: { fontSize: 12, color: '2D3748' } }
-      ]);
-    });
-
-    slide.addTable(tableData, {
-      x: 5.5,
-      y: 2.1,
-      w: 4,
-      colW: [2, 1, 1],
-      border: { pt: 1, color: 'E2E8F0' }
-    });
-
-    // Critical insights
-    slide.addText('Critical Insights', {
-      x: 0.5,
-      y: 4.5,
-      w: '90%',
-      h: 0.5,
-      fontSize: 20,
-      color: '2D3748',
-      bold: true
-    });
-
-    const insights = [
-      `${this.analytics.blockedItemsCount} tasks are currently blocked`,
-      `${this.analytics.overdueTasks} tasks may be overdue`,
-      `Team velocity is ${this.analytics.velocityTrend}`,
-      `Estimated completion: ${this.analytics.estimatedCompletion}`
-    ];
-
-    slide.addText(insights.join('\n'), {
-      x: 0.5,
-      y: 5.1,
-      w: '90%',
-      h: 2,
       fontSize: 16,
-      color: '4A5568',
-      bullet: { type: 'bullet' }
+      color: '374151',
+      bold: true
+    });
+
+    // Status breakdown with real data
+    if (statusDistribution.length > 0) {
+      const statusText = statusDistribution.map(item => 
+        `${item.status}: ${item.count} tasks (${item.percentage}%)`
+      ).join('\n');
+
+      slide.addText(statusText, {
+        x: 0.5,
+        y: 2,
+        w: 4.5,
+        h: 2.5,
+        fontSize: 12,
+        color: '374151',
+        bullet: { type: 'bullet' }
+      });
+    }
+
+    // Recent task activity
+    if (tasks.length > 0) {
+      slide.addText('RECENT TASK ACTIVITY', {
+        x: 5.5,
+        y: 1.5,
+        w: 4,
+        h: 0.5,
+        fontSize: 16,
+        color: '374151',
+        bold: true
+      });
+
+      // Get recently updated tasks
+      const recentTasks = tasks
+        .filter(task => task.updated)
+        .sort((a, b) => new Date(b.updated!).getTime() - new Date(a.updated!).getTime())
+        .slice(0, 5);
+
+      if (recentTasks.length > 0) {
+        const recentText = recentTasks.map(task => {
+          const updatedDate = new Date(task.updated!).toLocaleDateString();
+          return `${task.name} (${task.status}) - ${updatedDate}`;
+        }).join('\n');
+
+        slide.addText(recentText, {
+          x: 5.5,
+          y: 2,
+          w: 4,
+          h: 2.5,
+          fontSize: 10,
+          color: '374151',
+          bullet: { type: 'bullet' }
+        });
+      }
+    }
+
+    // Task assignment analysis
+    const assignmentAnalysis = this.analyzeTaskAssignments(projectData);
+    slide.addText('ASSIGNMENT ANALYSIS', {
+      x: 0.5,
+      y: 5,
+      w: '90%',
+      h: 0.5,
+      fontSize: 16,
+      color: '374151',
+      bold: true
+    });
+
+    slide.addText(assignmentAnalysis, {
+      x: 0.5,
+      y: 5.5,
+      w: '90%',
+      h: 1.5,
+      fontSize: 12,
+      color: '374151'
     });
   }
 
   /**
-   * Create team performance slide
+   * Create enhanced team performance slide with real team data
    */
-  private async createTeamPerformanceSlide(pptx: PptxGenJS, projectData: ProjectData): Promise<void> {
+  private async createTeamPerformanceSlide(
+    pptx: PptxGenJS, 
+    projectData: ProjectData,
+    theme: { primary: string; secondary: string; accent: string }
+  ): Promise<void> {
     const slide = pptx.addSlide();
-
-    // Title
-    slide.addText('Team Performance', {
+    
+    slide.addText('TEAM PERFORMANCE', {
       x: 0.5,
       y: 0.5,
       w: '90%',
       h: 0.8,
-      fontSize: 36,
-      color: '2D3748',
+      fontSize: 24,
+      color: theme.primary,
       bold: true
     });
 
-    // Team overview
-    const team = projectData.team || [];
-    const teamOverview = [
-      `Team Size: ${team.length} members`,
-      `Collaboration Score: ${this.analytics.collaborationScore}%`,
-      `Average Tasks per Member: ${Math.round((projectData.tasks?.length || 0) / Math.max(team.length, 1))}`
-    ];
+    const realTeamMembers = this.extractRealTeamMembers(projectData);
 
-    slide.addText(teamOverview.join('\n'), {
-      x: 0.5,
-      y: 1.5,
-      w: 4.5,
-      h: 1.5,
-      fontSize: 18,
-      color: '2D3748',
-      bullet: { type: 'bullet' }
-    });
+    if (realTeamMembers.length > 0) {
+      // Team performance table with real data - correct PptxGenJS format
+      const tableData: any[][] = [
+        [
+          { text: 'Team Member', options: { bold: true } },
+          { text: 'Role', options: { bold: true } },
+          { text: 'Tasks', options: { bold: true } },
+          { text: 'Utilization', options: { bold: true } },
+          { text: 'Performance', options: { bold: true } }
+        ]
+      ];
 
-    // Workload distribution
-    slide.addText('Workload Distribution', {
-      x: 5.5,
-      y: 1.5,
-      w: 4,
-      h: 0.5,
-      fontSize: 20,
-      color: '2D3748',
-      bold: true
-    });
+      realTeamMembers.forEach(member => {
+        const performance = this.calculateMemberPerformance(member, projectData);
+        tableData.push([
+          { text: member.name },
+          { text: member.role },
+          { text: member.taskCount.toString() },
+          { text: `${member.utilization}%` },
+          { text: performance }
+        ]);
+      });
 
-    // Team members table
-    const teamTableData: any[] = [
-      [
-        { text: 'Member', options: { bold: true, fontSize: 14, fill: { color: '4A5568' }, color: 'FFFFFF' } },
-        { text: 'Tasks', options: { bold: true, fontSize: 14, fill: { color: '4A5568' }, color: 'FFFFFF' } },
-        { text: 'Utilization', options: { bold: true, fontSize: 14, fill: { color: '4A5568' }, color: 'FFFFFF' } }
-      ]
-    ];
+      slide.addTable(tableData, {
+        x: 0.5,
+        y: 1.5,
+        w: 9,
+        colW: [2.5, 2, 1.2, 1.5, 1.8],
+        border: { pt: 1, color: 'E5E7EB' },
+        fill: { color: 'F9FAFB' }
+      });
 
-    this.analytics.workloadDistribution.forEach(member => {
-      teamTableData.push([
-        { text: member.member, options: { fontSize: 12, color: '2D3748' } },
-        { text: member.taskCount.toString(), options: { fontSize: 12, color: '2D3748' } },
-        { text: `${member.utilization}%`, options: { fontSize: 12, color: member.utilization > 100 ? 'E53E3E' : '2D3748' } }
-      ]);
-    });
+      // Team insights
+      slide.addText('TEAM INSIGHTS', {
+        x: 0.5,
+        y: 5,
+        w: '90%',
+        h: 0.5,
+        fontSize: 16,
+        color: '374151',
+        bold: true
+      });
 
-    slide.addTable(teamTableData, {
-      x: 5.5,
-      y: 2.1,
-      w: 4,
-      colW: [2, 1, 1],
-      border: { pt: 1, color: 'E2E8F0' }
-    });
-
-    // Team insights
-    slide.addText('Team Insights', {
-      x: 0.5,
-      y: 3.5,
-      w: '90%',
-      h: 0.5,
-      fontSize: 20,
-      color: '2D3748',
-      bold: true
-    });
-
-    const overutilized = this.analytics.workloadDistribution.filter(m => m.utilization > 120);
-    const underutilized = this.analytics.workloadDistribution.filter(m => m.utilization < 60);
-
-    const teamInsights = [
-      `Overall team efficiency: ${this.analytics.teamEfficiency}%`,
-      overutilized.length > 0 ? `${overutilized.length} members may be overutilized` : 'Good workload balance',
-      underutilized.length > 0 ? `${underutilized.length} members have capacity for more work` : 'Team fully engaged',
-      `Collaboration score indicates ${this.analytics.collaborationScore > 75 ? 'strong' : 'moderate'} teamwork`
-    ];
-
-    slide.addText(teamInsights.join('\n'), {
-      x: 0.5,
-      y: 4.1,
-      w: '90%',
-      h: 2.5,
-      fontSize: 16,
-      color: '4A5568',
-      bullet: { type: 'bullet' }
-    });
+      const insights = this.generateTeamInsights(realTeamMembers, projectData);
+      slide.addText(insights, {
+        x: 0.5,
+        y: 5.5,
+        w: '90%',
+        h: 1.5,
+        fontSize: 12,
+        color: '374151'
+      });
+    } else {
+      // No team data available
+      slide.addText('No team member data available from platform', {
+        x: 0.5,
+        y: 3,
+        w: '90%',
+        h: 1,
+        fontSize: 16,
+        color: '6B7280',
+        align: 'center'
+      });
+    }
   }
 
   /**
    * Create timeline analysis slide
    */
-  private async createTimelineAnalysisSlide(pptx: PptxGenJS, projectData: ProjectData): Promise<void> {
+  private async createTimelineAnalysisSlide(
+    pptx: PptxGenJS, 
+    projectData: ProjectData,
+    theme: { primary: string; secondary: string; accent: string }
+  ): Promise<void> {
     const slide = pptx.addSlide();
-
-    // Title
-    slide.addText('Timeline Analysis', {
+    
+    slide.addText('TIMELINE ANALYSIS', {
       x: 0.5,
       y: 0.5,
       w: '90%',
       h: 0.8,
-      fontSize: 36,
-      color: '2D3748',
+      fontSize: 24,
+      color: theme.primary,
       bold: true
     });
 
-    // Timeline metrics
-    const timelineMetrics = [
-      `Timeline Adherence: ${this.analytics.timelineAdherence}%`,
-      `Estimated Completion: ${this.analytics.estimatedCompletion}`,
-      `Velocity Trend: ${this.analytics.velocityTrend.toUpperCase()}`,
-      `Critical Path Items: ${this.analytics.criticalPath.length}`
-    ];
-
-    slide.addText(timelineMetrics.join('\n'), {
-      x: 0.5,
-      y: 1.5,
-      w: 4.5,
-      h: 2,
-      fontSize: 18,
-      color: '2D3748',
-      bullet: { type: 'bullet' }
-    });
-
-    // Sprint information (if available)
-    if (projectData.sprints && projectData.sprints.length > 0) {
-      slide.addText('Sprint Progress', {
-        x: 5.5,
-        y: 1.5,
-        w: 4,
-        h: 0.5,
-        fontSize: 20,
-        color: '2D3748',
-        bold: true
-      });
-
-      const sprintTableData: any[] = [
+    const sprints = projectData.sprints || [];
+    
+    if (sprints.length > 0) {
+      // Sprint performance table with real data - correct PptxGenJS format
+      const sprintTableData: any[][] = [
         [
-          { text: 'Sprint', options: { bold: true, fontSize: 14, fill: { color: '4A5568' }, color: 'FFFFFF' } },
-          { text: 'Progress', options: { bold: true, fontSize: 14, fill: { color: '4A5568' }, color: 'FFFFFF' } }
+          { text: 'Sprint', options: { bold: true } },
+          { text: 'Start Date', options: { bold: true } },
+          { text: 'End Date', options: { bold: true } },
+          { text: 'Completion', options: { bold: true } },
+          { text: 'Status', options: { bold: true } }
         ]
       ];
 
-      projectData.sprints.slice(0, 4).forEach(sprint => {
+      sprints.forEach(sprint => {
+        const completion = parseFloat(sprint.completed.replace('%', '')) || 0;
+        const status = completion >= 90 ? 'Excellent' : completion >= 70 ? 'Good' : completion >= 50 ? 'Fair' : 'Behind';
+
         sprintTableData.push([
-          { text: sprint.name, options: { fontSize: 12, color: '2D3748' } },
-          { text: sprint.completed, options: { fontSize: 12, color: '2D3748' } }
+          { text: sprint.name },
+          { text: new Date(sprint.startDate).toLocaleDateString() },
+          { text: new Date(sprint.endDate).toLocaleDateString() },
+          { text: sprint.completed },
+          { text: status }
         ]);
       });
 
       slide.addTable(sprintTableData, {
-        x: 5.5,
-        y: 2.1,
-        w: 4,
-        colW: [2.5, 1.5],
-        border: { pt: 1, color: 'E2E8F0' }
-      });
-    }
-
-    // Critical path
-    slide.addText('Critical Path', {
-      x: 0.5,
-      y: 4,
-      w: '90%',
-      h: 0.5,
-      fontSize: 20,
-      color: '2D3748',
-      bold: true
-    });
-
-    if (this.analytics.criticalPath.length > 0) {
-      slide.addText(this.analytics.criticalPath.join('\n'), {
         x: 0.5,
-        y: 4.6,
-        w: '90%',
-        h: 2,
-        fontSize: 16,
-        color: '4A5568',
-        bullet: { type: 'bullet' }
+        y: 1.5,
+        w: 9,
+        colW: [2, 1.8, 1.8, 1.5, 1.9],
+        border: { pt: 1, color: 'E5E7EB' },
+        fill: { color: 'F9FAFB' }
       });
-    } else {
-      slide.addText('No critical path items identified', {
+
+      // Timeline insights
+      slide.addText('TIMELINE INSIGHTS', {
         x: 0.5,
-        y: 4.6,
+        y: 4.5,
         w: '90%',
         h: 0.5,
         fontSize: 16,
-        color: '4A5568',
-        italic: true
+        color: '374151',
+        bold: true
+      });
+
+      const timelineInsights = this.generateTimelineInsights(sprints);
+      slide.addText(timelineInsights, {
+        x: 0.5,
+        y: 5,
+        w: '90%',
+        h: 2,
+        fontSize: 12,
+        color: '374151'
+      });
+    } else {
+      // Use task-based timeline analysis
+      const taskTimeline = this.analyzeTaskTimeline(projectData);
+      slide.addText(taskTimeline, {
+        x: 0.5,
+        y: 2,
+        w: '90%',
+        h: 4,
+        fontSize: 12,
+        color: '374151'
       });
     }
   }
@@ -697,325 +855,496 @@ export class StandardReportGenerator {
   /**
    * Create risk assessment slide
    */
-  private async createRiskAssessmentSlide(pptx: PptxGenJS, projectData: ProjectData): Promise<void> {
+  private async createRiskAssessmentSlide(
+    pptx: PptxGenJS, 
+    projectData: ProjectData,
+    theme: { primary: string; secondary: string; accent: string }
+  ): Promise<void> {
     const slide = pptx.addSlide();
-
-    // Title
-    slide.addText('Risk Assessment', {
+    
+    slide.addText('RISK ASSESSMENT', {
       x: 0.5,
       y: 0.5,
       w: '90%',
       h: 0.8,
-      fontSize: 36,
-      color: '2D3748',
+      fontSize: 24,
+      color: theme.primary,
       bold: true
     });
 
     // Risk level indicator
-    const riskColor = this.analytics.riskLevel === 'high' ? 'E53E3E' : 
-                     this.analytics.riskLevel === 'medium' ? 'ED8936' : '48BB78';
+    const riskColor = this.analytics.riskLevel === 'low' ? '10B981' : 
+                     this.analytics.riskLevel === 'medium' ? 'F59E0B' : 'EF4444';
 
-    slide.addShape(pptx.ShapeType.roundRect, {
+    slide.addText(`OVERALL RISK LEVEL: ${this.analytics.riskLevel.toUpperCase()}`, {
       x: 0.5,
       y: 1.5,
-      w: 4.5,
-      h: 1.5,
-      fill: { color: riskColor },
-      line: { color: riskColor, width: 0 }
-    });
-
-    slide.addText(`RISK LEVEL: ${this.analytics.riskLevel.toUpperCase()}`, {
-      x: 0.8,
-      y: 2,
-      w: 3.9,
-      h: 0.6,
-      fontSize: 24,
-      color: 'FFFFFF',
+      w: '90%',
+      h: 0.8,
+      fontSize: 20,
+      color: riskColor,
       bold: true,
       align: 'center'
     });
 
-    // Risk factors
-    slide.addText('Risk Factors', {
-      x: 5.5,
-      y: 1.5,
-      w: 4,
+    // Risk factors with real data
+    const riskFactors = [
+      `Blocked Items: ${this.analytics.blockedItemsCount} tasks requiring attention`,
+      `Overdue Tasks: ${this.analytics.overdueTasks} tasks past expected completion`,
+      `Timeline Adherence: ${this.analytics.timelineAdherence}% on schedule`,
+      `Team Utilization: ${this.getTeamUtilizationRisk(projectData)}`,
+      `Quality Concerns: ${this.getQualityRiskFactors()}`
+    ];
+
+    slide.addText('RISK FACTORS', {
+      x: 0.5,
+      y: 2.8,
+      w: '90%',
       h: 0.5,
-      fontSize: 20,
-      color: '2D3748',
+      fontSize: 16,
+      color: '374151',
       bold: true
     });
 
-    const riskFactors = [
-      `Blocked Tasks: ${this.analytics.blockedItemsCount}`,
-      `Overdue Items: ${this.analytics.overdueTasks}`,
-      `Timeline Adherence: ${this.analytics.timelineAdherence}%`,
-      `Quality Score: ${this.analytics.qualityScore}%`
-    ];
-
     slide.addText(riskFactors.join('\n'), {
-      x: 5.5,
-      y: 2.1,
-      w: 4,
-      h: 2,
-      fontSize: 16,
-      color: '4A5568',
+      x: 0.5,
+      y: 3.3,
+      w: '90%',
+      h: 2.5,
+      fontSize: 12,
+      color: '374151',
       bullet: { type: 'bullet' }
     });
 
     // Mitigation recommendations
-    slide.addText('Recommended Actions', {
+    slide.addText('RECOMMENDED ACTIONS', {
       x: 0.5,
-      y: 3.5,
+      y: 6,
       w: '90%',
       h: 0.5,
-      fontSize: 20,
-      color: '2D3748',
+      fontSize: 16,
+      color: '374151',
       bold: true
     });
 
-    slide.addText(this.analytics.recommendedActions.join('\n'), {
+    const recommendations = this.generateRiskMitigationActions();
+    slide.addText(recommendations, {
       x: 0.5,
-      y: 4.1,
+      y: 6.5,
       w: '90%',
-      h: 2.5,
-      fontSize: 16,
-      color: '4A5568',
-      bullet: { type: 'bullet' }
+      h: 1,
+      fontSize: 12,
+      color: '374151'
     });
   }
 
   /**
    * Create progress summary slide
    */
-  private async createProgressSummarySlide(pptx: PptxGenJS, projectData: ProjectData): Promise<void> {
+  private async createProgressSummarySlide(
+    pptx: PptxGenJS, 
+    projectData: ProjectData,
+    theme: { primary: string; secondary: string; accent: string }
+  ): Promise<void> {
     const slide = pptx.addSlide();
-
-    // Title
-    slide.addText('Progress Summary', {
+    
+    slide.addText('PROGRESS SUMMARY', {
       x: 0.5,
       y: 0.5,
       w: '90%',
       h: 0.8,
-      fontSize: 36,
-      color: '2D3748',
+      fontSize: 24,
+      color: theme.primary,
       bold: true
     });
 
-    // Progress overview
-    const progressItems = [
-      `Project completion rate: ${this.analytics.completionRate}%`,
-      `Team efficiency score: ${this.analytics.teamEfficiency}%`,
-      `Quality assessment: ${this.analytics.qualityScore}% (${this.analytics.qualityScore > 80 ? 'Excellent' : this.analytics.qualityScore > 60 ? 'Good' : 'Needs Improvement'})`,
-      `Risk level: ${this.analytics.riskLevel} (${this.analytics.riskLevel === 'low' ? 'On track' : this.analytics.riskLevel === 'medium' ? 'Monitor closely' : 'Immediate attention required'})`,
-      `Timeline status: ${this.analytics.timelineAdherence}% adherence`
-    ];
-
-    slide.addText(progressItems.join('\n'), {
+    // Key achievements with real data
+    const achievements = this.generateKeyAchievements(projectData);
+    slide.addText('KEY ACHIEVEMENTS', {
       x: 0.5,
       y: 1.5,
-      w: '90%',
-      h: 3,
-      fontSize: 18,
-      color: '2D3748',
-      bullet: { type: 'bullet' }
-    });
-
-    // Key achievements
-    slide.addText('Key Achievements', {
-      x: 0.5,
-      y: 4.8,
-      w: '90%',
+      w: 4.5,
       h: 0.5,
-      fontSize: 20,
-      color: '2D3748',
+      fontSize: 16,
+      color: '374151',
       bold: true
     });
 
-    const achievements = [
-      `${Math.floor((projectData.tasks?.length || 0) * (this.analytics.completionRate / 100))} tasks completed`,
-      `${this.analytics.workloadDistribution.filter(m => m.utilization > 80).length} team members actively engaged`,
-      `${this.analytics.velocityTrend === 'increasing' ? 'Improving' : this.analytics.velocityTrend === 'stable' ? 'Consistent' : 'Declining'} team velocity`,
-      `${this.analytics.collaborationScore > 75 ? 'Strong' : 'Moderate'} team collaboration`
-    ];
-
-    slide.addText(achievements.join('\n'), {
+    slide.addText(achievements, {
       x: 0.5,
-      y: 5.4,
+      y: 2,
+      w: 4.5,
+      h: 2.5,
+      fontSize: 12,
+      color: '374151',
+      bullet: { type: 'bullet' }
+    });
+
+    // Current challenges
+    const challenges = this.generateCurrentChallenges(projectData);
+    slide.addText('CURRENT CHALLENGES', {
+      x: 5.5,
+      y: 1.5,
+      w: 4,
+      h: 0.5,
+      fontSize: 16,
+      color: 'EF4444',
+      bold: true
+    });
+
+    slide.addText(challenges, {
+      x: 5.5,
+      y: 2,
+      w: 4,
+      h: 2.5,
+      fontSize: 12,
+      color: '374151',
+      bullet: { type: 'bullet' }
+    });
+
+    // Progress metrics summary
+    slide.addText('PROGRESS METRICS', {
+      x: 0.5,
+      y: 5,
+      w: '90%',
+      h: 0.5,
+      fontSize: 16,
+      color: '374151',
+      bold: true
+    });
+
+    const progressMetrics = [
+      `Overall Completion: ${this.analytics.completionRate}%`,
+      `Team Performance: ${this.analytics.teamEfficiency}%`,
+      `Quality Standard: ${this.analytics.qualityScore}%`,
+      `Velocity Trend: ${this.analytics.velocityTrend}`,
+      `Collaboration Score: ${this.analytics.collaborationScore}%`
+    ].join(' | ');
+
+    slide.addText(progressMetrics, {
+      x: 0.5,
+      y: 5.5,
       w: '90%',
       h: 1.5,
-      fontSize: 16,
-      color: '4A5568',
-      bullet: { type: 'bullet' }
+      fontSize: 12,
+      color: '374151'
     });
   }
 
   /**
    * Create next steps slide
    */
-  private async createNextStepsSlide(pptx: PptxGenJS, projectData: ProjectData): Promise<void> {
+  private async createNextStepsSlide(
+    pptx: PptxGenJS, 
+    projectData: ProjectData,
+    theme: { primary: string; secondary: string; accent: string }
+  ): Promise<void> {
     const slide = pptx.addSlide();
-
-    // Title
-    slide.addText('Next Steps & Recommendations', {
+    
+    slide.addText('NEXT STEPS & RECOMMENDATIONS', {
       x: 0.5,
       y: 0.5,
       w: '90%',
       h: 0.8,
-      fontSize: 36,
-      color: '2D3748',
+      fontSize: 24,
+      color: theme.primary,
       bold: true
     });
 
     // Immediate actions
-    slide.addText('Immediate Actions (Next 1-2 weeks)', {
+    const immediateActions = this.generateImmediateActions(projectData);
+    slide.addText('IMMEDIATE ACTIONS (Next 1-2 weeks)', {
       x: 0.5,
       y: 1.5,
       w: '90%',
       h: 0.5,
-      fontSize: 20,
-      color: '2D3748',
+      fontSize: 16,
+      color: 'EF4444',
       bold: true
     });
 
-    const immediateActions = this.analytics.recommendedActions.slice(0, 3);
-    slide.addText(immediateActions.join('\n'), {
+    slide.addText(immediateActions, {
       x: 0.5,
-      y: 2.1,
+      y: 2,
       w: '90%',
       h: 1.5,
-      fontSize: 16,
-      color: '4A5568',
+      fontSize: 12,
+      color: '374151',
       bullet: { type: 'bullet' }
     });
 
-    // Medium-term goals
-    slide.addText('Medium-term Goals (Next month)', {
+    // Medium-term actions
+    const mediumTermActions = this.generateMediumTermActions(projectData);
+    slide.addText('MEDIUM-TERM ACTIONS (Next 2-4 weeks)', {
       x: 0.5,
-      y: 4,
+      y: 3.8,
       w: '90%',
       h: 0.5,
-      fontSize: 20,
-      color: '2D3748',
+      fontSize: 16,
+      color: 'F59E0B',
       bold: true
     });
 
-    const mediumTermGoals = [
-      `Target completion rate: ${Math.min(this.analytics.completionRate + 20, 100)}%`,
-      `Improve team efficiency to ${Math.min(this.analytics.teamEfficiency + 15, 100)}%`,
-      `Reduce risk level from ${this.analytics.riskLevel} to ${this.analytics.riskLevel === 'high' ? 'medium' : 'low'}`,
-      'Enhance team collaboration and communication'
-    ];
-
-    slide.addText(mediumTermGoals.join('\n'), {
+    slide.addText(mediumTermActions, {
       x: 0.5,
-      y: 4.6,
+      y: 4.3,
       w: '90%',
-      h: 2,
-      fontSize: 16,
-      color: '4A5568',
+      h: 1.5,
+      fontSize: 12,
+      color: '374151',
       bullet: { type: 'bullet' }
     });
 
-    // Contact information
-    slide.addText('Report Generated by PRISM Analytics | For questions, contact your project administrator', {
+    // Strategic recommendations
+    const strategicRecommendations = this.generateStrategicRecommendations(projectData);
+    slide.addText('STRATEGIC RECOMMENDATIONS', {
       x: 0.5,
-      y: 6.8,
+      y: 6,
       w: '90%',
-      h: 0.3,
+      h: 0.5,
+      fontSize: 16,
+      color: theme.primary,
+      bold: true
+    });
+
+    slide.addText(strategicRecommendations, {
+      x: 0.5,
+      y: 6.5,
+      w: '90%',
+      h: 1,
       fontSize: 12,
-      color: '718096',
-      align: 'center',
-      italic: true
+      color: '374151'
     });
   }
 
-  /**
-   * Create sprint analysis slide (if sprints data available)
-   */
-  private async createSprintAnalysisSlide(pptx: PptxGenJS, projectData: ProjectData): Promise<void> {
-    const slide = pptx.addSlide();
+  // Helper methods for data analysis and insights
 
-    // Title
-    slide.addText('Sprint Analysis', {
-      x: 0.5,
-      y: 0.5,
-      w: '90%',
-      h: 0.8,
-      fontSize: 36,
-      color: '2D3748',
-      bold: true
-    });
+  private getProjectHealth(): string {
+    const score = (this.analytics.completionRate + this.analytics.teamEfficiency + this.analytics.qualityScore) / 3;
+    return score >= 80 ? 'Excellent' : score >= 65 ? 'Good' : score >= 50 ? 'Fair' : 'Needs Attention';
+  }
 
-    const sprints = projectData.sprints || [];
+  private analyzeTaskAssignments(projectData: ProjectData): string {
+    const tasks = projectData.tasks || [];
+    const assignedTasks = tasks.filter(task => task.assignee && task.assignee !== 'Unassigned').length;
+    const unassignedTasks = tasks.length - assignedTasks;
+    const assignmentRate = tasks.length > 0 ? Math.round((assignedTasks / tasks.length) * 100) : 0;
 
-    // Sprint performance
-    slide.addText('Sprint Performance', {
-      x: 0.5,
-      y: 1.5,
-      w: '90%',
-      h: 0.5,
-      fontSize: 20,
-      color: '2D3748',
-      bold: true
-    });
+    return `Assignment Rate: ${assignmentRate}% | Assigned: ${assignedTasks} tasks | Unassigned: ${unassignedTasks} tasks | ${assignmentRate >= 80 ? 'Good assignment coverage' : 'Consider assigning more tasks to team members'}`;
+  }
 
-    const sprintTableData: any[] = [
-      [
-        { text: 'Sprint', options: { bold: true, fontSize: 14, fill: { color: '4A5568' }, color: 'FFFFFF' } },
-        { text: 'Start Date', options: { bold: true, fontSize: 14, fill: { color: '4A5568' }, color: 'FFFFFF' } },
-        { text: 'End Date', options: { bold: true, fontSize: 14, fill: { color: '4A5568' }, color: 'FFFFFF' } },
-        { text: 'Completion', options: { bold: true, fontSize: 14, fill: { color: '4A5568' }, color: 'FFFFFF' } }
-      ]
+  private calculateMemberPerformance(member: { name: string; role: string; taskCount: number; utilization: number }, projectData: ProjectData): string {
+    const tasks = projectData.tasks || [];
+    const memberTasks = tasks.filter(task => task.assignee === member.name);
+    const completedTasks = memberTasks.filter(task => ['done', 'completed', 'closed'].includes(task.status.toLowerCase())).length;
+    const completionRate = memberTasks.length > 0 ? Math.round((completedTasks / memberTasks.length) * 100) : 0;
+
+    return completionRate >= 80 ? 'High' : completionRate >= 60 ? 'Medium' : 'Low';
+  }
+
+  private generateTeamInsights(teamMembers: Array<{ name: string; role: string; taskCount: number; utilization: number }>, projectData: ProjectData): string {
+    const insights = [];
+    
+    const highPerformers = teamMembers.filter(m => m.utilization >= 80).length;
+    const underutilized = teamMembers.filter(m => m.utilization < 40).length;
+    
+    if (highPerformers > 0) {
+      insights.push(`${highPerformers} team members showing high productivity`);
+    }
+    
+    if (underutilized > 0) {
+      insights.push(`${underutilized} team members may be underutilized`);
+    }
+    
+    const topPerformer = teamMembers[0];
+    if (topPerformer) {
+      insights.push(`Top contributor: ${topPerformer.name} with ${topPerformer.taskCount} tasks`);
+    }
+
+    return insights.join('. ') || 'Team performance analysis in progress.';
+  }
+
+  private generateTimelineInsights(sprints: Array<{ name: string; startDate: string; endDate: string; completed: string }>): string {
+    const insights = [];
+    const completionRates = sprints.map(s => parseFloat(s.completed.replace('%', '')) || 0);
+    const avgCompletion = Math.round(completionRates.reduce((a, b) => a + b, 0) / completionRates.length);
+    
+    insights.push(`Average sprint completion: ${avgCompletion}%`);
+    
+    const improving = completionRates.length >= 2 && completionRates[completionRates.length - 1] > completionRates[completionRates.length - 2];
+    insights.push(`Velocity trend: ${improving ? 'Improving' : 'Stable'}`);
+    
+    const lowPerformingSprints = completionRates.filter(rate => rate < 70).length;
+    if (lowPerformingSprints > 0) {
+      insights.push(`${lowPerformingSprints} sprints below 70% completion`);
+    }
+
+    return insights.join('. ');
+  }
+
+  private analyzeTaskTimeline(projectData: ProjectData): string {
+    const tasks = projectData.tasks || [];
+    const completedTasks = tasks.filter(task => ['done', 'completed', 'closed'].includes(task.status.toLowerCase())).length;
+    const inProgressTasks = tasks.filter(task => ['in progress', 'progress', 'working on it'].includes(task.status.toLowerCase())).length;
+    const blockedTasks = tasks.filter(task => ['blocked', 'stuck', 'on hold'].includes(task.status.toLowerCase())).length;
+
+    const analysis = [
+      'TASK TIMELINE ANALYSIS',
+      '',
+      `Total Tasks: ${tasks.length}`,
+      `Completed: ${completedTasks} (${Math.round((completedTasks / tasks.length) * 100)}%)`,
+      `In Progress: ${inProgressTasks} (${Math.round((inProgressTasks / tasks.length) * 100)}%)`,
+      `Blocked: ${blockedTasks} (${Math.round((blockedTasks / tasks.length) * 100)}%)`,
+      '',
+      'Recent activity shows ' + (this.analytics.velocityTrend === 'increasing' ? 'accelerating' : this.analytics.velocityTrend === 'decreasing' ? 'declining' : 'stable') + ' progress.',
+      'Timeline adherence: ' + this.analytics.timelineAdherence + '%'
     ];
 
-    sprints.forEach(sprint => {
-      sprintTableData.push([
-        { text: sprint.name, options: { fontSize: 12, color: '2D3748' } },
-        { text: new Date(sprint.startDate).toLocaleDateString(), options: { fontSize: 12, color: '2D3748' } },
-        { text: new Date(sprint.endDate).toLocaleDateString(), options: { fontSize: 12, color: '2D3748' } },
-        { text: sprint.completed, options: { fontSize: 12, color: '2D3748' } }
-      ]);
-    });
+    return analysis.join('\n');
+  }
 
-    slide.addTable(sprintTableData, {
-      x: 0.5,
-      y: 2.1,
-      w: 9,
-      colW: [2.5, 2, 2, 2],
-      border: { pt: 1, color: 'E2E8F0' }
-    });
+  private getTeamUtilizationRisk(projectData: ProjectData): string {
+    const teamMembers = this.extractRealTeamMembers(projectData);
+    const overutilized = teamMembers.filter(m => m.utilization > 90).length;
+    const underutilized = teamMembers.filter(m => m.utilization < 30).length;
 
-    // Sprint insights
-    const avgCompletion = sprints.reduce((sum, sprint) => {
-      return sum + (parseFloat(sprint.completed.replace('%', '')) || 0);
-    }, 0) / sprints.length;
+    if (overutilized > 0 && underutilized > 0) {
+      return 'Unbalanced workload distribution';
+    } else if (overutilized > 0) {
+      return 'Some team members overutilized';
+    } else if (underutilized > 0) {
+      return 'Some team members underutilized';
+    } else {
+      return 'Balanced team utilization';
+    }
+  }
 
-    const sprintInsights = [
-      `Total sprints: ${sprints.length}`,
-      `Average completion rate: ${Math.round(avgCompletion)}%`,
-      `Sprint velocity trend: ${this.analytics.velocityTrend}`,
-      `Most recent sprint: ${sprints[sprints.length - 1]?.completed || 'N/A'} complete`
-    ];
+  private getQualityRiskFactors(): string {
+    return this.analytics.qualityScore < 70 ? 'Quality metrics below standards' : 'Quality metrics within acceptable range';
+  }
 
-    slide.addText('Sprint Insights', {
-      x: 0.5,
-      y: 5,
-      w: '90%',
-      h: 0.5,
-      fontSize: 20,
-      color: '2D3748',
-      bold: true
-    });
+  private generateRiskMitigationActions(): string {
+    const actions = [];
+    
+    if (this.analytics.blockedItemsCount > 0) {
+      actions.push('Address blocked items immediately');
+    }
+    
+    if (this.analytics.timelineAdherence < 80) {
+      actions.push('Review and adjust project timeline');
+    }
+    
+    if (this.analytics.qualityScore < 70) {
+      actions.push('Implement quality improvement measures');
+    }
+    
+    if (this.analytics.teamEfficiency < 70) {
+      actions.push('Optimize team workflow and processes');
+    }
 
-    slide.addText(sprintInsights.join('\n'), {
-      x: 0.5,
-      y: 5.6,
-      w: '90%',
-      h: 1.5,
-      fontSize: 16,
-      color: '4A5568',
-      bullet: { type: 'bullet' }
-    });
+    return actions.length > 0 ? actions.join(', ') : 'Continue current risk management practices';
+  }
+
+  private generateKeyAchievements(projectData: ProjectData): string {
+    const achievements = [];
+    
+    if (this.analytics.completionRate >= 70) {
+      achievements.push(`Strong completion rate of ${this.analytics.completionRate}%`);
+    }
+    
+    if (this.analytics.qualityScore >= 80) {
+      achievements.push(`High quality standards maintained (${this.analytics.qualityScore}%)`);
+    }
+    
+    if (this.analytics.teamEfficiency >= 75) {
+      achievements.push(`Excellent team efficiency (${this.analytics.teamEfficiency}%)`);
+    }
+    
+    const completedTasks = projectData.tasks?.filter(task => 
+      ['done', 'completed', 'closed'].includes(task.status.toLowerCase())
+    ).length || 0;
+    
+    if (completedTasks > 0) {
+      achievements.push(`${completedTasks} tasks successfully completed`);
+    }
+
+    return achievements.length > 0 ? achievements.join('\n') : 'Project showing steady progress across all metrics';
+  }
+
+  private generateCurrentChallenges(projectData: ProjectData): string {
+    const challenges = [];
+    
+    if (this.analytics.blockedItemsCount > 0) {
+      challenges.push(`${this.analytics.blockedItemsCount} tasks currently blocked`);
+    }
+    
+    if (this.analytics.riskLevel === 'high') {
+      challenges.push('High risk level requiring immediate attention');
+    }
+    
+    if (this.analytics.timelineAdherence < 70) {
+      challenges.push('Timeline adherence below target');
+    }
+    
+    if (this.analytics.teamEfficiency < 60) {
+      challenges.push('Team efficiency needs improvement');
+    }
+
+    return challenges.length > 0 ? challenges.join('\n') : 'No major challenges identified';
+  }
+
+  private generateImmediateActions(projectData: ProjectData): string {
+    const actions = [];
+    
+    if (this.analytics.blockedItemsCount > 0) {
+      actions.push('Unblock pending tasks and resolve dependencies');
+    }
+    
+    if (this.analytics.overdueTasks > 0) {
+      actions.push('Address overdue tasks and update timelines');
+    }
+    
+    const unassignedTasks = projectData.tasks?.filter(task => !task.assignee || task.assignee === 'Unassigned').length || 0;
+    if (unassignedTasks > 0) {
+      actions.push(`Assign ${unassignedTasks} unassigned tasks to team members`);
+    }
+
+    return actions.length > 0 ? actions.join('\n') : 'Continue with current sprint activities';
+  }
+
+  private generateMediumTermActions(projectData: ProjectData): string {
+    const actions = [];
+    
+    if (this.analytics.qualityScore < 80) {
+      actions.push('Implement quality improvement processes');
+    }
+    
+    if (this.analytics.teamEfficiency < 75) {
+      actions.push('Review and optimize team workflows');
+    }
+    
+    if (this.analytics.collaborationScore < 70) {
+      actions.push('Enhance team collaboration and communication');
+    }
+
+    return actions.length > 0 ? actions.join('\n') : 'Focus on process optimization and team development';
+  }
+
+  private generateStrategicRecommendations(projectData: ProjectData): string {
+    const recommendations = [];
+    
+    if (this.analytics.velocityTrend === 'decreasing') {
+      recommendations.push('Investigate factors causing velocity decline');
+    }
+    
+    if (projectData.platform === 'jira' && this.analytics.completionRate > 85) {
+      recommendations.push('Consider implementing advanced Jira automation');
+    }
+    
+    if (projectData.platform === 'monday' && this.analytics.teamEfficiency > 80) {
+      recommendations.push('Leverage Monday.com advanced analytics for insights');
+    }
+
+    return recommendations.length > 0 ? recommendations.join('. ') : 'Maintain current strategic direction with continuous improvement focus.';
   }
 }

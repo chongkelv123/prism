@@ -166,37 +166,41 @@ export class PlatformDataService {
       // Transform Jira data to standard format
       return {
         id: jiraData.id || config.projectId,
-        name: jiraData.name || 'Unnamed Jira Project',
+        name: jiraData.name || jiraData.key || 'Unnamed Jira Project',
         description: jiraData.description || '',
         status: jiraData.status || 'active',
         platform: 'jira',
         metrics: [
           ...(jiraData.metrics || []),
           {
-            name: 'Project Type',
-            value: jiraData.projectType || 'Standard',
+            name: 'Project Key',
+            value: jiraData.key || config.projectId,
             type: 'text'
           },
           {
-            name: 'Project Key',
-            value: jiraData.projectKey || config.projectId,
-            type: 'text'
+            name: 'Issue Count',
+            value: jiraData.issueCount || 0,
+            type: 'number'
+          },
+          {
+            name: 'Open Issues',
+            value: jiraData.openIssues || 0,
+            type: 'number'
           }
         ],
-        tasks: (jiraData.tasks || []).map((task: any, index: number) => ({
-          id: task.id || `task_${index}`,
-          name: task.name || task.summary || 'Unnamed Task',
-          status: task.status || 'Unknown',
-          assignee: task.assignee || 'Unassigned',
-          created: task.created || task.createdAt,
-          updated: task.updated || task.updatedAt
+        tasks: (jiraData.issues || jiraData.tasks || []).map((issue: any, index: number) => ({
+          id: issue.id || issue.key || `issue_${index}`,
+          name: issue.summary || issue.name || 'Unnamed Issue',
+          status: issue.status?.name || issue.status || 'Unknown',
+          assignee: issue.assignee?.displayName || issue.assignee || 'Unassigned',
+          created: issue.created,
+          updated: issue.updated
         })),
         team: jiraData.team || [],
         sprints: jiraData.sprints || [],
-        lastUpdated: new Date().toISOString(),
-        projectKey: jiraData.projectKey,
-        projectType: jiraData.projectType,
-        lead: jiraData.lead
+        projectKey: jiraData.key,
+        issueCount: jiraData.issueCount,
+        lastUpdated: new Date().toISOString()
       };
 
     } catch (error: any) {
@@ -253,13 +257,13 @@ export class PlatformDataService {
             type: 'text'
           }
         ],
-        tasks: (mondayData.tasks || []).map((task: any, index: number) => ({
-          id: task.id || `item_${index}`,
-          name: task.name || task.title || 'Unnamed Item',
-          status: task.status || 'Unknown',
-          assignee: task.assignee || 'Unassigned',
-          created: task.created || task.created_at,
-          updated: task.updated || task.updated_at
+        tasks: (mondayData.items || mondayData.tasks || []).map((item: any, index: number) => ({
+          id: item.id || `item_${index}`,
+          name: item.name || item.title || 'Unnamed Item',
+          status: item.status || 'Unknown',
+          assignee: item.assignee || 'Unassigned',
+          created: item.created || item.created_at,
+          updated: item.updated || item.updated_at
         })),
         team: mondayData.team || [],
         groups: mondayData.groups || [],
@@ -310,17 +314,32 @@ export class PlatformDataService {
         description: trofosData.description || '',
         status: trofosData.status || 'active',
         platform: 'trofos',
-        metrics: trofosData.metrics || [],
-        tasks: (trofosData.tasks || []).map((task: any, index: number) => ({
-          id: task.id || `task_${index}`,
-          name: task.name || 'Unnamed Task',
-          status: task.status || 'Unknown',
-          assignee: task.assignee || 'Unassigned',
-          created: task.created,
-          updated: task.updated
+        metrics: [
+          ...(trofosData.metrics || []),
+          {
+            name: 'Sprint Count',
+            value: trofosData.sprintCount || 0,
+            type: 'number'
+          },
+          {
+            name: 'Total Story Points',
+            value: trofosData.totalStoryPoints || 0,
+            type: 'number'
+          }
+        ],
+        tasks: (trofosData.backlogItems || trofosData.tasks || []).map((item: any, index: number) => ({
+          id: item.id || `item_${index}`,
+          name: item.title || item.name || 'Unnamed Item',
+          status: item.status || 'Unknown',
+          assignee: item.assignee || 'Unassigned',
+          created: item.createdAt || item.created,
+          updated: item.updatedAt || item.updated
         })),
         team: trofosData.team || [],
         sprints: trofosData.sprints || [],
+        backlog: trofosData.backlogItems || [],
+        sprintCount: trofosData.sprintCount,
+        totalStoryPoints: trofosData.totalStoryPoints,
         lastUpdated: new Date().toISOString()
       };
 
@@ -399,84 +418,29 @@ export class PlatformDataService {
       platform: config.platform.toLowerCase(),
       metrics: [
         { name: 'Status', value: 'Data Unavailable', type: 'text' },
-        { name: 'Connection', value: 'Failed', type: 'text' }
+        { name: 'Connection', value: 'Failed', type: 'text' },
+        { name: 'Last Attempt', value: new Date().toISOString(), type: 'datetime' }
       ],
       tasks: [
         {
           id: 'fallback_1',
-          name: 'Unable to fetch real tasks from platform',
-          status: 'Data Unavailable',
-          assignee: 'Unknown'
+          name: 'Data fetch failed - using sample data',
+          status: 'Error',
+          assignee: 'System',
+          created: new Date().toISOString(),
+          updated: new Date().toISOString()
         }
       ],
       team: [
         {
-          id: 'fallback_user',
-          name: 'Platform data unavailable',
-          role: 'Unknown'
+          id: 'fallback_member',
+          name: 'System Admin',
+          role: 'Administrator',
+          email: 'admin@system.local'
         }
       ],
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
+      fallbackData: true
     };
   }
-
-  /**
-   * Test connection to platform integrations service
-   */
-  async testConnection(): Promise<{ success: boolean; message: string }> {
-    try {
-      const response = await this.httpClient.get('/api/platform-integrations/health');
-      
-      if (response.status === 200) {
-        return {
-          success: true,
-          message: 'Successfully connected to platform integrations service'
-        };
-      } else {
-        return {
-          success: false,
-          message: `Platform integrations service returned status: ${response.status}`
-        };
-      }
-    } catch (error: any) {
-      return {
-        success: false,
-        message: `Failed to connect to platform integrations service: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * Get available projects for a connection
-   */
-  async getConnectionProjects(connectionId: string): Promise<ProjectData[]> {
-    try {
-      logger.info('Fetching projects for connection', { connectionId });
-
-      const response: AxiosResponse = await this.httpClient.get(
-        `/api/connections/${connectionId}/projects`
-      );
-
-      if (!response.data || !Array.isArray(response.data)) {
-        logger.warn('No projects found for connection', { connectionId });
-        return [];
-      }
-
-      // Transform and validate each project
-      return response.data
-        .filter(project => project && project.id && project.name)
-        .map(project => this.validateAndSanitizeProjectData(project, project.platform || 'unknown'));
-
-    } catch (error: any) {
-      logger.error('Error fetching connection projects:', {
-        connectionId,
-        error: error.message
-      });
-      
-      // Return empty array instead of throwing to prevent breaking the UI
-      return [];
-    }
-  }
 }
-
-export default PlatformDataService;

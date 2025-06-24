@@ -1,5 +1,5 @@
 // frontend/src/services/connection.service.ts - FIXED ERROR HANDLING
-import apiClient from './api.service';
+import { apiClient } from './api.service';
 
 export interface Connection {
   id: string;

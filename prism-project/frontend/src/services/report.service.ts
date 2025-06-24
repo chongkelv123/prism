@@ -1,6 +1,5 @@
-// src/services/report.service.ts
-import apiClient from './api.service';
-import pptxgen from 'pptxgenjs';
+// frontend/src/services/report.service.ts - FINAL FIXED VERSION
+import { apiClient } from './api.service'; // ← FIXED: Use named import
 
 export interface ReportGenerationRequest {
   platformId: string;
@@ -20,102 +19,163 @@ export interface Report {
   configuration: Record<string, any>;
 }
 
-// Mock data for platform logos
-const platformLogos = {
-  monday: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB4PSI2IiB5PSI2IiB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjZmY3Mjc1IiByeD0iMiIvPjxyZWN0IHg9IjE0IiB5PSI2IiB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjMDBkMGQ5IiByeD0iMiIvPjxyZWN0IHg9IjYiIHk9IjE0IiB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjZjRiZTQ4IiByeD0iMiIvPjxyZWN0IHg9IjE0IiB5PSIxNCIgd2lkdGg9IjQiIGhlaWdodD0iNCIgZmlsbD0iIzAwYjZkMCIgcng9IjIiLz48L3N2Zz4=',
-  jira: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMTEuNTcxIDEyLjU3Nkw4LjQ2OSA5LjQ3MkM3LjM2NSA4LjM2OCA3LjM2NSA2LjU3OSA4LjQ2OSA1LjQ3NUwxNC41MjcgMTEuNTMzQzE1LjYzMSAxMi42MzcgMTUuNjMxIDE0LjQyNSAxNC41MjcgMTUuNTNMOC40NjkgMjEuNTg4QzcuMzY1IDIwLjQ4NCA3LjM2NSAxOC42OTUgOC40NjkgMTcuNTkxTDExLjU3MSAxNC40ODcgMTEuNTcxIDEyLjU3NnoiIGZpbGw9IiMyNjg0RkYiLz48L3N2Zz4=',
-  trofos: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMTIgMkM2LjQ4IDIgMiA2LjQ4IDIgMTJzNC40OCAxMCAxMCAxMCAxMC00LjQ4IDEwLTEwUzE3LjUyIDIgMTIgMnptLTIgMTVsLTUtNSAxLjQxLTEuNDFMMTAgMTQuMTdsNy41OS03LjU5TDE5IDhsLTkgOXoiIGZpbGw9IiM1MWExZTQiLz48L3N2Zz4='
-};
-
 const reportService = {
   // Get all reports
   async getReports(): Promise<Report[]> {
     try {
-      // Try to call the actual API if it exists
       const response = await apiClient.get('/api/reports');
       return response.data;
     } catch (error) {
-      // Return mock data if API is not available
       console.log('Using mock data for reports');
-      return [
-        {
-          id: 'report-1',
-          title: 'Sprint Review - May 2025',
-          status: 'completed',
-          createdAt: '2025-05-02T10:30:00Z',
-          completedAt: '2025-05-02T10:35:00Z',
-          platform: 'monday',
-          template: 'sprint-review',
-          configuration: { includeMetrics: true }
-        },
-        {
-          id: 'report-2',
-          title: 'Project Status Report',
-          status: 'completed',
-          createdAt: '2025-05-01T14:20:00Z',
-          completedAt: '2025-05-01T14:25:00Z',
-          platform: 'jira',
-          template: 'status-report',
-          configuration: { includeTimeline: true }
-        }
-      ];
+      return [];
     }
   },
 
   // Generate a new report
   async generateReport(data: ReportGenerationRequest): Promise<Report> {
     try {
-      // Use the actual API endpoint
-      const response = await apiClient.post('/api/reports/generate', data);
-      return response.data;
-    } catch (error) {
-      console.error('Error generating report:', error);
-      // Fall back to mock data if API call fails
-      return {
-        id: `report-${Date.now()}`,
-        title: data.configuration?.title || 'New Report',
-        status: 'processing',
-        createdAt: new Date().toISOString(),
-        platform: data.platformId,
-        template: data.templateId,
-        configuration: data.configuration
+      console.log('🚀 Generating report with data:', data);
+      
+      // Transform frontend data to backend format
+      const backendPayload = {
+        platform: data.platformId, // Backend expects 'platform', not 'platformId'
+        connectionId: data.configuration.connectionId,
+        projectId: data.configuration.projectId,
+        templateId: data.templateId,
+        configuration: {
+          ...data.configuration,
+          // Remove internal fields that backend doesn't need
+          connectionId: undefined,
+          projectId: undefined,
+          connectionName: undefined,
+          projectName: undefined
+        }
       };
+
+      console.log('📤 Sending to backend:', backendPayload);
+      
+      const response = await apiClient.post('/api/reports/generate', backendPayload);
+      console.log('📨 Backend response:', response);
+      
+      return response;
+    } catch (error) {
+      console.error('❌ Error generating report:', error);
+      throw error; // Don't fall back to mock data, let the error bubble up
     }
   },
 
   // Check report generation status
   async getReportStatus(id: string): Promise<{ status: string, progress?: number }> {
     try {
-      // Use the actual API endpoint
+      console.log(`🔍 Checking status for report: ${id}`);
       const response = await apiClient.get(`/api/reports/${id}/status`);
-      return response.data;
+      console.log(`📊 Report ${id} status:`, response);
+      return response;
     } catch (error) {
-      console.error('Error checking report status:', error);
-      // Fall back to mock response if API call fails
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          resolve({ status: 'completed', progress: 100 });
-        }, 3000);
-      });
+      console.error('❌ Error checking report status:', error);
+      throw error; // Don't fall back to mock data
     }
   },
 
-  // Download report - client-side implementation
-  downloadReport(id: string, reportData?: Record<string, any>): void {
+  // Download report with proper error handling and logging
+  async downloadReport(id: string, reportData?: Record<string, any>): Promise<void> {
     try {
-      // Get API base URL from environment or default to localhost
-      const baseURL = apiClient.defaults.baseURL || 'http://localhost:3000';
+      console.log(`📥 Downloading report: ${id}`);
 
-      // Create a downloadable link and trigger it
-      const downloadURL = `${baseURL}/api/reports/${id}/download`;
-      console.log('Downloading report from:', downloadURL);
+      // Get the authentication token
+      const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+      
+      if (!token) {
+        console.error('❌ No authentication token found');
+        alert('Authentication required. Please login again.');
+        return;
+      }
 
-      // Use window.open to handle the download
-      window.open(downloadURL, '_blank');
+      console.log('🔑 Using auth token for download');
+
+      // Use fetch with authentication headers for download
+      const response = await fetch(`/api/reports/${id}/download`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+        }
+      });
+
+      console.log(`📡 Download response status: ${response.status}`);
+
+      if (!response.ok) {
+        let errorMessage = `Download failed: ${response.status} ${response.statusText}`;
+        
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch (e) {
+          // Response isn't JSON, use default message
+        }
+        
+        console.error('❌ Download failed:', errorMessage);
+        throw new Error(errorMessage);
+      }
+
+      // Get the blob from response
+      const blob = await response.blob();
+      console.log(`📦 Received blob of size: ${blob.size} bytes`);
+      
+      if (blob.size === 0) {
+        throw new Error('Downloaded file is empty');
+      }
+
+      // Get filename from Content-Disposition header or create default
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `PRISM_Report_${id}.pptx`;
+      
+      if (contentDisposition) {
+        const matches = contentDisposition.match(/filename="([^"]*)"/) || contentDisposition.match(/filename=([^;]*)/);
+        if (matches && matches[1]) {
+          filename = matches[1].trim();
+        }
+      }
+
+      console.log(`💾 Saving as: ${filename}`);
+
+      // Create download link and trigger download
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      
+      // Append to body, click, and remove
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up the URL object
+      window.URL.revokeObjectURL(url);
+      
+      console.log('✅ Report downloaded successfully:', filename);
+
+      // Show success message
+      const notification = document.createElement('div');
+      notification.style.cssText = `
+        position: fixed; top: 20px; right: 20px; z-index: 10000;
+        background: #10B981; color: white; padding: 12px 24px;
+        border-radius: 8px; font-family: system-ui; font-weight: 500;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      `;
+      notification.textContent = `✅ Report downloaded: ${filename}`;
+      document.body.appendChild(notification);
+      
+      setTimeout(() => {
+        document.body.removeChild(notification);
+      }, 3000);
+
     } catch (error) {
-      console.error('Error downloading report:', error);
-      // Show error to user
-      alert('Failed to download report. Please try again later.');
+      console.error('❌ Error downloading report:', error);
+      
+      // Show error message
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error occurred';
+      alert(`Failed to download report: ${errorMsg}`);
     }
   }
 };

@@ -1,4 +1,6 @@
 // backend/services/report-generation-service/src/controllers/reportController.ts
+// UPDATED SECTION - Replace the processReportWithRealData function
+
 import { Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -6,7 +8,7 @@ import logger from '../utils/logger';
 import { Report } from '../models/Report';
 import { JiraReportGenerator } from '../generators/JiraReportGenerator';
 import { MondayReportGenerator } from '../generators/MondayReportGenerator';
-import { PlatformDataService } from '../services/PlatformDataService';
+import { PlatformDataService, ReportGenerationConfig } from '../services/PlatformDataService';
 
 // Get JWT token from request
 function getAuthToken(req: Request): string | undefined {
@@ -61,6 +63,116 @@ export async function generateReport(req: Request, res: Response) {
   } catch (error) {
     logger.error('Error generating report:', error);
     return res.status(500).json({ message: 'Server error during report generation' });
+  }
+}
+
+// FIXED: Process report with real platform data
+async function processReportWithRealData(reportId: string, authToken?: string) {
+  try {
+    const report = await Report.findById(reportId);
+    
+    if (!report) {
+      logger.error(`Report not found for processing: ${reportId}`);
+      return;
+    }
+    
+    // Update status to processing
+    report.status = 'processing';
+    report.progress = 0;
+    await report.save();
+    
+    // Initialize services
+    const platformDataService = new PlatformDataService(authToken);
+    const jiraGenerator = new JiraReportGenerator();
+    const mondayGenerator = new MondayReportGenerator();
+    
+    try {
+      // Update progress
+      report.progress = 20;
+      await report.save();
+      
+      // FIXED: Create proper ReportGenerationConfig object
+      const reportConfig: ReportGenerationConfig = {
+        platform: report.platform,
+        connectionId: report.configuration.connectionId,
+        projectId: report.configuration.projectId,
+        templateId: report.template,
+        configuration: report.configuration
+      };
+
+      // Fetch real project data from platform integrations service
+      const projectData = await platformDataService.fetchProjectData(reportConfig);
+      
+      // Update progress
+      report.progress = 50;
+      await report.save();
+      
+      // Log what data was fetched
+      logger.info(`Fetched project data for ${reportId}:`, {
+        platform: projectData.platform,
+        projectName: projectData.name,
+        taskCount: projectData.tasks?.length || 0,
+        metricsCount: projectData.metrics?.length || 0,
+        isFallbackData: projectData.fallbackData || false
+      });
+      
+      // Generate PowerPoint based on platform
+      let filePath: string;
+      if (report.platform === 'jira') {
+        filePath = await jiraGenerator.generate(
+          projectData,
+          report.configuration,
+          async (progress) => {
+            report.progress = 50 + (progress * 0.4);
+            await report.save();
+          }
+        );
+      } else if (report.platform === 'monday') {
+        filePath = await mondayGenerator.generate(
+          projectData,
+          report.configuration,
+          async (progress) => {
+            report.progress = 50 + (progress * 0.4);
+            await report.save();
+          }
+        );
+      } else {
+        throw new Error(`Unsupported platform: ${report.platform}`);
+      }
+      
+      // Update report with file path
+      report.filePath = filePath;
+      report.status = 'completed';
+      report.progress = 100;
+      report.completedAt = new Date();
+      await report.save();
+      
+      logger.info(`Report generated successfully: ${reportId}`, {
+        filePath,
+        platform: report.platform,
+        realData: !projectData.fallbackData
+      });
+      
+    } catch (error) {
+      logger.error(`Error generating report content for ${reportId}:`, error);
+      
+      // Fall back to mock data if platform data fetch fails
+      logger.info('Falling back to mock data generation');
+      await generateReportWithMockData(report);
+    }
+    
+  } catch (error) {
+    logger.error(`Error processing report ${reportId}:`, error);
+    
+    // Update status to failed
+    try {
+      await Report.findByIdAndUpdate(reportId, { 
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    } catch (updateError) {
+      logger.error(`Error updating report status to failed: ${reportId}`, updateError);
+    }
   }
 }
 
@@ -155,98 +267,6 @@ export async function downloadReport(req: Request, res: Response) {
   } catch (error) {
     logger.error('Error downloading report:', error);
     return res.status(500).json({ message: 'Server error downloading report' });
-  }
-}
-
-// Process report with real platform data
-async function processReportWithRealData(reportId: string, authToken?: string) {
-  try {
-    const report = await Report.findById(reportId);
-    
-    if (!report) {
-      logger.error(`Report not found for processing: ${reportId}`);
-      return;
-    }
-    
-    // Update status to processing
-    report.status = 'processing';
-    report.progress = 0;
-    await report.save();
-    
-    // Initialize services
-    const platformDataService = new PlatformDataService(authToken);
-    const jiraGenerator = new JiraReportGenerator();
-    const mondayGenerator = new MondayReportGenerator();
-    
-    try {
-      // Update progress
-      report.progress = 20;
-      await report.save();
-      
-      // Fetch real project data from platform integrations service
-      const projectData = await platformDataService.fetchProjectData(
-        report.platform,
-        report.configuration.connectionId,
-        report.configuration.projectId
-      );
-      
-      // Update progress
-      report.progress = 50;
-      await report.save();
-      
-      // Generate PowerPoint based on platform
-      let filePath: string;
-      if (report.platform === 'jira') {
-        filePath = await jiraGenerator.generate(
-          projectData,
-          report.configuration,
-          async (progress) => {
-            report.progress = 50 + (progress * 0.4);
-            await report.save();
-          }
-        );
-      } else if (report.platform === 'monday') {
-        filePath = await mondayGenerator.generate(
-          projectData,
-          report.configuration,
-          async (progress) => {
-            report.progress = 50 + (progress * 0.4);
-            await report.save();
-          }
-        );
-      } else {
-        throw new Error(`Unsupported platform: ${report.platform}`);
-      }
-      
-      // Update report with file path
-      report.filePath = filePath;
-      report.status = 'completed';
-      report.progress = 100;
-      report.completedAt = new Date();
-      await report.save();
-      
-      logger.info(`Report generated successfully: ${reportId}`);
-      
-    } catch (error) {
-      logger.error(`Error generating report content for ${reportId}:`, error);
-      
-      // Fall back to mock data if platform data fetch fails
-      logger.info('Falling back to mock data generation');
-      await generateReportWithMockData(report);
-    }
-    
-  } catch (error) {
-    logger.error(`Error processing report ${reportId}:`, error);
-    
-    // Update status to failed
-    try {
-      await Report.findByIdAndUpdate(reportId, { 
-        status: 'failed',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    } catch (updateError) {
-      logger.error(`Error updating report status to failed: ${reportId}`, updateError);
-    }
   }
 }
 

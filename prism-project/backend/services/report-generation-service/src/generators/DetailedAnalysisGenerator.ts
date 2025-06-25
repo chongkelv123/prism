@@ -592,7 +592,7 @@ export class DetailedAnalysisGenerator {
     const performanceMetrics = this.calculatePerformanceMetrics(projectData);
     const metricsTableData = [
       [
-        { text: 'Metric', options: { bold: true, color: theme.primary } },
+        { text: 'Metric', options: { bold: true} },
         { text: 'Current', options: { bold: true, color: theme.primary } },
         { text: 'Target', options: { bold: true, color: theme.primary } },
         { text: 'Gap', options: { bold: true, color: theme.primary } },
@@ -608,12 +608,12 @@ export class DetailedAnalysisGenerator {
         metric.trend === 'declining' ? 'EF4444' : '6B7280';
 
       metricsTableData.push([
-        { text: metric.name, options: { fontSize: 10 } },
-        { text: `${metric.current}%`, options: { fontSize: 10, bold: true } },
-        { text: `${metric.target}%`, options: { fontSize: 10 } },
-        { text: `${gap > 0 ? '+' : ''}${gap}%`, options: { fontSize: 10, color: gapColor } },
-        { text: metric.trend, options: { fontSize: 10, color: trendColor } },
-        { text: metric.category, options: { fontSize: 10, color: '6B7280' } }
+        { text: metric.name, options: {bold: false} },
+        { text: `${metric.current}%`, options: { bold: true } },
+        { text: `${metric.target}%`, options: {bold: false} },
+        { text: `${gap > 0 ? '+' : ''}${gap}%`, options: { bold: false, color: gapColor } },
+        { text: metric.trend, options: { bold: false, color: trendColor } },
+        { text: metric.category, options: { bold: false,color: '6B7280' } }
       ]);
     });
 

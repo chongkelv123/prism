@@ -128,13 +128,14 @@ async function processReportWithTemplateSystem(reportId: string, authToken?: str
       await report.save();
 
       // Log what data was fetched
-      logger.info(`Fetched project data for template report ${reportId}:`, {
-        platform: projectData.platform,
-        projectName: projectData.name,
-        taskCount: projectData.tasks?.length || 0,
-        metricsCount: projectData.metrics?.length || 0,
-        templateId: report.template,
-        isFallbackData: projectData.fallbackData || false
+      const firstProject = projectData[0];
+      logger.info(`Project data details:`, {
+        platform: firstProject?.platform,
+        name: firstProject?.name,
+        tasks: firstProject?.tasks?.length || 0,
+        metrics: firstProject?.metrics?.length || 0,
+        team: firstProject?.team?.length || 0,
+        fallbackData: firstProject?.fallbackData
       });
 
       // Generate PowerPoint using template system
@@ -144,7 +145,7 @@ async function processReportWithTemplateSystem(reportId: string, authToken?: str
       if (report.platform === 'jira') {
         const jiraGenerator = new EnhancedJiraReportGenerator();
         filePath = await jiraGenerator.generate(
-          projectData,
+          projectData[0],
           report.configuration,
           async (progress) => {
             report.progress = 30 + (progress * 0.6);
@@ -154,7 +155,7 @@ async function processReportWithTemplateSystem(reportId: string, authToken?: str
       } else if (report.platform === 'monday') {
         const mondayGenerator = new EnhancedMondayReportGenerator();
         filePath = await mondayGenerator.generate(
-          projectData,
+          projectData[0],
           report.configuration,
           async (progress) => {
             report.progress = 30 + (progress * 0.6);
@@ -164,7 +165,7 @@ async function processReportWithTemplateSystem(reportId: string, authToken?: str
       } else if (report.platform === 'trofos') {
         const trofosGenerator = new TrofosReportGenerator();
         filePath = await trofosGenerator.generate(
-          projectData,
+          projectData[0],
           report.configuration,
           async (progress) => {
             report.progress = 30 + (progress * 0.6);
@@ -186,7 +187,7 @@ async function processReportWithTemplateSystem(reportId: string, authToken?: str
         filePath,
         platform: report.platform,
         template: report.template,
-        realData: !projectData.fallbackData
+        realData: !projectData[0]?.fallbackData
       });
 
     } catch (error) {
@@ -256,12 +257,12 @@ export async function getTemplateRecommendations(req: Request, res: Response) {
         templateMetadata,
         templateMetrics,
         projectSummary: {
-          name: projectData.name,
-          platform: projectData.platform,
-          taskCount: projectData.tasks?.length || 0,
-          teamSize: projectData.team?.length || 0,
-          metricsCount: projectData.metrics?.length || 0,
-          sprintCount: projectData.sprints?.length || 0,
+          name: projectData[0]?.name,
+          platform: projectData[0]?.platform,
+          taskCount: projectData[0]?.tasks?.length || 0,
+          teamSize: projectData[0]?.team?.length || 0,
+          metricsCount: projectData[0]?.metrics?.length || 0,
+          sprintCount: projectData[0]?.sprints?.length || 0,
           completionRate: analytics.completionRate,
           riskLevel: analytics.riskLevel
         }
@@ -378,11 +379,11 @@ export async function previewTemplate(req: Request, res: Response) {
       return res.json({
         templateId,
         projectData: {
-          name: projectData.name,
-          platform: projectData.platform,
-          taskCount: projectData.tasks?.length || 0,
-          teamSize: projectData.team?.length || 0,
-          metricsCount: projectData.metrics?.length || 0,
+          name: projectData[0]?.name,
+          platform: projectData[0]?.platform,
+          taskCount: projectData[0]?.tasks?.length || 0,
+          teamSize: projectData[0]?.team?.length || 0,
+          metricsCount: projectData[0]?.metrics?.length || 0,
           completionRate: analytics.completionRate
         },
         templateMetrics: selectedTemplateMetrics,
@@ -398,10 +399,10 @@ export async function previewTemplate(req: Request, res: Response) {
           estimatedTime: selectedTemplateMetrics.estimatedGenTime,
           keyFeatures: selectedTemplateMetrics.features,
           dataAvailability: {
-            hasTaskData: (projectData.tasks?.length || 0) > 0,
-            hasTeamData: (projectData.team?.length || 0) > 0,
-            hasMetricsData: (projectData.metrics?.length || 0) > 0,
-            hasSprintData: (projectData.sprints?.length || 0) > 0
+            hasTaskData: (projectData[0]?.tasks?.length || 0) > 0,
+            hasTeamData: (projectData[0]?.team?.length || 0) > 0,
+            hasMetricsData: (projectData[0]?.metrics?.length || 0) > 0,
+            hasSprintData: (projectData[0]?.sprints?.length || 0) > 0
           }
         }
       });
@@ -485,7 +486,7 @@ export async function downloadReport(req: Request, res: Response) {
   try {
     const reportId = req.params.id;
     const report = await Report.findById(reportId);
-    
+
     // Debug logging
     logger.info('=== DOWNLOAD DEBUG START ===');
     logger.info('Report ID:', reportId);
@@ -497,19 +498,19 @@ export async function downloadReport(req: Request, res: Response) {
       logger.info('Report template:', report.template);
     }
     logger.info('=== DOWNLOAD DEBUG END ===');
-    
+
     if (!report) {
       return res.status(404).json({ message: 'Report not found' });
     }
-    
+
     if (report.status !== 'completed') {
-      return res.status(400).json({ 
+      return res.status(400).json({
         message: 'Report is not ready for download',
         status: report.status,
         progress: report.progress || 0
       });
     }
-    
+
     // FIXED: Proper file path construction and fallback search
     let filePath: string;
     const storageDir = path.join(__dirname, '../../storage');
@@ -517,19 +518,19 @@ export async function downloadReport(req: Request, res: Response) {
     if (report.filePath) {
       // Construct full path from stored filename
       filePath = path.join(storageDir, report.filePath);
-      
+
       // If exact file doesn't exist, search for similar files
       if (!fs.existsSync(filePath)) {
         logger.warn(`Exact file not found: ${report.filePath}, searching for alternatives`);
-        
+
         try {
           const files = fs.readdirSync(storageDir);
           // Look for files with similar pattern (same project name)
-          const matchingFile = files.find(file => 
-            file.includes('standard-report-JIRA-Demo-Project') && 
+          const matchingFile = files.find(file =>
+            file.includes('standard-report-JIRA-Demo-Project') &&
             file.endsWith('.pptx')
           );
-          
+
           if (matchingFile) {
             filePath = path.join(storageDir, matchingFile);
             logger.info(`Using alternative file: ${matchingFile}`);
@@ -549,7 +550,7 @@ export async function downloadReport(req: Request, res: Response) {
             stats: fs.statSync(path.join(storageDir, file))
           }))
           .sort((a, b) => b.stats.mtime.getTime() - a.stats.mtime.getTime());
-        
+
         if (files.length > 0) {
           filePath = files[0].path;
           logger.info(`Using most recent file: ${files[0].name}`);
@@ -566,25 +567,25 @@ export async function downloadReport(req: Request, res: Response) {
       constructedPath: filePath,
       fileExists: fs.existsSync(filePath)
     });
-    
+
     // Check if file exists after all attempts
     if (!fs.existsSync(filePath)) {
       logger.error(`Report file not found after all attempts: ${filePath}`);
       return res.status(404).json({ message: 'Report file not found' });
     }
-    
+
     // Get the filename from the path
     const fileName = path.basename(filePath);
     const templateName = report.template ? `_${report.template}` : '';
     const downloadFileName = `${report.title.replace(/[^a-zA-Z0-9]/g, '_')}${templateName}_report.pptx`;
-    
+
     // Set the appropriate headers
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
     res.setHeader('Content-Disposition', `attachment; filename="${downloadFileName}"`);
-    
+
     // Create a read stream from the file and pipe it to the response
     const fileStream = fs.createReadStream(filePath);
-    
+
     // Handle stream errors
     fileStream.on('error', (streamError) => {
       logger.error('Error streaming file:', streamError);
@@ -592,9 +593,9 @@ export async function downloadReport(req: Request, res: Response) {
         res.status(500).json({ message: 'Error streaming report file' });
       }
     });
-    
+
     fileStream.pipe(res);
-    
+
     logger.info(`Template report ${reportId} downloaded`, {
       template: report.template,
       fileName: downloadFileName,

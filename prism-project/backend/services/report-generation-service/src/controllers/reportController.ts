@@ -243,14 +243,14 @@ export async function getTemplateRecommendations(req: Request, res: Response) {
       const projectData = await platformDataService.fetchProjectData(reportConfig);
 
       // Get template recommendations
-      const recommendations = TemplateRecommendationService.getRecommendations(projectData);
+      const recommendations = TemplateRecommendationService.getRecommendations(projectData[0]);
 
       // Get template metadata
       const templateMetadata = TemplateReportGenerator.getTemplateMetadata();
 
       // Calculate analytics for preview
-      const analytics = DataAnalyticsService.calculateAnalytics(projectData);
-      const templateMetrics = DataAnalyticsService.getTemplateMetrics(projectData);
+      const analytics = DataAnalyticsService.calculateAnalytics(projectData[0]);
+      const templateMetrics = DataAnalyticsService.getTemplateMetrics(projectData[0]);
 
       return res.json({
         recommendations,
@@ -370,8 +370,8 @@ export async function previewTemplate(req: Request, res: Response) {
       const projectData = await platformDataService.fetchProjectData(reportConfig);
 
       // Calculate analytics for preview
-      const analytics = DataAnalyticsService.calculateAnalytics(projectData);
-      const templateMetrics = DataAnalyticsService.getTemplateMetrics(projectData);
+      const analytics = DataAnalyticsService.calculateAnalytics(projectData[0]);
+      const templateMetrics = DataAnalyticsService.getTemplateMetrics(projectData[0]);
 
       // Get template-specific metrics
       const selectedTemplateMetrics = templateMetrics[templateId as keyof typeof templateMetrics];

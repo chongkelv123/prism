@@ -65,9 +65,9 @@ export interface ProjectData {
     department?: string;
     taskCount?: number;
   }>;
-  metrics: Array<{ 
-    name: string; 
-    value: string | number; 
+  metrics: Array<{
+    name: string;
+    value: string | number;
     type?: string;
     category?: string;
   }>;
@@ -104,7 +104,7 @@ export interface ProjectData {
 }
 
 export class ConnectionService {
-  
+
   /**
    * Create a new platform connection
    */
@@ -126,7 +126,7 @@ export class ConnectionService {
 
       // Test the connection before saving
       const testResult = await this.testConnectionConfig(data.platform, data.config);
-      
+
       if (testResult.success) {
         connection.status = 'connected';
         logger.info(`${data.platform} connection test successful`);
@@ -187,7 +187,7 @@ export class ConnectionService {
 
       // Get platform-specific data
       let rawData: any;
-      
+
       switch (connection.platform) {
         case 'jira':
           rawData = await this.getJiraProjectData(connection, projectId);
@@ -206,7 +206,7 @@ export class ConnectionService {
 
       // Transform the data into standardized format
       const transformedData = this.transformProjectData(rawData, connection.platform);
-      
+
       logger.info(`✅ Successfully transformed ${transformedData.length} projects from ${connection.platform}`);
       return transformedData;
 
@@ -222,14 +222,14 @@ export class ConnectionService {
   private async getJiraProjectData(connection: IConnection, projectId?: string): Promise<any> {
     try {
       const { domain, email, apiToken, projectKey } = connection.config;
-      
+
       if (!domain || !email || !apiToken) {
         throw new Error('Missing Jira configuration');
       }
 
       const baseUrl = `https://${domain.replace(/^https?:\/\//, '')}/rest/api/3`;
       const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
-      
+
       const headers = {
         'Authorization': `Basic ${auth}`,
         'Accept': 'application/json',
@@ -240,7 +240,7 @@ export class ConnectionService {
       if (projectId) {
         logger.info(`📋 Fetching specific Jira project: ${projectId}`);
         const projectResponse = await axios.get(`${baseUrl}/project/${projectId}`, { headers });
-        
+
         // Get issues for this project
         const issuesResponse = await axios.get(
           `${baseUrl}/search?jql=project=${projectId}&maxResults=100&fields=summary,status,assignee,priority,created,updated,description,labels,components,issuelinks`,
@@ -266,7 +266,7 @@ export class ConnectionService {
               `${baseUrl}/search?jql=project=${project.key}&maxResults=50&fields=summary,status,assignee,priority,created,updated,description,labels,components`,
               { headers }
             );
-            
+
             return {
               project: project,
               issues: issuesResponse.data.issues || []
@@ -290,12 +290,12 @@ export class ConnectionService {
   }
 
   /**
-   * Get Monday.com project data using real API calls
-   */
+ * Get Monday.com project data using real API calls - FIXED VERSION
+ */
   private async getMondayProjectData(connection: IConnection, projectId?: string): Promise<any> {
     try {
       const { apiToken } = connection.config;
-      
+
       if (!apiToken) {
         throw new Error('Missing Monday.com API token');
       }
@@ -311,65 +311,10 @@ export class ConnectionService {
       // If specific board/project requested
       if (projectId) {
         logger.info(`📋 Fetching specific Monday.com board: ${projectId}`);
-        
+
         const query = `
-          query($boardId: [ID!]) {
-            boards(ids: $boardId) {
-              id
-              name
-              description
-              state
-              items_count
-              groups {
-                id
-                title
-                color
-              }
-              columns {
-                id
-                title
-                type
-                settings_str
-              }
-              items_page(limit: 50) {
-                cursor
-                items {
-                  id
-                  name
-                  created_at
-                  updated_at
-                  state
-                  group {
-                    id
-                    title
-                  }
-                  column_values {
-                    id
-                    title
-                    type
-                    value
-                    text
-                  }
-                }
-              }
-            }
-          }
-        `;
-
-        const response = await axios.post(mondayApiUrl, {
-          query: query,
-          variables: { boardId: [projectId] }
-        }, { headers });
-
-        return response.data.data?.boards?.[0] || null;
-      }
-
-      // Get all accessible boards
-      logger.info('📋 Fetching all accessible Monday.com boards');
-      
-      const boardsQuery = `
-        query {
-          boards(limit: 10) {
+        query($boardId: [ID!]) {
+          boards(ids: $boardId) {
             id
             name
             description
@@ -384,22 +329,120 @@ export class ConnectionService {
               id
               title
               type
+              settings_str
+            }
+            items_page(limit: 50) {
+              cursor
+              items {
+                id
+                name
+                created_at
+                updated_at
+                state
+                group {
+                  id
+                  title
+                }
+                column_values {
+                  id
+                  title
+                  type
+                  value
+                  text
+                }
+              }
             }
           }
         }
       `;
 
-      const boardsResponse = await axios.post(mondayApiUrl, {
-        query: boardsQuery
-      }, { headers });
+        try {
+          const response = await axios.post(mondayApiUrl, {
+            query: query,
+            variables: { boardId: [projectId] }
+          }, {
+            headers,
+            timeout: 15000 // 15 second timeout
+          });
 
-      const boards = boardsResponse.data.data?.boards || [];
+          // Check for GraphQL errors
+          if (response.data.errors) {
+            const errorMessage = response.data.errors.map((e: any) => e.message).join('; ');
+            logger.error(`Monday.com API returned errors: ${errorMessage}`);
+            throw new Error(`Monday.com API error: ${errorMessage}`);
+          }
 
-      // For each board, get items (limited to avoid API limits)
-      const boardsWithItems = await Promise.all(
-        boards.slice(0, 3).map(async (board: any) => {
-          try {
-            const itemsQuery = `
+          const board = response.data.data?.boards?.[0];
+          if (!board) {
+            logger.warn(`Monday.com board ${projectId} not found or not accessible`);
+            return null;
+          }
+
+          logger.info(`✅ Successfully fetched Monday.com board: ${board.name} (${board.items_count} items)`);
+          return board;
+
+        } catch (apiError: any) {
+          // Safe error handling without circular references
+          const errorInfo = {
+            message: apiError.message,
+            status: apiError.response?.status,
+            statusText: apiError.response?.statusText,
+            code: apiError.code
+          };
+
+          logger.error(`❌ Monday.com API call failed for board ${projectId}`, errorInfo);
+          throw new Error(`Monday.com API failed: ${apiError.message}`);
+        }
+      }
+
+      // Get all accessible boards
+      logger.info('📋 Fetching all accessible Monday.com boards');
+
+      const boardsQuery = `
+      query {
+        boards(limit: 10) {
+          id
+          name
+          description
+          state
+          items_count
+          groups {
+            id
+            title
+            color
+          }
+          columns {
+            id
+            title
+            type
+          }
+        }
+      }
+    `;
+
+      try {
+        const boardsResponse = await axios.post(mondayApiUrl, {
+          query: boardsQuery
+        }, {
+          headers,
+          timeout: 15000
+        });
+
+        // Check for GraphQL errors
+        if (boardsResponse.data.errors) {
+          const errorMessage = boardsResponse.data.errors.map((e: any) => e.message).join('; ');
+          logger.error(`Monday.com boards API returned errors: ${errorMessage}`);
+          throw new Error(`Monday.com API error: ${errorMessage}`);
+        }
+
+        const boards = boardsResponse.data.data?.boards || [];
+        logger.info(`✅ Found ${boards.length} accessible Monday.com boards`);
+
+        // For each board, get items (limited to avoid API limits)
+        const boardsWithItems = await Promise.all(
+          boards.slice(0, 3).map(async (board: any) => {
+            try {
+              const itemsQuery = `
               query($boardId: [ID!]) {
                 boards(ids: $boardId) {
                   items_page(limit: 25) {
@@ -426,31 +469,58 @@ export class ConnectionService {
               }
             `;
 
-            const itemsResponse = await axios.post(mondayApiUrl, {
-              query: itemsQuery,
-              variables: { boardId: [board.id] }
-            }, { headers });
+              const itemsResponse = await axios.post(mondayApiUrl, {
+                query: itemsQuery,
+                variables: { boardId: [board.id] }
+              }, { headers, timeout: 10000 });
 
-            const items = itemsResponse.data.data?.boards?.[0]?.items_page?.items || [];
+              if (itemsResponse.data.errors) {
+                logger.warn(`Monday.com items API returned errors for board ${board.id}`);
+                return { ...board, items: [] };
+              }
 
-            return {
-              ...board,
-              items: items
-            };
-          } catch (error) {
-            logger.warn(`⚠️ Failed to get items for board ${board.id}:`, error);
-            return {
-              ...board,
-              items: []
-            };
-          }
-        })
-      );
+              const items = itemsResponse.data.data?.boards?.[0]?.items_page?.items || [];
+              logger.info(`✅ Fetched ${items.length} items for board ${board.name}`);
 
-      return boardsWithItems;
+              return {
+                ...board,
+                items: items
+              };
+            } catch (itemError: any) {
+              // Safe error logging
+              logger.warn(`⚠️ Failed to get items for board ${board.id}: ${itemError.message}`);
+              return {
+                ...board,
+                items: []
+              };
+            }
+          })
+        );
 
-    } catch (error) {
-      logger.error('❌ Failed to get Monday.com project data:', error);
+        return boardsWithItems;
+
+      } catch (boardsError: any) {
+        // Safe error handling
+        const errorInfo = {
+          message: boardsError.message,
+          status: boardsError.response?.status,
+          statusText: boardsError.response?.statusText,
+          code: boardsError.code
+        };
+
+        logger.error('❌ Monday.com boards API call failed', errorInfo);
+        throw new Error(`Monday.com boards API failed: ${boardsError.message}`);
+      }
+
+    } catch (error: any) {
+      // Final error handling - ensure no circular references
+      const safeError = {
+        message: error.message,
+        name: error.name,
+        stack: error.stack
+      };
+
+      logger.error('❌ Failed to get Monday.com project data', safeError);
       throw error;
     }
   }
@@ -479,7 +549,7 @@ export class ConnectionService {
       }
 
       // Filter out invalid projects
-      const validProjects = projects.filter(project => 
+      const validProjects = projects.filter(project =>
         project && project.id && project.name && project.platform
       );
 
@@ -499,7 +569,7 @@ export class ConnectionService {
     try {
       // Handle both single project and multiple projects
       const projectsData = Array.isArray(rawData) ? rawData : [rawData];
-      
+
       return projectsData.map((projectData: any) => {
         const project = projectData.project || projectData;
         const issues = projectData.issues || [];
@@ -602,7 +672,7 @@ export class ConnectionService {
     try {
       // Handle both single board and multiple boards
       const boardsData = Array.isArray(rawData) ? rawData : [rawData];
-      
+
       return boardsData.map((board: any) => {
         const items = board.items || [];
         const groups = board.groups || [];
@@ -623,7 +693,7 @@ export class ConnectionService {
           // Get assignee from person column or text
           const personColumn = item.column_values?.find((col: any) => col.type === 'person');
           const textColumn = item.column_values?.find((col: any) => col.type === 'text');
-          
+
           let assignee = 'Unassigned';
           if (personColumn?.text) {
             assignee = personColumn.text;
@@ -641,7 +711,7 @@ export class ConnectionService {
           groupCounts[groupName] = (groupCounts[groupName] || 0) + 1;
 
           // Priority (if available)
-          const priorityColumn = item.column_values?.find((col: any) => 
+          const priorityColumn = item.column_values?.find((col: any) =>
             col.title?.toLowerCase().includes('priority')
           );
           const priority = priorityColumn?.text || 'Medium';
@@ -652,7 +722,7 @@ export class ConnectionService {
         const tasks = items.map((item: any) => {
           const statusColumn = item.column_values?.find((col: any) => col.type === 'color');
           const textColumn = item.column_values?.find((col: any) => col.type === 'text');
-          const priorityColumn = item.column_values?.find((col: any) => 
+          const priorityColumn = item.column_values?.find((col: any) =>
             col.title?.toLowerCase().includes('priority')
           );
 
@@ -789,7 +859,7 @@ export class ConnectionService {
   private async testJiraConnection(config: any): Promise<ConnectionTestResult> {
     try {
       const { domain, email, apiToken } = config;
-      
+
       if (!domain || !email || !apiToken) {
         return {
           success: false,
@@ -799,7 +869,7 @@ export class ConnectionService {
 
       const baseUrl = `https://${domain.replace(/^https?:\/\//, '')}/rest/api/3`;
       const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
-      
+
       const response = await axios.get(`${baseUrl}/myself`, {
         headers: {
           'Authorization': `Basic ${auth}`,
@@ -831,7 +901,7 @@ export class ConnectionService {
           message: 'Authentication failed. Please check your email and API token.'
         };
       }
-      
+
       if (error.response?.status === 403) {
         return {
           success: false,
@@ -852,7 +922,7 @@ export class ConnectionService {
   private async testMondayConnection(config: any): Promise<ConnectionTestResult> {
     try {
       const { apiToken } = config;
-      
+
       if (!apiToken) {
         return {
           success: false,
@@ -957,13 +1027,13 @@ export class ConnectionService {
 
       // Get project data to count projects
       const projectData = await this.getProjectData(userId, connectionId);
-      
+
       // Update connection
       connection.lastSync = new Date();
       connection.projectCount = projectData.length;
       connection.status = 'connected';
       connection.lastSyncError = undefined;
-      
+
       await connection.save();
 
       return {
@@ -975,7 +1045,7 @@ export class ConnectionService {
 
     } catch (error) {
       logger.error('Sync connection failed:', error);
-      
+
       // Update connection with error
       try {
         const connection = await this.getConnection(userId, connectionId);

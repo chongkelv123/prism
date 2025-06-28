@@ -365,7 +365,10 @@ export class ConnectionService {
             query: query,
             variables: { boardId: projectId }
           }, {
-            headers,
+            headers: {
+              ...headers,
+              'API-Version': '2024-01'
+            },
             timeout: 15000
           });
 
@@ -449,25 +452,22 @@ export class ConnectionService {
               const itemsQuery = `
                 query($boardId: ID!) {
                   boards(ids: [$boardId]) {
-                    items_page(limit: 50) {
-                      cursor
-                      items {
+                    items(limit: 50) {
+                      id
+                      name
+                      created_at
+                      updated_at
+                      state
+                      group {
                         id
-                        name
-                        created_at
-                        updated_at
-                        state
-                        group {
-                          id
-                          title
-                        }
-                        column_values {
-                          id
-                          title
-                          type
-                          value
-                          text
-                        }
+                        title
+                      }
+                      column_values {
+                        id
+                        title
+                        type
+                        value
+                        text
                       }
                     }
                     subscribers {
@@ -482,7 +482,13 @@ export class ConnectionService {
               const itemsResponse = await axios.post(mondayApiUrl, {
                 query: itemsQuery,
                 variables: { boardId: board.id }
-              }, { headers, timeout: 10000 });
+              }, {
+                headers: {
+                  ...headers,
+                  'API-Version': '2024-01'
+                },
+                timeout: 10000
+              });
 
               if (itemsResponse.data.errors) {
                 logger.warn(`Monday.com items API returned errors for board ${board.id}`);
@@ -490,7 +496,7 @@ export class ConnectionService {
               }
 
               const boardData = itemsResponse.data.data?.boards?.[0];
-              const items = boardData?.items_page?.items || [];
+              const items = boardData?.items || [];
               const subscribers = boardData?.subscribers || [];
 
               // CRITICAL: Add detailed logging to see what's happening
@@ -763,7 +769,7 @@ export class ConnectionService {
   }
 
   /**
-   * Transform Monday.com data to ProjectData format using your test data structure
+   * Transform Monday.com data to ProjectData format using correct column_values structure
    */
   private transformMondayData(rawData: any): ProjectData[] {
     try {
@@ -793,49 +799,77 @@ export class ConnectionService {
         const groupCounts: Record<string, number> = {};
 
         items.forEach((item: any) => {
-          // Get status from color column
-          const statusColumn = item.column_values?.find((col: any) => col.type === 'color');
-          const status = statusColumn?.text || 'Not Started';
+          // Find columns by type and title - Monday.com specific structure
+          const statusColumn = item.column_values?.find((col: any) =>
+            col.type === 'color' || col.title?.toLowerCase().includes('status')
+          );
+
+          const personColumn = item.column_values?.find((col: any) =>
+            col.type === 'person' || col.title?.toLowerCase().includes('person')
+          );
+
+          const priorityColumn = item.column_values?.find((col: any) =>
+            col.title?.toLowerCase().includes('priority')
+          );
+
+          const textColumn = item.column_values?.find((col: any) =>
+            col.type === 'text' || col.title?.toLowerCase().includes('text')
+          );
+
+          // Extract status - Monday.com color columns
+          const status = statusColumn?.text || statusColumn?.value || 'Not Started';
           statusCounts[status] = (statusCounts[status] || 0) + 1;
 
-          // Get assignee from person column or text
-          const personColumn = item.column_values?.find((col: any) => col.type === 'person');
-          const textColumn = item.column_values?.find((col: any) => col.type === 'text');
-
+          // Extract assignee - Monday.com person columns have different structure
           let assignee = 'Unassigned';
-          if (personColumn?.text) {
-            assignee = personColumn.text;
+          if (personColumn?.text && personColumn.text.trim()) {
+            assignee = personColumn.text.trim();
           } else if (textColumn?.text) {
-            // Extract role from text like "Task description (Role: Person Name - Role Type)"
+            // Look for role pattern in text: "(Role: Name - Title)"
             const roleMatch = textColumn.text.match(/Role:\s*([^)]+)/);
             if (roleMatch) {
-              assignee = roleMatch[1].trim().split(' - ')[0];
+              const roleInfo = roleMatch[1].trim();
+              assignee = roleInfo.split(' - ')[0]; // Get name before role title
             }
           }
-          assigneeCounts[assignee] = (assigneeCounts[assignee] || 0) + 1;
+
+          if (assignee !== 'Unassigned') {
+            assigneeCounts[assignee] = (assigneeCounts[assignee] || 0) + 1;
+          }
 
           // Get group
           const groupName = item.group?.title || 'General';
           groupCounts[groupName] = (groupCounts[groupName] || 0) + 1;
 
-          // Priority (if available)
-          const priorityColumn = item.column_values?.find((col: any) =>
-            col.title?.toLowerCase().includes('priority')
-          );
-          const priority = priorityColumn?.text || 'Medium';
+          // Extract priority
+          const priority = priorityColumn?.text || priorityColumn?.value || 'Medium';
           priorityCounts[priority] = (priorityCounts[priority] || 0) + 1;
         });
 
-        // Transform tasks
+        // Transform tasks with correct Monday.com data extraction
         const tasks = items.map((item: any) => {
-          const statusColumn = item.column_values?.find((col: any) => col.type === 'color');
-          const textColumn = item.column_values?.find((col: any) => col.type === 'text');
+          // Find columns by type and title
+          const statusColumn = item.column_values?.find((col: any) =>
+            col.type === 'color' || col.title?.toLowerCase().includes('status')
+          );
+
+          const personColumn = item.column_values?.find((col: any) =>
+            col.type === 'person' || col.title?.toLowerCase().includes('person')
+          );
+
           const priorityColumn = item.column_values?.find((col: any) =>
             col.title?.toLowerCase().includes('priority')
           );
 
+          const textColumn = item.column_values?.find((col: any) =>
+            col.type === 'text' || col.title?.toLowerCase().includes('text')
+          );
+
+          // Extract assignee with correct Monday.com logic
           let assignee = 'Unassigned';
-          if (textColumn?.text) {
+          if (personColumn?.text && personColumn.text.trim()) {
+            assignee = personColumn.text.trim();
+          } else if (textColumn?.text) {
             const roleMatch = textColumn.text.match(/Role:\s*([^)]+)/);
             if (roleMatch) {
               assignee = roleMatch[1].trim().split(' - ')[0];
@@ -845,9 +879,9 @@ export class ConnectionService {
           return {
             id: item.id,
             name: item.name || 'Untitled Task',
-            status: statusColumn?.text || 'Not Started',
+            status: statusColumn?.text || statusColumn?.value || 'Not Started',
             assignee: assignee,
-            priority: priorityColumn?.text || 'Medium',
+            priority: priorityColumn?.text || priorityColumn?.value || 'Medium',
             created: item.created_at || '',
             updated: item.updated_at || '',
             description: textColumn?.text || '',
@@ -855,20 +889,26 @@ export class ConnectionService {
           };
         });
 
-        // Transform team members
+        // Transform team members with correct role extraction
         const teamMembers = Object.entries(assigneeCounts)
-          .filter(([name]) => name !== 'Unassigned')
+          .filter(([name]) => name !== 'Unassigned' && name.trim().length > 0)
           .map(([name, count]) => {
-            // Extract role from name if available
+            // Extract role from the text column data
             let role = 'Team Member';
-            if (name.includes('Team Lead')) role = 'Team Lead';
-            else if (name.includes('Backend')) role = 'Backend Developer';
-            else if (name.includes('Frontend')) role = 'Frontend Developer';
-            else if (name.includes('DevOps')) role = 'DevOps Engineer';
-            else if (name.includes('Advisor')) role = 'Advisor';
+
+            // Look through items to find role information for this person
+            items.forEach((item: any) => {
+              const textColumn = item.column_values?.find((col: any) => col.type === 'text');
+              if (textColumn?.text && textColumn.text.includes(name)) {
+                const roleMatch = textColumn.text.match(/Role:\s*[^-]*-\s*([^)]+)/);
+                if (roleMatch) {
+                  role = roleMatch[1].trim();
+                }
+              }
+            });
 
             return {
-              name: name.split(' - ')[0], // Remove role suffix if present
+              name: name.trim(),
               role: role,
               taskCount: count as number
             };
@@ -897,7 +937,6 @@ export class ConnectionService {
           }))
         ];
 
-        // ADD this logging right before the return statement:
         const result = {
           id: board.id,
           name: board.name || 'Unnamed Monday.com Board',
@@ -939,40 +978,7 @@ export class ConnectionService {
         });
 
         return result;
-
-        return {
-          id: board.id,
-          name: board.name || 'Unnamed Monday.com Board',
-          platform: 'monday',
-          description: board.description || '',
-          status: 'active',
-          tasks: tasks,
-          team: teamMembers,
-          metrics: metrics,
-          platformSpecific: {
-            monday: {
-              boardId: board.id,
-              groups: groups.map((g: any) => ({
-                id: g.id,
-                title: g.title,
-                color: g.color
-              })),
-              columns: columns.map((c: any) => ({
-                id: c.id,
-                title: c.title,
-                type: c.type
-              }))
-            }
-          },
-          lastUpdated: new Date().toISOString(),
-          dataQuality: {
-            completeness: items.length > 0 ? 85 : 50,
-            accuracy: 90,
-            freshness: 100
-          }
-        };
       });
-
     } catch (error) {
       logger.error('❌ Failed to transform Monday.com data:', error);
       return [];
@@ -1086,7 +1092,8 @@ export class ConnectionService {
       }, {
         headers: {
           'Authorization': `Bearer ${apiToken}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'API-Version': '2024-01'
         },
         timeout: 10000
       });

@@ -305,7 +305,6 @@ export class ConnectionService {
         'Content-Type': 'application/json'
       };
 
-      // Monday.com uses GraphQL
       const mondayApiUrl = 'https://api.monday.com/v2';
 
       // If specific board/project requested
@@ -331,7 +330,7 @@ export class ConnectionService {
               type
               settings_str
             }
-            items_page(limit: 50) {
+            items_page(limit: 100) {
               cursor
               items {
                 id
@@ -352,6 +351,11 @@ export class ConnectionService {
                 }
               }
             }
+            subscribers {
+              id
+              name
+              email
+            }
           }
         }
       `;
@@ -362,10 +366,9 @@ export class ConnectionService {
             variables: { boardId: [projectId] }
           }, {
             headers,
-            timeout: 15000 // 15 second timeout
+            timeout: 15000
           });
 
-          // Check for GraphQL errors
           if (response.data.errors) {
             const errorMessage = response.data.errors.map((e: any) => e.message).join('; ');
             logger.error(`Monday.com API returned errors: ${errorMessage}`);
@@ -382,7 +385,6 @@ export class ConnectionService {
           return board;
 
         } catch (apiError: any) {
-          // Safe error handling without circular references
           const errorInfo = {
             message: apiError.message,
             status: apiError.response?.status,
@@ -395,7 +397,7 @@ export class ConnectionService {
         }
       }
 
-      // Get all accessible boards
+      // Get all accessible boards - ENHANCED with better filtering
       logger.info('📋 Fetching all accessible Monday.com boards');
 
       const boardsQuery = `
@@ -428,24 +430,26 @@ export class ConnectionService {
           timeout: 15000
         });
 
-        // Check for GraphQL errors
         if (boardsResponse.data.errors) {
           const errorMessage = boardsResponse.data.errors.map((e: any) => e.message).join('; ');
           logger.error(`Monday.com boards API returned errors: ${errorMessage}`);
           throw new Error(`Monday.com API error: ${errorMessage}`);
         }
 
-        const boards = boardsResponse.data.data?.boards || [];
+        let boards = boardsResponse.data.data?.boards || [];
         logger.info(`✅ Found ${boards.length} accessible Monday.com boards`);
 
-        // For each board, get items (limited to avoid API limits)
+        // ✨ CRITICAL FIX: Filter and prioritize boards
+        boards = this.filterMainBoards(boards);
+
+        // For each board, get items with enhanced data
         const boardsWithItems = await Promise.all(
           boards.slice(0, 3).map(async (board: any) => {
             try {
               const itemsQuery = `
               query($boardId: [ID!]) {
                 boards(ids: $boardId) {
-                  items_page(limit: 25) {
+                  items_page(limit: 50) {
                     items {
                       id
                       name
@@ -465,6 +469,11 @@ export class ConnectionService {
                       }
                     }
                   }
+                  subscribers {
+                    id
+                    name
+                    email
+                  }
                 }
               }
             `;
@@ -476,22 +485,56 @@ export class ConnectionService {
 
               if (itemsResponse.data.errors) {
                 logger.warn(`Monday.com items API returned errors for board ${board.id}`);
-                return { ...board, items: [] };
+                return { ...board, items: [], subscribers: [] };
               }
 
-              const items = itemsResponse.data.data?.boards?.[0]?.items_page?.items || [];
-              logger.info(`✅ Fetched ${items.length} items for board ${board.name}`);
+              const boardData = itemsResponse.data.data?.boards?.[0];
+              const items = boardData?.items_page?.items || [];
+              const subscribers = boardData?.subscribers || [];
+
+              // CRITICAL: Add detailed logging to see what's happening
+              logger.info(`🔍 DETAILED items processing for board "${board.name}":`, {
+                boardId: board.id,
+                boardName: board.name,
+                expectedItems: board.items_count,
+                hasBoardData: !!boardData,
+                hasItemsPage: !!boardData?.items_page,
+                actualItemsReturned: items.length,
+                subscribersCount: subscribers.length,
+                itemsPreview: items.slice(0, 3).map(item => ({
+                  id: item.id,
+                  name: item.name,
+                  state: item.state,
+                  group: item.group?.title,
+                  hasColumnValues: !!item.column_values
+                }))
+              });
+
+              // If no items but board reports items, log detailed debug info
+              if (items.length === 0 && board.items_count > 0) {
+                logger.error('🚨 ITEMS MISMATCH DETECTED:', {
+                  boardName: board.name,
+                  boardId: board.id,
+                  reportedItems: board.items_count,
+                  returnedItems: items.length,
+                  rawBoardData: JSON.stringify(boardData, null, 2).substring(0, 500),
+                  itemsPageStructure: boardData?.items_page ? Object.keys(boardData.items_page) : 'No items_page'
+                });
+              }
+
+              logger.info(`✅ Fetched ${items.length} items and ${subscribers.length} subscribers for board ${board.name}`);
 
               return {
                 ...board,
-                items: items
+                items: items,
+                subscribers: subscribers
               };
             } catch (itemError: any) {
-              // Safe error logging
               logger.warn(`⚠️ Failed to get items for board ${board.id}: ${itemError.message}`);
               return {
                 ...board,
-                items: []
+                items: [],
+                subscribers: []
               };
             }
           })
@@ -500,7 +543,6 @@ export class ConnectionService {
         return boardsWithItems;
 
       } catch (boardsError: any) {
-        // Safe error handling
         const errorInfo = {
           message: boardsError.message,
           status: boardsError.response?.status,
@@ -513,7 +555,6 @@ export class ConnectionService {
       }
 
     } catch (error: any) {
-      // Final error handling - ensure no circular references
       const safeError = {
         message: error.message,
         name: error.name,
@@ -523,6 +564,61 @@ export class ConnectionService {
       logger.error('❌ Failed to get Monday.com project data', safeError);
       throw error;
     }
+  }
+
+  /**
+ * Filter boards to exclude subitems and prioritize main boards
+ */
+  private filterMainBoards(boards: any[]): any[] {
+    if (!boards || boards.length === 0) {
+      return [];
+    }
+
+    logger.info('🔍 Filtering Monday.com boards:', {
+      original: boards.map(b => ({ name: b.name, id: b.id, items: b.items_count }))
+    });
+
+    // Step 1: Filter out subitems boards
+    const mainBoards = boards.filter(board => {
+      const name = (board.name || '').toLowerCase();
+      const isSubitems = name.includes('subitems') || name.includes('sub-items') || name.includes('sub items');
+
+      if (isSubitems) {
+        logger.info(`🚫 Filtering out subitems board: "${board.name}" (ID: ${board.id})`);
+        return false;
+      }
+
+      return true;
+    });
+
+    // Step 2: CRITICAL - Prioritize "PRISM Test Project" board FIRST
+    const prioritizedBoards = mainBoards.sort((a, b) => {
+      const aName = (a.name || '').toLowerCase();
+      const bName = (b.name || '').toLowerCase();
+
+      // Priority 1: EXACT "PRISM Test Project" match gets TOP priority
+      if (aName === 'prism test project' && bName !== 'prism test project') return -1;
+      if (bName === 'prism test project' && aName !== 'prism test project') return 1;
+
+      // Priority 2: Contains "prism" (but not subitems)
+      const aIsPrism = aName.includes('prism') && !aName.includes('subitems');
+      const bIsPrism = bName.includes('prism') && !bName.includes('subitems');
+      if (aIsPrism && !bIsPrism) return -1;
+      if (!aIsPrism && bIsPrism) return 1;
+
+      // Priority 3: More items
+      return (b.items_count || 0) - (a.items_count || 0);
+    });
+
+    logger.info('✅ Board filtering complete:', {
+      originalCount: boards.length,
+      filteredCount: prioritizedBoards.length,
+      finalOrder: prioritizedBoards.map((b, index) =>
+        `${index + 1}. "${b.name}" (${b.items_count} items) ${b.name === 'PRISM Test Project' ? '🎯 MAIN BOARD' : ''}`
+      )
+    });
+
+    return prioritizedBoards;
   }
 
   /**
@@ -670,13 +766,24 @@ export class ConnectionService {
    */
   private transformMondayData(rawData: any): ProjectData[] {
     try {
+      if (!rawData) {
+        logger.warn('⚠️ No raw data to transform for Monday.com');
+        return [];
+      }
       // Handle both single board and multiple boards
       const boardsData = Array.isArray(rawData) ? rawData : [rawData];
+
+      logger.info('🔄 Starting Monday.com data transformation:', {
+        boardsToTransform: boardsData.length,
+        boardNames: boardsData.map(b => b.name),
+        totalItemsInRaw: boardsData.reduce((sum, b) => sum + (b.items?.length || 0), 0)
+      });
 
       return boardsData.map((board: any) => {
         const items = board.items || [];
         const groups = board.groups || [];
         const columns = board.columns || [];
+        const subscribers = board.subscribers || [];
 
         // Status distribution from color column
         const statusCounts: Record<string, number> = {};
@@ -788,6 +895,49 @@ export class ConnectionService {
             category: 'priority'
           }))
         ];
+
+        // ADD this logging right before the return statement:
+        const result = {
+          id: board.id,
+          name: board.name || 'Unnamed Monday.com Board',
+          platform: 'monday',
+          description: board.description || '',
+          status: 'active',
+          tasks: tasks,
+          team: teamMembers,
+          metrics: metrics,
+          platformSpecific: {
+            monday: {
+              boardId: board.id,
+              groups: groups.map((g: any) => ({
+                id: g.id,
+                title: g.title,
+                color: g.color
+              })),
+              columns: columns.map((c: any) => ({
+                id: c.id,
+                title: c.title,
+                type: c.type
+              }))
+            }
+          },
+          lastUpdated: new Date().toISOString(),
+          dataQuality: {
+            completeness: items.length > 0 ? 85 : 50,
+            accuracy: 90,
+            freshness: 100
+          }
+        };
+
+        logger.info(`✅ Board transformation complete: "${result.name}"`, {
+          originalItems: board.items_count,
+          transformedTasks: result.tasks.length,
+          teamMembers: result.team.length,
+          metricsCount: result.metrics.length,
+          hasRealData: result.tasks.length > 0
+        });
+
+        return result;
 
         return {
           id: board.id,

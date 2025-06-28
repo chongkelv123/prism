@@ -312,8 +312,8 @@ export class ConnectionService {
         logger.info(`📋 Fetching specific Monday.com board: ${projectId}`);
 
         const query = `
-        query($boardId: [ID!]) {
-          boards(ids: $boardId) {
+        query($boardId: ID!) {
+          boards(ids: [$boardId]) {
             id
             name
             description
@@ -363,7 +363,7 @@ export class ConnectionService {
         try {
           const response = await axios.post(mondayApiUrl, {
             query: query,
-            variables: { boardId: [projectId] }
+            variables: { boardId: projectId }
           }, {
             headers,
             timeout: 15000
@@ -447,40 +447,41 @@ export class ConnectionService {
           boards.slice(0, 3).map(async (board: any) => {
             try {
               const itemsQuery = `
-              query($boardId: [ID!]) {
-                boards(ids: $boardId) {
-                  items_page(limit: 50) {
-                    items {
-                      id
-                      name
-                      created_at
-                      updated_at
-                      state
-                      group {
+                query($boardId: ID!) {
+                  boards(ids: [$boardId]) {
+                    items_page(limit: 50) {
+                      cursor
+                      items {
                         id
-                        title
-                      }
-                      column_values {
-                        id
-                        title
-                        type
-                        value
-                        text
+                        name
+                        created_at
+                        updated_at
+                        state
+                        group {
+                          id
+                          title
+                        }
+                        column_values {
+                          id
+                          title
+                          type
+                          value
+                          text
+                        }
                       }
                     }
-                  }
-                  subscribers {
-                    id
-                    name
-                    email
+                    subscribers {
+                      id
+                      name
+                      email
+                    }
                   }
                 }
-              }
-            `;
+              `;
 
               const itemsResponse = await axios.post(mondayApiUrl, {
                 query: itemsQuery,
-                variables: { boardId: [board.id] }
+                variables: { boardId: board.id }
               }, { headers, timeout: 10000 });
 
               if (itemsResponse.data.errors) {

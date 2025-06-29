@@ -9,12 +9,12 @@ import { Report } from '../models/Report';
 import { PlatformDataService, ReportGenerationConfig } from '../services/PlatformDataService';
 import { DataAnalyticsService } from '../services/DataAnalyticsService';
 import {
-  TemplateReportGenerator,
-  EnhancedJiraReportGenerator,
+  TemplateReportGenerator,  
   EnhancedMondayReportGenerator,
   TrofosReportGenerator,
   TemplateRecommendationService
 } from '../generators/TemplateReportGenerator';
+import { EnhancedJiraReportGenerator } from '../generators/EnhancedJiraReportGenerator';
 
 // Get JWT token from request
 function getAuthToken(req: Request): string | undefined {

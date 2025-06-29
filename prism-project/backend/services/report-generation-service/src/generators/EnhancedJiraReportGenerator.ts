@@ -9,7 +9,7 @@ import logger from '../utils/logger';
 import { ProjectData } from '../services/PlatformDataService';
 
 export interface JiraReportConfig {
-  templateId: 'standard' | 'executive' | 'detailed';
+  templateId?: 'standard' | 'executive' | 'detailed'; // Make optional
   title?: string;
   includeTeamAnalysis?: boolean;
   includeRiskAssessment?: boolean;
@@ -99,7 +99,8 @@ export class EnhancedJiraReportGenerator {
       };
 
       // Generate slides based on template type
-      switch (config.templateId) {
+      const templateId = config.templateId || 'standard';
+      switch (templateId) {
         case 'standard':
           await this.generateStandardReport(pptx, projectData, jiraTheme, progressCallback);
           break;
@@ -114,7 +115,7 @@ export class EnhancedJiraReportGenerator {
       }
 
       // Save file
-      const filename = `jira-${config.templateId}-${projectData.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pptx`;
+      const filename = `jira-${templateId}-${projectData.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pptx`;
       const filepath = path.join(this.STORAGE_DIR, filename);
       
       await pptx.writeFile({ fileName: filepath });

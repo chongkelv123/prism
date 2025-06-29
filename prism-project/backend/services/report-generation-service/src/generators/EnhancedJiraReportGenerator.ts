@@ -34,7 +34,7 @@ export class EnhancedJiraReportGenerator {
 
   constructor() {
     this.STORAGE_DIR = process.env.STORAGE_DIR || path.join(__dirname, '../../storage');
-    
+
     // Ensure storage directory exists
     if (!fs.existsSync(this.STORAGE_DIR)) {
       fs.mkdirSync(this.STORAGE_DIR, { recursive: true });
@@ -45,8 +45,8 @@ export class EnhancedJiraReportGenerator {
    * Generate professional Jira report using REAL platform data
    */
   async generate(
-    projectData: ProjectData, 
-    config: JiraReportConfig, 
+    projectData: ProjectData,
+    config: JiraReportConfig,
     progressCallback?: (progress: number) => Promise<void>
   ): Promise<string> {
     try {
@@ -80,7 +80,7 @@ export class EnhancedJiraReportGenerator {
 
       // Initialize PowerPoint
       const pptx = new PptxGenJS();
-      
+
       // Configure presentation
       pptx.layout = 'LAYOUT_16x9';
       pptx.author = 'PRISM Report System';
@@ -117,7 +117,7 @@ export class EnhancedJiraReportGenerator {
       // Save file
       const filename = `jira-${templateId}-${projectData.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pptx`;
       const filepath = path.join(this.STORAGE_DIR, filename);
-      
+
       await pptx.writeFile({ fileName: filepath });
       await progressCallback?.(100);
 
@@ -146,7 +146,7 @@ export class EnhancedJiraReportGenerator {
    */
   private analyzeRealJiraData(projectData: ProjectData): JiraTaskAnalysis {
     const tasks = Array.isArray(projectData.tasks) ? projectData.tasks : [];
-    
+
     if (tasks.length === 0) {
       logger.warn('No tasks found in Jira project data');
       return this.getEmptyAnalysis();
@@ -173,12 +173,18 @@ export class EnhancedJiraReportGenerator {
       priorityCounts.set(priority, (priorityCounts.get(priority) || 0) + 1);
     });
 
+    // In analyzeRealJiraData method, fix priority sorting
     const priorityDistribution = Array.from(priorityCounts.entries()).map(([priority, count]) => ({
       priority,
       count,
       percentage: Math.round((count / tasks.length) * 100),
       color: this.getPriorityColor(priority)
-    }));
+    }))
+      .sort((a, b) => {
+        // Custom sort order: Highest → High → Medium → Low
+        const priorityOrder = { 'Highest': 4, 'High': 3, 'Medium': 2, 'Low': 1, 'None': 0 };
+        return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+      });
 
     // Team workload analysis with real assignees
     const assigneeCounts = new Map<string, number>();
@@ -197,27 +203,27 @@ export class EnhancedJiraReportGenerator {
       .sort((a, b) => b.count - a.count);
 
     // Calculate urgent tasks (High + Highest priority)
-    const urgentTasks = tasks.filter(task => 
+    const urgentTasks = tasks.filter(task =>
       task.priority && ['High', 'Highest'].includes(task.priority)
     ).length;
 
     // Calculate unassigned tasks
-    const unassignedTasks = tasks.filter(task => 
+    const unassignedTasks = tasks.filter(task =>
       !task.assignee || task.assignee === 'Unassigned'
     ).length;
 
     // Calculate completion rate
-    const completedTasks = tasks.filter(task => 
+    const completedTasks = tasks.filter(task =>
       this.normalizeJiraStatus(task.status || '') === 'Done'
     ).length;
     const completionRate = Math.round((completedTasks / tasks.length) * 100);
 
     // Determine overall risk level
     const riskLevel = this.calculateOverallRisk(
-      teamWorkload, 
-      urgentTasks, 
-      unassignedTasks, 
-      completionRate, 
+      teamWorkload,
+      urgentTasks,
+      unassignedTasks,
+      completionRate,
       tasks.length
     );
 
@@ -237,9 +243,9 @@ export class EnhancedJiraReportGenerator {
    * Generate Standard Report (5-7 slides)
    */
   private async generateStandardReport(
-    pptx: PptxGenJS, 
-    projectData: ProjectData, 
-    theme: any, 
+    pptx: PptxGenJS,
+    projectData: ProjectData,
+    theme: any,
     progressCallback?: (progress: number) => Promise<void>
   ): Promise<void> {
     // Slide 1: Title with Real Project Data
@@ -271,9 +277,9 @@ export class EnhancedJiraReportGenerator {
    * Generate Executive Report (4-5 slides)
    */
   private async generateExecutiveReport(
-    pptx: PptxGenJS, 
-    projectData: ProjectData, 
-    theme: any, 
+    pptx: PptxGenJS,
+    projectData: ProjectData,
+    theme: any,
     progressCallback?: (progress: number) => Promise<void>
   ): Promise<void> {
     // Slide 1: Executive Title
@@ -294,20 +300,123 @@ export class EnhancedJiraReportGenerator {
   }
 
   /**
+ * Create task details breakdown slide showing real Jira tasks
+ */
+  private async createTaskDetailsBreakdown(
+    pptx: PptxGenJS,
+    projectData: ProjectData,
+    theme: any
+  ): Promise<void> {
+    const slide = pptx.addSlide();
+
+    slide.addText('TASK DETAILS BREAKDOWN', {
+      x: 0.5, y: 0.2, w: 9, h: 0.8,
+      fontSize: 28, color: theme.primary, bold: true
+    });
+
+    slide.addText('Real Jira tasks showing project progress and team contributions', {
+      x: 0.5, y: 1.0, w: 9, h: 0.4,
+      fontSize: 14, color: '6B7280', align: 'center'
+    });
+
+    const tasks = Array.isArray(projectData.tasks) ? projectData.tasks : [];
+
+    // Sort tasks by priority (Highest → High → Medium → Low) and status
+    const sortedTasks = tasks
+      .sort((a, b) => {
+        const priorityOrder = { 'Highest': 4, 'High': 3, 'Medium': 2, 'Low': 1, 'None': 0 };
+        const statusOrder = { 'Done': 3, 'In Progress': 2, 'To Do': 1 };
+
+        // First sort by priority, then by status
+        const priorityDiff = (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+        if (priorityDiff !== 0) return priorityDiff;
+
+        return (statusOrder[b.status] || 0) - (statusOrder[a.status] || 0);
+      })
+      .slice(0, 15); // Show top 15 tasks to fit on slide
+
+    // Create table with real Jira data
+    const tableData = [
+      [
+        { text: 'Key', options: { bold: true, fontSize: 12, fill: { color: theme.primary }, color: 'FFFFFF' } },
+        { text: 'Summary', options: { bold: true, fontSize: 12, fill: { color: theme.primary }, color: 'FFFFFF' } },
+        { text: 'Assignee', options: { bold: true, fontSize: 12, fill: { color: theme.primary }, color: 'FFFFFF' } },
+        { text: 'Priority', options: { bold: true, fontSize: 12, fill: { color: theme.primary }, color: 'FFFFFF' } },
+        { text: 'Status', options: { bold: true, fontSize: 12, fill: { color: theme.primary }, color: 'FFFFFF' } }
+      ]
+    ];
+
+    sortedTasks.forEach(task => {
+      const priorityColor = this.getPriorityColor(task.priority || 'None');
+      const statusColor = this.getStatusColor(this.normalizeJiraStatus(task.status || ''));
+
+      tableData.push([
+        {
+          text: task.id || 'N/A',
+          options: { fontSize: 9, bold: true, fill: { color: 'FFFFFF' }, color: theme.info }
+        },
+        {
+          text: this.truncateText(task.name || 'Untitled', 40), // Truncate long titles
+          options: { fontSize: 9, bold: false, fill: { color: 'FFFFFF' }, color: '000000' }
+        },
+        {
+          text: task.assignee || 'Unassigned',
+          options: { fontSize: 9, bold: false, fill: { color: 'FFFFFF' }, color: '000000' }
+        },
+        {
+          text: task.priority || 'None',
+          options: { fontSize: 9, bold: true, fill: { color: 'FFFFFF' }, color: priorityColor }
+        },
+        {
+          text: task.status || 'Unknown',
+          options: { fontSize: 9, bold: true, fill: { color: 'FFFFFF' }, color: statusColor }
+        }
+      ]);
+    });
+
+    // Add table to slide
+    slide.addTable(tableData, {
+      x: 0.5,
+      y: 1.4,
+      w: 9,
+      h: 4.0,
+      colW: [1.2, 3.5, 1.8, 1.2, 1.3] // Column widths: Key, Summary, Assignee, Priority, Status
+    });
+
+    // Add footer note
+    slide.addText(`Showing ${sortedTasks.length} of ${tasks.length} total tasks (sorted by priority and status)`, {
+      x: 0.5, y: 6.5, w: 9, h: 0.3,
+      fontSize: 10, color: '6B7280', italic: true, align: 'center'
+    });
+  }
+
+  /**
+   * Helper method to truncate long text
+   */
+  private truncateText(text: string, maxLength: number): string {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength - 3) + '...';
+  }
+
+  /**
    * Generate Detailed Report (8-10 slides)
    */
   private async generateDetailedReport(
-    pptx: PptxGenJS, 
-    projectData: ProjectData, 
-    theme: any, 
+    pptx: PptxGenJS,
+    projectData: ProjectData,
+    theme: any,
     progressCallback?: (progress: number) => Promise<void>
   ): Promise<void> {
     // Include all standard slides plus additional detailed analysis
-    await this.generateStandardReport(pptx, projectData, theme, 
-      (progress) => progressCallback?.(progress * 0.7));
+    await this.generateStandardReport(pptx, projectData, theme,
+      (progress) => progressCallback?.(progress * 0.6));
 
     // Additional detailed slides
     await this.createDetailedTeamAnalysis(pptx, projectData, theme);
+    await progressCallback?.(70);
+
+    // NEW: Add task details breakdown
+    await this.createTaskDetailsBreakdown(pptx, projectData, theme);
     await progressCallback?.(80);
 
     await this.createPredictiveAnalysis(pptx, projectData, theme);
@@ -321,16 +430,16 @@ export class EnhancedJiraReportGenerator {
    * Create title slide with real project information
    */
   private async createTitleSlide(
-    pptx: PptxGenJS, 
-    projectData: ProjectData, 
-    theme: any, 
+    pptx: PptxGenJS,
+    projectData: ProjectData,
+    theme: any,
     reportType: string
   ): Promise<void> {
     const slide = pptx.addSlide();
-    
+
     // Background
     slide.background = { color: theme.primary };
-    
+
     // Title
     slide.addText(reportType, {
       x: 0.5, y: 1.5, w: '90%', h: 1,
@@ -346,19 +455,19 @@ export class EnhancedJiraReportGenerator {
     // Data source indicator
     const dataSource = projectData.fallbackData ? 'DEMONSTRATION DATA' : 'LIVE JIRA DATA';
     slide.addText(`Data Source: ${dataSource}`, {
-      x: 0.5, y: 3.5, w: '90%', h: 0.5,
+      x: 0.5, y: 3.3, w: '90%', h: 0.5,
       fontSize: 14, color: 'FFFFFF', align: 'center', italic: true
     });
 
     // Key stats from real data
     slide.addText(`${this.jiraAnalysis.totalTasks} Tasks | ${this.jiraAnalysis.completionRate}% Complete | ${this.jiraAnalysis.urgentTasks} Urgent`, {
-      x: 0.5, y: 4.5, w: '90%', h: 0.5,
+      x: 0.5, y: 3.8, w: '90%', h: 0.5,
       fontSize: 16, color: 'FFFFFF', align: 'center'
     });
 
     // Generation timestamp
     slide.addText(`Generated: ${new Date().toLocaleDateString()}`, {
-      x: 0.5, y: 5.5, w: '90%', h: 0.5,
+      x: 0.5, y: 4.7, w: '90%', h: 0.5,
       fontSize: 12, color: 'FFFFFF', align: 'center'
     });
   }
@@ -367,14 +476,14 @@ export class EnhancedJiraReportGenerator {
    * Create project health dashboard with real Jira metrics
    */
   private async createProjectHealthDashboard(
-    pptx: PptxGenJS, 
-    projectData: ProjectData, 
+    pptx: PptxGenJS,
+    projectData: ProjectData,
     theme: any
   ): Promise<void> {
     const slide = pptx.addSlide();
-    
+
     slide.addText('PROJECT HEALTH DASHBOARD', {
-      x: 0.5, y: 0.5, w: '90%', h: 0.8,
+      x: 0.5, y: 0.3, w: 9, h: 0.8,
       fontSize: 28, color: theme.primary, bold: true
     });
 
@@ -383,36 +492,36 @@ export class EnhancedJiraReportGenerator {
       {
         title: 'COMPLETION',
         value: `${this.jiraAnalysis.completionRate}%`,
-        status: this.jiraAnalysis.completionRate >= 80 ? 'success' : 
-                this.jiraAnalysis.completionRate >= 60 ? 'warning' : 'danger',
-        x: 0.5, y: 1.5
+        status: this.jiraAnalysis.completionRate >= 80 ? 'success' :
+          this.jiraAnalysis.completionRate >= 60 ? 'warning' : 'danger',
+        x: 0.25, y: 1.2, w: 2.2, h: 1.5 // Reduced width and adjusted positioning
       },
       {
         title: 'URGENT TASKS',
         value: `${this.jiraAnalysis.urgentTasks}`,
-        status: this.jiraAnalysis.urgentTasks <= 5 ? 'success' : 
-                this.jiraAnalysis.urgentTasks <= 10 ? 'warning' : 'danger',
-        x: 3, y: 1.5
+        status: this.jiraAnalysis.urgentTasks <= 5 ? 'success' :
+          this.jiraAnalysis.urgentTasks <= 10 ? 'warning' : 'danger',
+        x: 2.75, y: 1.2, w: 2.2, h: 1.5
       },
       {
         title: 'TEAM CAPACITY',
         value: this.jiraAnalysis.teamWorkload[0]?.percentage >= 70 ? 'OVERLOADED' : 'BALANCED',
         status: this.jiraAnalysis.teamWorkload[0]?.percentage >= 70 ? 'danger' : 'success',
-        x: 5.5, y: 1.5
+        x: 5.25, y: 1.2, w: 2.2, h: 1.5
       },
       {
         title: 'UNASSIGNED',
         value: `${this.jiraAnalysis.unassignedTasks}`,
-        status: this.jiraAnalysis.unassignedTasks === 0 ? 'success' : 
-                this.jiraAnalysis.unassignedTasks <= 3 ? 'warning' : 'danger',
-        x: 8, y: 1.5
+        status: this.jiraAnalysis.unassignedTasks === 0 ? 'success' :
+          this.jiraAnalysis.unassignedTasks <= 3 ? 'warning' : 'danger',
+        x: 7.75, y: 1.2, w: 1.8, h: 1.5
       }
     ];
 
     kpis.forEach(kpi => {
-      const statusColor = kpi.status === 'success' ? theme.success : 
-                         kpi.status === 'warning' ? theme.warning : theme.danger;
-      
+      const statusColor = kpi.status === 'success' ? theme.success :
+        kpi.status === 'warning' ? theme.warning : theme.danger;
+
       // KPI Card background
       slide.addShape(pptx.ShapeType.rect, {
         x: kpi.x, y: kpi.y, w: 2, h: 1.5,
@@ -435,8 +544,8 @@ export class EnhancedJiraReportGenerator {
 
     // Risk Level Alert
     const riskColor = this.jiraAnalysis.riskLevel === 'LOW' ? theme.success :
-                     this.jiraAnalysis.riskLevel === 'MEDIUM' ? theme.warning :
-                     this.jiraAnalysis.riskLevel === 'HIGH' ? theme.danger : theme.danger;
+      this.jiraAnalysis.riskLevel === 'MEDIUM' ? theme.warning :
+        this.jiraAnalysis.riskLevel === 'HIGH' ? theme.danger : theme.danger;
 
     slide.addText(`OVERALL RISK LEVEL: ${this.jiraAnalysis.riskLevel}`, {
       x: 0.5, y: 4, w: '90%', h: 0.8,
@@ -448,35 +557,39 @@ export class EnhancedJiraReportGenerator {
    * Create task status analysis with donut chart using real Jira data
    */
   private async createTaskStatusAnalysis(
-    pptx: PptxGenJS, 
-    projectData: ProjectData, 
+    pptx: PptxGenJS,
+    projectData: ProjectData,
     theme: any
   ): Promise<void> {
     const slide = pptx.addSlide();
-    
+
     slide.addText('TASK STATUS ANALYSIS', {
-      x: 0.5, y: 0.5, w: '90%', h: 0.8,
+      x: 0.5, y: 0.5, w: 9, h: 0.8,
       fontSize: 28, color: theme.primary, bold: true
     });
 
-    // Create donut chart data from real Jira status distribution
-    const chartData = this.jiraAnalysis.statusDistribution.map(item => ({
-      name: item.status,
-      labels: [`${item.status} (${item.count})`, `${item.percentage}%`],
-      values: [item.percentage],
-      color: item.color
-    }));
+    // FIXED: Correct pptxgenjs donut chart format
+    const statusData = this.jiraAnalysis.statusDistribution;
 
-    // Add donut chart
+    const chartData = [
+      {
+        name: 'Task Status Distribution',
+        labels: statusData.map(item => item.status),
+        values: statusData.map(item => item.count),
+        colors: statusData.map(item => item.color)
+      }
+    ];
+
+    // Add donut chart with correct single-series format
     slide.addChart(pptx.ChartType.doughnut, chartData, {
-      x: 1, y: 1.5, w: 4, h: 4,
+      x: 1, y: 1.5, w: 4, h: 3.5,
       showLegend: true,
       legendPos: 'r',
       showPercent: true,
       holeSize: 50
     });
 
-    // Status breakdown table with real data
+    // Table remains the same (this part is working correctly)
     const tableData = [
       [
         { text: 'Status', options: { bold: true, fontSize: 14, fill: { color: theme.primary }, color: 'FFFFFF' } },
@@ -493,21 +606,21 @@ export class EnhancedJiraReportGenerator {
       ]);
     });
 
-    slide.addTable(tableData, { x: 6, y: 1.5, w: 3.5, h: 3 });
+    slide.addTable(tableData, { x: 5.5, y: 1.5, w: 3.5, h: 2.5 });
   }
 
   /**
    * Create team workload analysis with real assignees
    */
   private async createTeamWorkloadAnalysis(
-    pptx: PptxGenJS, 
-    projectData: ProjectData, 
+    pptx: PptxGenJS,
+    projectData: ProjectData,
     theme: any
   ): Promise<void> {
     const slide = pptx.addSlide();
-    
+
     slide.addText('TEAM WORKLOAD ANALYSIS', {
-      x: 0.5, y: 0.5, w: '90%', h: 0.8,
+      x: 0.5, y: 0.3, w: 9, h: 0.8,
       fontSize: 28, color: theme.primary, bold: true
     });
 
@@ -547,31 +660,31 @@ export class EnhancedJiraReportGenerator {
 
     this.jiraAnalysis.teamWorkload.forEach(member => {
       const riskColor = member.riskLevel === 'CRITICAL' ? theme.danger :
-                       member.riskLevel === 'HIGH' ? theme.warning :
-                       member.riskLevel === 'MEDIUM' ? theme.info : theme.success;
+        member.riskLevel === 'HIGH' ? theme.warning :
+          member.riskLevel === 'MEDIUM' ? theme.info : theme.success;
 
       workloadTableData.push([
-        { text: member.assignee, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF'}, color: '000000' } },
-        { text: member.count.toString(), options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF'}, color: '000000' } },
-        { text: `${member.percentage}%`, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF'}, color: '000000' } },
+        { text: member.assignee, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } },
+        { text: member.count.toString(), options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } },
+        { text: `${member.percentage}%`, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } },
         { text: member.riskLevel, options: { fontSize: 12, color: riskColor, bold: true, fill: { color: 'FFFFFF' } } }
 
       ]);
     });
-    
-    slide.addTable(workloadTableData, { x: 1, y: 3.5, w: 8, h: 3 });
+
+    slide.addTable(workloadTableData, { x: 1, y: 3.2, w: 8, h: 2.2 });
   }
 
   /**
    * Create priority risk assessment
    */
   private async createPriorityRiskAssessment(
-    pptx: PptxGenJS, 
-    projectData: ProjectData, 
+    pptx: PptxGenJS,
+    projectData: ProjectData,
     theme: any
   ): Promise<void> {
     const slide = pptx.addSlide();
-    
+
     slide.addText('PRIORITY & RISK ASSESSMENT', {
       x: 0.5, y: 0.5, w: '90%', h: 0.8,
       fontSize: 28, color: theme.primary, bold: true
@@ -612,9 +725,9 @@ export class EnhancedJiraReportGenerator {
 
     this.jiraAnalysis.priorityDistribution.forEach(item => {
       priorityTableData.push([
-        { text: item.priority, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF'}, color: '000000' } },
-        { text: item.count.toString(), options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF'}, color: '000000' } },
-        { text: `${item.percentage}%`, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF'}, color: '000000' } }
+        { text: item.priority, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } },
+        { text: item.count.toString(), options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } },
+        { text: `${item.percentage}%`, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } }
       ]);
     });
 
@@ -625,12 +738,12 @@ export class EnhancedJiraReportGenerator {
    * Create action items slide
    */
   private async createActionItemsSlide(
-    pptx: PptxGenJS, 
-    projectData: ProjectData, 
+    pptx: PptxGenJS,
+    projectData: ProjectData,
     theme: any
   ): Promise<void> {
     const slide = pptx.addSlide();
-    
+
     slide.addText('ACTION ITEMS & RECOMMENDATIONS', {
       x: 0.5, y: 0.5, w: '90%', h: 0.8,
       fontSize: 28, color: theme.primary, bold: true
@@ -674,7 +787,7 @@ export class EnhancedJiraReportGenerator {
     // Next review date
     const nextReview = new Date();
     nextReview.setDate(nextReview.getDate() + 7);
-    
+
     slide.addText(`Next Review: ${nextReview.toLocaleDateString()}`, {
       x: 0.5, y: 6, w: '90%', h: 0.5,
       fontSize: 14, color: theme.secondary, italic: true, align: 'center'
@@ -685,14 +798,14 @@ export class EnhancedJiraReportGenerator {
    * Create executive KPI dashboard
    */
   private async createExecutiveKPIDashboard(
-    pptx: PptxGenJS, 
-    projectData: ProjectData, 
+    pptx: PptxGenJS,
+    projectData: ProjectData,
     theme: any
   ): Promise<void> {
     const slide = pptx.addSlide();
-    
+
     slide.addText('EXECUTIVE KPI DASHBOARD', {
-      x: 0.5, y: 0.5, w: '90%', h: 0.8,
+      x: 0.5, y: 0.3, w: 9, h: 0.8,
       fontSize: 28, color: theme.primary, bold: true
     });
 
@@ -703,35 +816,35 @@ export class EnhancedJiraReportGenerator {
         value: `${this.jiraAnalysis.completionRate}%`,
         subtitle: this.jiraAnalysis.completionRate >= 75 ? 'ON TRACK' : 'NEEDS ATTENTION',
         status: this.jiraAnalysis.completionRate >= 75 ? 'success' : 'warning',
-        x: 0.5, y: 1.5, w: 4.5, h: 2
+        x: 0.5, y: 1.3, w: 4.2, h: 1.8
       },
       {
         title: 'CRITICAL TASKS',
         value: `${this.jiraAnalysis.urgentTasks}`,
         subtitle: this.jiraAnalysis.urgentTasks <= 5 ? 'MANAGEABLE' : 'IMMEDIATE ACTION',
         status: this.jiraAnalysis.urgentTasks <= 5 ? 'success' : 'danger',
-        x: 5.5, y: 1.5, w: 4, h: 2
+        x: 5.2, y: 1.3, w: 4.2, h: 1.8
       },
       {
         title: 'TEAM CAPACITY',
         value: this.jiraAnalysis.teamWorkload[0]?.percentage >= 70 ? 'OVERLOADED' : 'BALANCED',
         subtitle: `Top: ${this.jiraAnalysis.teamWorkload[0]?.percentage || 0}% concentration`,
         status: this.jiraAnalysis.teamWorkload[0]?.percentage >= 70 ? 'danger' : 'success',
-        x: 0.5, y: 4, w: 4.5, h: 2
+        x: 0.5, y: 3.5, w: 4.3, h: 1.8
       },
       {
         title: 'UNASSIGNED WORK',
         value: `${this.jiraAnalysis.unassignedTasks}`,
         subtitle: this.jiraAnalysis.unassignedTasks === 0 ? 'ALL ASSIGNED' : 'NEEDS OWNERS',
         status: this.jiraAnalysis.unassignedTasks === 0 ? 'success' : 'warning',
-        x: 5.5, y: 4, w: 4, h: 2
+        x: 5.2, y: 3.5, w: 4.2, h: 1.8
       }
     ];
 
     executiveKPIs.forEach(kpi => {
-      const statusColor = kpi.status === 'success' ? theme.success : 
-                         kpi.status === 'warning' ? theme.warning : theme.danger;
-      
+      const statusColor = kpi.status === 'success' ? theme.success :
+        kpi.status === 'warning' ? theme.warning : theme.danger;
+
       // Large KPI tile
       slide.addShape(pptx.ShapeType.rect, {
         x: kpi.x, y: kpi.y, w: kpi.w, h: kpi.h,
@@ -741,20 +854,20 @@ export class EnhancedJiraReportGenerator {
 
       // KPI Title
       slide.addText(kpi.title, {
-        x: kpi.x, y: kpi.y + 0.2, w: kpi.w, h: 0.4,
-        fontSize: 16, color: 'FFFFFF', bold: true, align: 'center'
+        x: kpi.x, y: kpi.y + 0.1, w: kpi.w, h: 0.4,
+        fontSize: 14, color: 'FFFFFF', bold: true, align: 'center'
       });
 
       // KPI Value (large)
       slide.addText(kpi.value, {
         x: kpi.x, y: kpi.y + 0.6, w: kpi.w, h: 0.8,
-        fontSize: 32, color: 'FFFFFF', bold: true, align: 'center'
+        fontSize: 24, color: 'FFFFFF', bold: true, align: 'center'
       });
 
       // KPI Subtitle
       slide.addText(kpi.subtitle, {
-        x: kpi.x, y: kpi.y + 1.4, w: kpi.w, h: 0.4,
-        fontSize: 12, color: 'FFFFFF', align: 'center'
+        x: kpi.x, y: kpi.y + 1.3, w: kpi.w, h: 0.4,
+        fontSize: 10, color: 'FFFFFF', align: 'center'
       });
     });
   }
@@ -763,14 +876,14 @@ export class EnhancedJiraReportGenerator {
    * Create critical alerts slide
    */
   private async createCriticalAlertsSlide(
-    pptx: PptxGenJS, 
-    projectData: ProjectData, 
+    pptx: PptxGenJS,
+    projectData: ProjectData,
     theme: any
   ): Promise<void> {
     const slide = pptx.addSlide();
-    
+
     slide.addText('CRITICAL ALERTS & RISK SUMMARY', {
-      x: 0.5, y: 0.5, w: '90%', h: 0.8,
+      x: 0.5, y: 0.3, w: 9, h: 0.8,
       fontSize: 28, color: theme.primary, bold: true
     });
 
@@ -820,48 +933,48 @@ export class EnhancedJiraReportGenerator {
       });
     }
 
-    // Display alerts or positive status
+    // FIXED: Smaller alert boxes that fit within boundaries
     if (alerts.length === 0) {
       slide.addShape(pptx.ShapeType.rect, {
-        x: 1, y: 2, w: 8, h: 3,
+        x: 1, y: 1.5, w: 8, h: 2.5,  // Smaller and centered
         fill: { color: theme.success },
         line: { color: theme.success, width: 0 }
       });
 
       slide.addText('NO CRITICAL ALERTS', {
-        x: 1, y: 2.5, w: 8, h: 1,
-        fontSize: 24, color: 'FFFFFF', bold: true, align: 'center'
+        x: 1, y: 2, w: 8, h: 0.8,
+        fontSize: 20, color: 'FFFFFF', bold: true, align: 'center'
       });
 
       slide.addText('Project is operating within acceptable parameters', {
-        x: 1, y: 3.5, w: 8, h: 0.5,
-        fontSize: 16, color: 'FFFFFF', align: 'center'
+        x: 1, y: 2.8, w: 8, h: 0.5,
+        fontSize: 14, color: 'FFFFFF', align: 'center'
       });
     } else {
-      let yPos = 1.5;
+      let yPos = 1.3;
       alerts.slice(0, 3).forEach(alert => { // Show max 3 alerts
         slide.addShape(pptx.ShapeType.rect, {
-          x: 0.5, y: yPos, w: 9, h: 1.5,
+          x: 0.5, y: yPos, w: 9, h: 1.4,  // Smaller height and proper width
           fill: { color: alert.color },
           line: { color: alert.color, width: 0 }
         });
 
         slide.addText(`${alert.type}: ${alert.title}`, {
-          x: 0.5, y: yPos + 0.1, w: 9, h: 0.4,
-          fontSize: 14, color: 'FFFFFF', bold: true, align: 'left'
+          x: 0.7, y: yPos + 0.1, w: 8.6, h: 0.3,  // Smaller text area
+          fontSize: 12, color: 'FFFFFF', bold: true, align: 'left'  // Reduced font
         });
 
         slide.addText(alert.message, {
-          x: 0.5, y: yPos + 0.5, w: 9, h: 0.4,
-          fontSize: 12, color: 'FFFFFF', align: 'left'
+          x: 0.7, y: yPos + 0.4, w: 8.6, h: 0.4,
+          fontSize: 10, color: 'FFFFFF', align: 'left'  // Reduced font
         });
 
         slide.addText(`Action: ${alert.action}`, {
-          x: 0.5, y: yPos + 0.9, w: 9, h: 0.4,
-          fontSize: 11, color: 'FFFFFF', italic: true, align: 'left'
+          x: 0.7, y: yPos + 0.8, w: 8.6, h: 0.4,
+          fontSize: 9, color: 'FFFFFF', italic: true, align: 'left'  // Reduced font
         });
 
-        yPos += 1.8;
+        yPos += 1.6;  // Smaller spacing between alerts
       });
     }
   }
@@ -870,12 +983,12 @@ export class EnhancedJiraReportGenerator {
    * Create strategic recommendations slide
    */
   private async createStrategicRecommendationsSlide(
-    pptx: PptxGenJS, 
-    projectData: ProjectData, 
+    pptx: PptxGenJS,
+    projectData: ProjectData,
     theme: any
   ): Promise<void> {
     const slide = pptx.addSlide();
-    
+
     slide.addText('STRATEGIC RECOMMENDATIONS', {
       x: 0.5, y: 0.5, w: '90%', h: 0.8,
       fontSize: 28, color: theme.primary, bold: true
@@ -949,15 +1062,15 @@ export class EnhancedJiraReportGenerator {
 
     strategicActions.forEach(action => {
       const priorityColor = action.priority === 'IMMEDIATE' ? theme.danger :
-                           action.priority === 'HIGH' ? theme.warning :
-                           action.priority === 'MEDIUM' ? theme.info : theme.success;
+        action.priority === 'HIGH' ? theme.warning :
+          action.priority === 'MEDIUM' ? theme.info : theme.success;
 
       tableData.push([
-        { text: action.priority, options: { fontSize: 11, color: priorityColor, bold: true, fill: { color: 'FFFFFF'} } },
-        { text: action.action, options: { fontSize: 11, bold: true, fill: { color: 'FFFFFF'}, color: '000000'} },
-        { text: action.description, options: { fontSize: 10, bold: false, fill: { color: 'FFFFFF'}, color: '000000'} },
-        { text: action.timeline, options: { fontSize: 11, bold: false, fill: {color: 'FFFFFF'}, color: '000000'} },
-        { text: action.impact, options: { fontSize: 11, bold: false, fill: { color: 'FFFFFF'}, color: '000000'} }
+        { text: action.priority, options: { fontSize: 11, color: priorityColor, bold: true, fill: { color: 'FFFFFF' } } },
+        { text: action.action, options: { fontSize: 11, bold: true, fill: { color: 'FFFFFF' }, color: '000000' } },
+        { text: action.description, options: { fontSize: 10, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } },
+        { text: action.timeline, options: { fontSize: 11, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } },
+        { text: action.impact, options: { fontSize: 11, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } }
       ]);
     });
 
@@ -968,19 +1081,19 @@ export class EnhancedJiraReportGenerator {
    * Additional slide creation methods for detailed report
    */
   private async createDetailedTeamAnalysis(
-    pptx: PptxGenJS, 
-    projectData: ProjectData, 
+    pptx: PptxGenJS,
+    projectData: ProjectData,
     theme: any
   ): Promise<void> {
     const slide = pptx.addSlide();
-    
+
     slide.addText('DETAILED TEAM ANALYSIS', {
-      x: 0.5, y: 0.5, w: '90%', h: 0.8,
+      x: 0.5, y: 0.3, w: 9, h: 0.8,
       fontSize: 28, color: theme.primary, bold: true
     });
 
     slide.addText('Comprehensive team performance and capacity analysis based on real Jira data.', {
-      x: 0.5, y: 1.5, w: '90%', h: 1,
+      x: 0.5, y: 1.2, w: 9, h: 1,
       fontSize: 16, color: '374151'
     });
 
@@ -988,10 +1101,10 @@ export class EnhancedJiraReportGenerator {
     const teamMetrics = this.jiraAnalysis.teamWorkload.map(member => ({
       name: member.assignee,
       productivity: Math.round((member.count / this.jiraAnalysis.totalTasks) * 100),
-      efficiency: member.riskLevel === 'CRITICAL' ? 'Overloaded' : 
-                 member.riskLevel === 'HIGH' ? 'High Utilization' : 'Optimal',
-      recommendation: member.percentage >= 70 ? 'Reduce workload' : 
-                     member.percentage >= 50 ? 'Monitor capacity' : 'Can take more tasks'
+      efficiency: member.riskLevel === 'CRITICAL' ? 'Overloaded' :
+        member.riskLevel === 'HIGH' ? 'High Utilization' : 'Optimal',
+      recommendation: member.percentage >= 70 ? 'Reduce workload' :
+        member.percentage >= 50 ? 'Monitor capacity' : 'Can take more tasks'
     }));
 
     const teamTableData = [
@@ -1005,35 +1118,35 @@ export class EnhancedJiraReportGenerator {
 
     teamMetrics.forEach(metric => {
       teamTableData.push([
-        { text: metric.name, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF'}, color: '000000'} },
-        { text: `${metric.productivity}%`, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF'}, color: '000000'} },
-        { text: metric.efficiency, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF'}, color: '000000'} },
-        { text: metric.recommendation, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF'}, color: '000000'} }
+        { text: metric.name, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } },
+        { text: `${metric.productivity}%`, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } },
+        { text: metric.efficiency, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } },
+        { text: metric.recommendation, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } }
       ]);
     });
 
-    slide.addTable(teamTableData, { x: 1, y: 3, w: 8, h: 3 });
+    slide.addTable(teamTableData, { x: 1, y: 2.5, w: 8, h: 2.5 });
   }
 
   private async createPredictiveAnalysis(
-    pptx: PptxGenJS, 
-    projectData: ProjectData, 
+    pptx: PptxGenJS,
+    projectData: ProjectData,
     theme: any
   ): Promise<void> {
     const slide = pptx.addSlide();
-    
+
     slide.addText('PREDICTIVE ANALYSIS', {
       x: 0.5, y: 0.5, w: '90%', h: 0.8,
       fontSize: 28, color: theme.primary, bold: true
     });
 
     // Calculate projected completion based on current velocity
-    const remainingTasks = this.jiraAnalysis.totalTasks - 
+    const remainingTasks = this.jiraAnalysis.totalTasks -
       this.jiraAnalysis.statusDistribution.find(s => s.status === 'Done')?.count || 0;
-    
+
     const averageVelocity = Math.max(1, Math.round(this.jiraAnalysis.totalTasks * 0.1)); // Assume 10% weekly velocity
     const projectedWeeks = Math.ceil(remainingTasks / averageVelocity);
-    
+
     const projectedCompletion = new Date();
     projectedCompletion.setDate(projectedCompletion.getDate() + (projectedWeeks * 7));
 
@@ -1049,12 +1162,12 @@ export class EnhancedJiraReportGenerator {
   }
 
   private async createImplementationRoadmap(
-    pptx: PptxGenJS, 
-    projectData: ProjectData, 
+    pptx: PptxGenJS,
+    projectData: ProjectData,
     theme: any
   ): Promise<void> {
     const slide = pptx.addSlide();
-    
+
     slide.addText('IMPLEMENTATION ROADMAP', {
       x: 0.5, y: 0.5, w: '90%', h: 0.8,
       fontSize: 28, color: theme.primary, bold: true
@@ -1125,10 +1238,10 @@ export class EnhancedJiraReportGenerator {
   }
 
   private calculateOverallRisk(
-    teamWorkload: any[], 
-    urgentTasks: number, 
-    unassignedTasks: number, 
-    completionRate: number, 
+    teamWorkload: any[],
+    urgentTasks: number,
+    unassignedTasks: number,
+    completionRate: number,
     totalTasks: number
   ): 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' {
     let riskScore = 0;

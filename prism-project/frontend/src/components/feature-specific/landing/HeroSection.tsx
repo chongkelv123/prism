@@ -9,7 +9,7 @@ const HeroSection: React.FC = () => {
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
   
   // Replace with your actual YouTube video ID
-  const DEMO_VIDEO_ID = "kxLyLxnN3BU"; // Example: Rick Roll video ID
+  const DEMO_VIDEO_ID = "u2DncPM6VxA"; // Example: Rick Roll video ID
   // To get your video ID: https://www.youtube.com/watch?v=YOUR_VIDEO_ID_HERE
 
   const handleWatchDemo = () => {

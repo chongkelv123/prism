@@ -19,7 +19,7 @@ const AppProviders = () => {
   return (
     <AuthProvider>
       <Outlet />
-      <AuthDebug /> 
+      <AuthDebug />
     </AuthProvider>
   );
 };

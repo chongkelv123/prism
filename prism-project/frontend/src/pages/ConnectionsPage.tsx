@@ -8,6 +8,8 @@ import ConnectionsList from '../components/feature-specific/connections/Connecti
 import AddConnectionModal from '../components/feature-specific/connections/AddConnectionModal';
 import ServiceAvailabilityBanner from '../components/common/ServiceAvailabilityBanner';
 
+const SHOW_DEBUG_PANEL = false; // Set to false to hide debug panel
+
 // Main component that uses shared ConnectionsContext from router
 const ConnectionsPage: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -17,15 +19,15 @@ const ConnectionsPage: React.FC = () => {
   const { user, isAuthenticated } = useAuth();
 
   // Use the shared ConnectionsContext from router (NO local provider)
-  const { 
-    connections, 
-    isLoading, 
-    error, 
+  const {
+    connections,
+    isLoading,
+    error,
     createConnection,
     testConnection,
     syncConnection,
     deleteConnection,
-    isServiceAvailable 
+    isServiceAvailable
   } = useConnections();
 
   console.log('ConnectionsPage: Using shared ConnectionsContext - connections:', connections.length);
@@ -128,50 +130,52 @@ const ConnectionsPage: React.FC = () => {
         />
 
         {/* Debug Info Panel */}
-        <div className="mt-8 bg-gray-50 border border-gray-200 rounded-lg p-4">
-          <h3 className="text-sm font-medium text-gray-700 mb-3">
-            Connections Debug Panel (Shared Context)
-          </h3>
-          <div className="text-xs text-gray-600 space-y-1">
-            <p><strong>Authenticated:</strong> {isAuthenticated ? 'Yes' : 'No'}</p>
-            <p><strong>User ID:</strong> {user?.id || 'None'}</p>
-            <p><strong>Service Available:</strong> {isServiceAvailable ? 'Yes' : 'No'}</p>
-            <p><strong>Connections:</strong> {connections.length}</p>
-            <p><strong>Connected:</strong> {connections.filter(c => c.status === 'connected').length}</p>
-            <p><strong>Loading:</strong> {isLoading ? 'Yes' : 'No'}</p>
-            <p><strong>Error:</strong> {error || 'None'}</p>
-            <p><strong>Storage Keys:</strong> prism-connections-{user?.id || 'NO_USER'}</p>
-            <p><strong>Context Source:</strong> Shared from Router</p>
+        {SHOW_DEBUG_PANEL && (
+          <div className="mt-8 bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <h3 className="text-sm font-medium text-gray-700 mb-3">
+              Connections Debug Panel (Shared Context)
+            </h3>
+            <div className="text-xs text-gray-600 space-y-1">
+              <p><strong>Authenticated:</strong> {isAuthenticated ? 'Yes' : 'No'}</p>
+              <p><strong>User ID:</strong> {user?.id || 'None'}</p>
+              <p><strong>Service Available:</strong> {isServiceAvailable ? 'Yes' : 'No'}</p>
+              <p><strong>Connections:</strong> {connections.length}</p>
+              <p><strong>Connected:</strong> {connections.filter(c => c.status === 'connected').length}</p>
+              <p><strong>Loading:</strong> {isLoading ? 'Yes' : 'No'}</p>
+              <p><strong>Error:</strong> {error || 'None'}</p>
+              <p><strong>Storage Keys:</strong> prism-connections-{user?.id || 'NO_USER'}</p>
+              <p><strong>Context Source:</strong> Shared from Router</p>
+            </div>
+
+            <div className="mt-3 flex space-x-2">
+              <button
+                onClick={() => {
+                  console.log('Current state (SHARED CONTEXT):', {
+                    connections,
+                    isLoading,
+                    error,
+                    isServiceAvailable,
+                    isAuthenticated,
+                    user
+                  });
+                }}
+                className="px-2 py-1 text-xs bg-yellow-200 text-yellow-800 rounded"
+              >
+                Log State
+              </button>
+              <button
+                onClick={() => {
+                  const globalData = localStorage.getItem('prism-connections');
+                  const userData = localStorage.getItem(`prism-connections-${user?.id}`);
+                  console.log('Storage debug:', { globalData, userData });
+                }}
+                className="px-2 py-1 text-xs bg-yellow-200 text-yellow-800 rounded"
+              >
+                Check Storage
+              </button>
+            </div>
           </div>
-          
-          <div className="mt-3 flex space-x-2">
-            <button
-              onClick={() => {
-                console.log('Current state (SHARED CONTEXT):', {
-                  connections,
-                  isLoading,
-                  error,
-                  isServiceAvailable,
-                  isAuthenticated,
-                  user
-                });
-              }}
-              className="px-2 py-1 text-xs bg-yellow-200 text-yellow-800 rounded"
-            >
-              Log State
-            </button>
-            <button
-              onClick={() => {
-                const globalData = localStorage.getItem('prism-connections');
-                const userData = localStorage.getItem(`prism-connections-${user?.id}`);
-                console.log('Storage debug:', { globalData, userData });
-              }}
-              className="px-2 py-1 text-xs bg-yellow-200 text-yellow-800 rounded"
-            >
-              Check Storage
-            </button>
-          </div>
-        </div>
+        )}
 
         {/* Instructions */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">

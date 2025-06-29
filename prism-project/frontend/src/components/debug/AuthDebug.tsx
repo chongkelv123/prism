@@ -3,6 +3,8 @@ import React, { useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+const SHOW_AUTH_DEBUG = false; // Set to true to enable debug panel
+
 const AuthDebug: React.FC = () => {
   const { isAuthenticated, isLoading, user } = useAuth();
   const location = useLocation();
@@ -20,7 +22,7 @@ const AuthDebug: React.FC = () => {
   }, [isAuthenticated, isLoading, user, location.pathname]);
 
   // Only show in development
-  if (process.env.NODE_ENV !== 'development') {
+  if (!SHOW_AUTH_DEBUG || process.env.NODE_ENV !== 'development') {
     return null;
   }
 

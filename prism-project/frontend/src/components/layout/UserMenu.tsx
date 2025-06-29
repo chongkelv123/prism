@@ -6,10 +6,11 @@ import { useAuth } from '../../contexts/AuthContext';
 const UserMenu: React.FC = () => {
   const navigate = useNavigate();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  // In a real app, you'd fetch this from context or state
+
+  const { user: authUser, logout } = useAuth();
   const user = {
-    name: 'Kelvin',
-    role: 'Project Manager'
+    name: authUser?.firstName || authUser?.name || 'User',
+    role: 'Team Member' // Static role for now
   };
 
   const handleLogout = () => {

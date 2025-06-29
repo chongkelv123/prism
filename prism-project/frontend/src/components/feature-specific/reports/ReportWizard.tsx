@@ -4,6 +4,8 @@ import { ArrowLeft, ArrowRight, Check, FileText, CheckCircle, Clock, X, AlertCir
 import reportService, { ReportGenerationRequest } from '../../../services/report.service';
 import { useConnections } from '../../../contexts/ConnectionsContext';
 
+const SHOW_DEBUG_PANEL = false; // Set to true to enable debug panel
+
 // FIXED: Add proper TypeScript interfaces
 interface Connection {
   id: string;
@@ -549,7 +551,7 @@ const ReportWizard: React.FC = () => {
   return (
     <div className="max-w-4xl mx-auto p-6">
       {/* Debug panel - remove in production */}
-      {process.env.NODE_ENV === 'development' && renderDebugPanel()}
+      {SHOW_DEBUG_PANEL && renderDebugPanel()}
 
       <div className="bg-white rounded-lg shadow-lg p-8">
         {currentStep <= 4 && renderProgressBar()}

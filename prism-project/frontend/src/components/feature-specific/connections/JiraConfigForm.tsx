@@ -2,6 +2,8 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, ExternalLink, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
 
+const SHOW_DEBUG_PANEL = false; // Set to false to hide debug panel
+
 interface JiraConfigFormProps {
   onSubmit: (data: any) => void;
   onBack: () => void;
@@ -381,7 +383,7 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
       </div>
 
       {/* Debug Info */}
-      {process.env.NODE_ENV === 'development' && (
+      {SHOW_DEBUG_PANEL && (
         <div className="bg-gray-100 border border-gray-300 rounded-lg p-3">
           <h4 className="text-xs font-medium text-gray-700 mb-1">Debug Info:</h4>
           <div className="text-xs text-gray-600 space-y-1">

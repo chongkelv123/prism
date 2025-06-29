@@ -16,6 +16,8 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// API routes
+app.use('/api/reports', reportRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -27,8 +29,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// API routes
-app.use('/api/reports', reportRoutes);
+
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

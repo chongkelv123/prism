@@ -37,7 +37,7 @@ const DashboardContent: React.FC = () => {
       title: 'Templates Available', 
       value: templatesAvailable, 
       icon: 'Layout',
-      trend: '3 custom',
+      trend: '',
       trendUp: null
     },
     { 

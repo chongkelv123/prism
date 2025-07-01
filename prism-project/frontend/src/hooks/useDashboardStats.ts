@@ -13,7 +13,7 @@ export interface DashboardStats {
 export const useDashboardStats = (): DashboardStats => {
   const [stats, setStats] = useState<DashboardStats>({
     reportsGenerated: 0,
-    templatesAvailable: 8, // Static - templates are hardcoded
+    templatesAvailable: 3, // Static - templates are hardcoded
     platformConnections: 0,
     recentReports: [],
     loading: true,
@@ -65,7 +65,7 @@ export const useDashboardStats = (): DashboardStats => {
 
         const finalStats = {
           reportsGenerated: Array.isArray(reports) ? reports.length : 0,
-          templatesAvailable: 8, // Static value
+          templatesAvailable: 3, // Static value
           platformConnections: Array.isArray(connections) ? connections.length : 0,
           recentReports,
           loading: false,

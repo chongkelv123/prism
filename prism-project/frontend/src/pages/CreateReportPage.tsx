@@ -9,17 +9,17 @@ const SHOW_DEBUG_PANEL = false; // Set to true to enable debug panel
 // Main component that uses shared ConnectionsContext from router
 const CreateReportPage: React.FC = () => {
   console.log('CreateReportPage: Using shared ConnectionsProvider from router');
-  
+
   return (
     <MainLayout>
       <div className="space-y-6">
         {/* Service Availability Banner */}
         <ServiceAvailabilityBanner />
-        
+
         <div className="py-6">
           <ReportWizard />
         </div>
-        
+
         {/* Debug Info to verify shared context */}
         {SHOW_DEBUG_PANEL && (
           <div className="bg-gray-100 p-4 rounded-lg">
@@ -32,18 +32,7 @@ const CreateReportPage: React.FC = () => {
               <p>Report Wizard will show all connected platforms</p>
             </div>
           </div>
-        )}        
-        {/* Report Creation Status */}
-        <div className="mt-8 bg-green-50 border border-green-200 rounded-lg p-4">
-          <h3 className="text-sm font-medium text-green-700 mb-2">
-            Report Creation Status
-          </h3>
-          <div className="text-xs text-green-600">
-            <p>Using shared ConnectionsContext from router</p>
-            <p>Connections should now persist when navigating between pages</p>
-            <p>Report Wizard will show all connected platforms</p>
-          </div>
-        </div>
+        )}                
       </div>
     </MainLayout>
   );

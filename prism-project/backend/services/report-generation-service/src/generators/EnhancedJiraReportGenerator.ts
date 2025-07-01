@@ -407,20 +407,33 @@ export class EnhancedJiraReportGenerator {
     theme: any,
     progressCallback?: (progress: number) => Promise<void>
   ): Promise<void> {
-    // Include all standard slides plus additional detailed analysis
-    await this.generateStandardReport(pptx, projectData, theme,
-      (progress) => progressCallback?.(progress * 0.6));
+    // FIX: Create correct detailed title slide instead of inheriting standard title
+    await this.createTitleSlide(pptx, projectData, theme, 'DETAILED ANALYSIS REPORT');
+    await progressCallback?.(5);
 
-    // Additional detailed slides
+    // Include standard slides (but skip the title since we created our own)
+    // Create all the standard slides manually to avoid the wrong title
+    await this.createProjectHealthDashboard(pptx, projectData, theme);
+    await progressCallback?.(15);
+
+    await this.createTaskStatusAnalysis(pptx, projectData, theme);
+    await progressCallback?.(25);
+
+    await this.createTeamWorkloadAnalysis(pptx, projectData, theme);
+    await progressCallback?.(35);
+
+    await this.createPriorityRiskAssessment(pptx, projectData, theme);
+    await progressCallback?.(45);
+
+    await this.createActionItemsSlide(pptx, projectData, theme);
+    await progressCallback?.(55);
+
+    // Additional detailed slides specific to detailed analysis
     await this.createDetailedTeamAnalysis(pptx, projectData, theme);
     await progressCallback?.(70);
 
-    // NEW: Add task details breakdown
-    await this.createTaskDetailsBreakdown(pptx, projectData, theme);
-    await progressCallback?.(80);
-
     await this.createPredictiveAnalysis(pptx, projectData, theme);
-    await progressCallback?.(90);
+    await progressCallback?.(85);
 
     await this.createImplementationRoadmap(pptx, projectData, theme);
     await progressCallback?.(95);

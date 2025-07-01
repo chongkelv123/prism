@@ -1,4 +1,4 @@
-// Replace your frontend/src/components/feature-specific/dashboard/DashboardContent.tsx with this:
+// frontend/src/components/feature-specific/dashboard/DashboardContent.tsx
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';

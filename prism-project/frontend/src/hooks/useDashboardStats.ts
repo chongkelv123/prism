@@ -1,4 +1,4 @@
-// Create this file: frontend/src/hooks/useDashboardStats.ts
+// frontend/src/hooks/useDashboardStats.ts
 import { useState, useEffect } from 'react';
 
 export interface DashboardStats {

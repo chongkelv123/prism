@@ -7,8 +7,7 @@ const Sidebar: React.FC = () => {
   
   const navItems = [
     { icon: <Home size={18} />, label: 'Home', path: '/dashboard' },
-    { icon: <FileText size={18} />, label: 'Reports', path: '/reports' },  
-    { icon: <Layout size={18} />, label: 'Templates', path: '/templates' }
+    { icon: <FileText size={18} />, label: 'Reports', path: '/reports' }
   ];
 
   return (

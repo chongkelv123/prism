@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import { generateReport, getReportStatus, getReportById, getAllReports, downloadReport } from '../controllers/reportController';
-import jiraReportRoutes from './jiraReportRoutes'; // Import JIRA report routes
+import { authenticateJWT } from '../middleware/auth'; 
+import jiraReportRoutes from './jiraReportRoutes'; 
 
 const router = Router();
+
+// APPLY AUTHENTICATION TO ALL ROUTES
+router.use(authenticateJWT);
 
 // Public routes (for now)
 router.post('/generate', generateReport);

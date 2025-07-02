@@ -1,4 +1,5 @@
 // frontend/src/hooks/useReports.ts
+// FIXED VERSION - Add authentication headers to API calls
 
 import { useState, useEffect } from 'react';
 
@@ -23,6 +24,21 @@ export interface ReportsData {
   error: string | null;
 }
 
+// ✅ HELPER FUNCTION TO GET AUTH HEADERS
+const getAuthHeaders = (): HeadersInit => {
+  const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+  
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  
+  return headers;
+};
+
 export const useReports = (): ReportsData => {
   const [data, setData] = useState<ReportsData>({
     reports: [],
@@ -42,12 +58,14 @@ export const useReports = (): ReportsData => {
 
         console.log('🔄 Fetching reports for Reports page...');
 
-        // Use the same endpoint that Dashboard uses successfully
-        const response = await fetch('/api/reports');
+        // ✅ INCLUDE AUTH HEADERS IN REQUEST
+        const response = await fetch('/api/reports', {
+          headers: getAuthHeaders()
+        });
         
         if (response.ok) {
           const rawReports = await response.json();
-          console.log('✅ Raw reports fetched:', rawReports.length);
+          console.log('✅ User-specific reports fetched:', rawReports.length);
 
           // Transform API data to match ReportsList component interface
           const transformedReports: Report[] = Array.isArray(rawReports) 
@@ -70,14 +88,11 @@ export const useReports = (): ReportsData => {
               }))
             : [];
 
-          console.log('✅ Transformed reports:', transformedReports.length);
-          console.log('📋 Sample transformed report:', transformedReports[0]);
-
-          // Calculate stats from real data
+          // Calculate stats based on user's reports only
           const stats = {
             generated: transformedReports.length,
-            scheduled: 0, // Not implemented yet
-            shared: 0     // Not implemented yet
+            scheduled: transformedReports.filter(r => r.status === 'processing').length,
+            shared: transformedReports.filter(r => r.status === 'completed').length
           };
 
           setData({
@@ -87,31 +102,34 @@ export const useReports = (): ReportsData => {
             error: null,
           });
 
-          console.log('📊 Reports page data updated:', {
-            reportsCount: transformedReports.length,
-            stats
-          });
-
+        } else if (response.status === 401) {
+          // ✅ HANDLE AUTHENTICATION ERRORS
+          console.error('❌ Authentication required for reports');
+          setData(prev => ({ 
+            ...prev, 
+            loading: false, 
+            error: 'Authentication required. Please login again.' 
+          }));
         } else {
           console.error('❌ Reports fetch failed:', response.status);
-          throw new Error(`Failed to fetch reports: ${response.status}`);
+          const errorText = await response.text();
+          setData(prev => ({ 
+            ...prev, 
+            loading: false, 
+            error: `Failed to load reports: ${response.status}` 
+          }));
         }
-
       } catch (error) {
-        console.error('❌ Error fetching reports:', error);
-        setData(prev => ({
-          ...prev,
-          loading: false,
-          error: 'Failed to load reports'
+        console.error('❌ Network error fetching reports:', error);
+        setData(prev => ({ 
+          ...prev, 
+          loading: false, 
+          error: 'Network error. Please check your connection.' 
         }));
       }
     };
 
     fetchReports();
-
-    // Refresh every 30 seconds (same as Dashboard)
-    const interval = setInterval(fetchReports, 30000);
-    return () => clearInterval(interval);
   }, []);
 
   return data;

@@ -1,7 +1,9 @@
 // backend/services/report-generation-service/src/models/Report.ts
+
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IReport extends Document {
+  userId: string; 
   title: string;
   status: 'queued' | 'processing' | 'completed' | 'failed';
   platform: string;
@@ -23,6 +25,11 @@ export interface IReport extends Document {
 }
 
 const ReportSchema = new Schema<IReport>({
+  userId: {  // ✅ ADD THIS FIELD
+    type: String,
+    required: true,
+    index: true // Index for faster user-specific queries
+  },
   title: {
     type: String,
     required: true

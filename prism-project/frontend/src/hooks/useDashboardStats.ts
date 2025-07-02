@@ -1,4 +1,6 @@
 // frontend/src/hooks/useDashboardStats.ts
+// FIXED VERSION - Add authentication headers to reports API calls
+
 import { useState, useEffect } from 'react';
 
 export interface DashboardStats {
@@ -9,6 +11,21 @@ export interface DashboardStats {
   loading: boolean;
   error: string | null;
 }
+
+// ✅ HELPER FUNCTION TO GET AUTH HEADERS
+const getAuthHeaders = (): HeadersInit => {
+  const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+  
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  
+  return headers;
+};
 
 export const useDashboardStats = (): DashboardStats => {
   const [stats, setStats] = useState<DashboardStats>({
@@ -27,36 +44,48 @@ export const useDashboardStats = (): DashboardStats => {
 
         console.log('🔄 Fetching live dashboard data...');
 
-        // Fetch reports (we know this works - returns 90 reports!)
-        const reportsResponse = await fetch('/api/reports');
+        // ✅ FETCH USER-SPECIFIC REPORTS WITH AUTH HEADERS
+        const reportsResponse = await fetch('/api/reports', {
+          headers: getAuthHeaders()
+        });
+        
         let reports = [];
         
         if (reportsResponse.ok) {
           reports = await reportsResponse.json();
-          console.log('✅ Reports fetched:', reports.length);
+          console.log('✅ User-specific reports fetched:', reports.length);
+        } else if (reportsResponse.status === 401) {
+          console.error('❌ Authentication required for reports');
+          setStats(prev => ({
+            ...prev,
+            loading: false,
+            error: 'Authentication required. Please login again.'
+          }));
+          return;
         } else {
           console.error('❌ Reports fetch failed:', reportsResponse.status);
         }
 
-        // Fetch connections (with auth, so might fail)
+        // ✅ FETCH USER-SPECIFIC CONNECTIONS WITH AUTH HEADERS
         let connections = [];
         try {
-          const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
           const connectionsResponse = await fetch('/api/connections', {
-            headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+            headers: getAuthHeaders()
           });
           
           if (connectionsResponse.ok) {
             connections = await connectionsResponse.json();
-            console.log('✅ Connections fetched:', connections.length);
+            console.log('✅ User connections fetched:', connections.length);
+          } else if (connectionsResponse.status === 401) {
+            console.log('⚠️ Authentication required for connections (expected)');
           } else {
-            console.log('ℹ️ Connections require auth (expected)');
+            console.log('ℹ️ Connections fetch failed:', connectionsResponse.status);
           }
         } catch (error) {
-          console.log('ℹ️ Connections not available without auth');
+          console.log('ℹ️ Connections not available:', error);
         }
 
-        // Get recent reports (last 5)
+        // ✅ GET USER-SPECIFIC RECENT REPORTS (last 5)
         const recentReports = Array.isArray(reports) 
           ? reports
               .sort((a, b) => new Date(b.createdAt || b.created_at || 0).getTime() - new Date(a.createdAt || a.created_at || 0).getTime())
@@ -80,16 +109,12 @@ export const useDashboardStats = (): DashboardStats => {
         setStats(prev => ({
           ...prev,
           loading: false,
-          error: 'Failed to load dashboard statistics'
+          error: 'Failed to load dashboard data. Please try again.'
         }));
       }
     };
 
     fetchStats();
-
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchStats, 30000);
-    return () => clearInterval(interval);
   }, []);
 
   return stats;

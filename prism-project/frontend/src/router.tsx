@@ -13,6 +13,7 @@ import ConnectionsPage from './pages/ConnectionsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import AuthDebug from './components/debug/AuthDebug';
+import SettingsPage from './pages/SettingsPage';
 
 // Create a layout component that provides auth context only
 const AppProviders = () => {
@@ -86,6 +87,10 @@ const router = createBrowserRouter([
                 path: 'reports/create',
                 element: <CreateReportPage />, // NO ConnectionsProvider here anymore
               },
+              {
+                path: 'settings',
+                element: <SettingsPage />,
+              }
             ],
           },
         ],

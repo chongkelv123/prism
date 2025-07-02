@@ -106,3 +106,68 @@ export async function getCurrentUser(req: Request, res: Response) {
     return res.status(500).json({ message: 'Server error while fetching user data' });
   }
 }
+
+export async function updateUserProfile(req: Request, res: Response) {
+  try {
+    const userId = req.user?.userId;
+    const { firstName, lastName, email } = req.body;
+    
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    
+    // Validate required fields
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ 
+        message: 'First name, last name, and email are required' 
+      });
+    }
+    
+    // Check if email is already in use by another user
+    const existingUser = await User.findOne({ 
+      email: email.toLowerCase(), 
+      _id: { $ne: userId } 
+    });
+    
+    if (existingUser) {
+      return res.status(409).json({ 
+        message: 'Email address is already in use' 
+      });
+    }
+    
+    // Update user profile
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { 
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.toLowerCase().trim()
+      },
+      { 
+        new: true, 
+        runValidators: true 
+      }
+    ).select('-passwordHash');
+    
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    logger.info(`User profile updated: ${userId} - ${email}`);
+    
+    return res.json({
+      message: 'Profile updated successfully',
+      user: {
+        id: updatedUser._id,
+        firstName: updatedUser.firstName,
+        lastName: updatedUser.lastName,
+        email: updatedUser.email
+      }
+    });
+  } catch (error) {
+    logger.error('Update user profile error:', error);
+    return res.status(500).json({ 
+      message: 'Server error while updating profile' 
+    });
+  }
+}

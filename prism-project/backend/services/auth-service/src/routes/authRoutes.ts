@@ -1,6 +1,6 @@
 // backend/services/auth-service/src/routes/authRoutes.ts
 import { Router } from 'express';
-import { register, login, getCurrentUser } from '../controllers/authController';
+import { register, login, getCurrentUser, updateUserProfile } from '../controllers/authController';
 import { registerValidator, loginValidator } from '../middleware/validation';
 import { authenticateJWT } from '../middleware/auth';
 
@@ -12,5 +12,7 @@ router.post('/login', loginValidator, login);
 
 // Protected routes
 router.get('/me', authenticateJWT, getCurrentUser);
+router.put('/profile', authenticateJWT, updateUserProfile);
+
 
 export default router;

@@ -36,7 +36,11 @@ const UserMenu: React.FC = () => {
             <p className="text-xs text-gray-500">{user.role}</p>
           </div>
           <button
-            onClick={() => navigate('/account')}
+            onClick={() => {
+              navigate('/settings');
+              setIsUserMenuOpen(false);
+            }}
+            
             className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
           >
             Account

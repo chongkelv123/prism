@@ -432,6 +432,9 @@ export class EnhancedJiraReportGenerator {
     await this.createDetailedTeamAnalysis(pptx, projectData, theme);
     await progressCallback?.(70);
 
+    await this.createTaskDetailsBreakdown(pptx, projectData, theme);
+    await progressCallback?.(80);
+
     await this.createPredictiveAnalysis(pptx, projectData, theme);
     await progressCallback?.(85);
 

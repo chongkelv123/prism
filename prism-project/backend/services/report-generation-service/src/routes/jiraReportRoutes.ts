@@ -10,13 +10,11 @@ import {
   validateJiraConnection,
   getJiraProjectPreview
 } from '../controllers/jiraReportController';
+import { authenticateJWT } from '../middleware/auth';
 
 const router = Router();
 
-/**
- * JIRA REPORT GENERATION ENDPOINTS
- * These endpoints generate professional PowerPoint reports using real Jira data
- */
+router.use(authenticateJWT);
 
 // Generate Jira Standard Report (5-7 slides)
 // POST /api/reports/generate-jira-standard

@@ -24,15 +24,15 @@ export interface Report {
 // ✅ HELPER FUNCTION TO GET AUTH HEADERS
 const getAuthHeaders = (): HeadersInit => {
   const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-  
+
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
   };
-  
+
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  
+
   return headers;
 };
 
@@ -52,7 +52,7 @@ const reportService = {
   async generateReport(data: ReportGenerationRequest): Promise<Report> {
     try {
       console.log('🚀 Generating report with data:', data);
-      
+
       // Transform frontend data to backend format
       const backendPayload = {
         platform: data.platformId,
@@ -70,9 +70,21 @@ const reportService = {
       };
 
       console.log('📤 Sending to backend:', backendPayload);
-      
+
+      // Map template to correct endpoint
+      const templateEndpoints: Record<'standard' | 'executive' | 'detailed', string> = {
+        'standard': '/api/reports/generate-jira-standard',
+        'executive': '/api/reports/generate-jira-executive',
+        'detailed': '/api/reports/generate-jira-detailed'
+      };
+
+      const endpoint =
+        templateEndpoints[
+        (data.templateId as 'standard' | 'executive' | 'detailed')
+        ] || templateEndpoints['standard'];
+
       // ✅ MAKE REQUEST WITH AUTH HEADERS
-      const response = await fetch('/api/reports/generate', {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(backendPayload)
@@ -86,10 +98,10 @@ const reportService = {
 
       const reportData = await response.json();
       console.log('📨 Backend response:', reportData);
-      
+
       // ✅ HANDLE MULTIPLE POSSIBLE ID FORMATS FROM BACKEND
       const reportId = reportData.id || reportData._id || reportData.reportId;
-      
+
       if (!reportId) {
         console.error('❌ No report ID in response:', reportData);
         throw new Error('Backend did not return a valid report ID');
@@ -109,18 +121,19 @@ const reportService = {
 
       console.log('✅ Returning standardized report:', report);
       return report;
-      
+
     } catch (error) {
       console.error('❌ Error generating report:', error);
       throw error;
     }
   },
 
+
   // ✅ FIXED Check report status with auth headers
   async getReportStatus(id: string): Promise<{ status: string, progress?: number }> {
     try {
       console.log(`🔍 Checking status for report: ${id}`);
-      
+
       // ✅ VALIDATE ID BEFORE MAKING REQUEST
       if (!id || id === 'undefined' || id === 'null') {
         throw new Error(`Invalid report ID: ${id}`);
@@ -139,7 +152,7 @@ const reportService = {
       const statusData = await response.json();
       console.log(`📊 Report ${id} status:`, statusData);
       return statusData;
-      
+
     } catch (error) {
       console.error('❌ Error checking report status:', error);
       throw error;
@@ -158,7 +171,7 @@ const reportService = {
 
       // Get the authentication token
       const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-      
+
       if (!token) {
         console.error('❌ No authentication token found');
         throw new Error('Authentication required. Please login again.');
@@ -181,13 +194,13 @@ const reportService = {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      
+
       // Get filename from Content-Disposition header or use default
       const contentDisposition = response.headers.get('Content-Disposition');
       const filename = contentDisposition
         ? contentDisposition.split('filename=')[1]?.replace(/"/g, '')
         : `report-${id}.pptx`;
-      
+
       link.download = filename;
       document.body.appendChild(link);
       link.click();
@@ -195,7 +208,7 @@ const reportService = {
       window.URL.revokeObjectURL(url);
 
       console.log(`✅ Report downloaded: ${filename}`);
-      
+
     } catch (error) {
       console.error('❌ Error downloading report:', error);
       throw error;

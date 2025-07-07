@@ -8,6 +8,13 @@ import { Report } from '../models/Report';
 import { PlatformDataService, ReportGenerationConfig } from '../services/PlatformDataService';
 import { EnhancedJiraReportGenerator } from '../generators/EnhancedJiraReportGenerator';
 
+interface AuthenticatedRequest extends Request {
+  user?: {
+    userId: string;
+    email?: string;
+  };
+}
+
 // Get JWT token from request headers
 function getAuthToken(req: Request): string | undefined {
   const authHeader = req.headers.authorization;
@@ -23,6 +30,12 @@ function getAuthToken(req: Request): string | undefined {
  */
 export async function generateJiraStandardReport(req: Request, res: Response) {
   try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ 
+        message: 'User authentication required' 
+      });
+    }
     const { connectionId, reportTitle } = req.body;
 
     // Validate required fields
@@ -44,6 +57,7 @@ export async function generateJiraStandardReport(req: Request, res: Response) {
 
     // Create report entry
     const report = new Report({
+      userId: userId, 
       title: reportTitle || 'Jira Standard Report',
       status: 'queued',
       platform: 'jira',
@@ -100,6 +114,11 @@ export async function generateJiraStandardReport(req: Request, res: Response) {
  */
 export async function generateJiraExecutiveReport(req: Request, res: Response) {
   try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ message: 'User authentication required' });
+    }
+
     const { connectionId, reportTitle } = req.body;
 
     if (!connectionId) {
@@ -119,6 +138,7 @@ export async function generateJiraExecutiveReport(req: Request, res: Response) {
     });
 
     const report = new Report({
+      userId: userId,
       title: reportTitle || 'Jira Executive Summary',
       status: 'queued',
       platform: 'jira',
@@ -172,6 +192,11 @@ export async function generateJiraExecutiveReport(req: Request, res: Response) {
  */
 export async function generateJiraDetailedReport(req: Request, res: Response) {
   try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ message: 'User authentication required' });
+    }
+
     const { connectionId, reportTitle } = req.body;
 
     if (!connectionId) {
@@ -191,6 +216,7 @@ export async function generateJiraDetailedReport(req: Request, res: Response) {
     });
 
     const report = new Report({
+      userId: userId,
       title: reportTitle || 'Jira Detailed Analysis',
       status: 'queued',
       platform: 'jira',

@@ -1,7 +1,5 @@
-// =============================================================================
-// 1. BACKEND: Enhanced Connection Model (MINIMAL CHANGES)
-// File: backend/services/platform-integrations-service/src/models/Connection.ts
-// =============================================================================
+// backend/services/platform-integrations-service/src/models/Connection.ts
+// STEP 1: Add 'trofos' to platform enum
 
 import { Schema, model, Document } from 'mongoose';
 import { encrypt, decrypt } from '../utils/encryption';
@@ -9,14 +7,13 @@ import { encrypt, decrypt } from '../utils/encryption';
 export interface IConnection extends Document {
   userId: string;
   name: string;
-  platform: 'monday' | 'jira';
+  platform: 'monday' | 'jira' | 'trofos'; // ✅ ADDED: 'trofos' to enum
   config: Record<string, any>;
   encryptedConfig: string;
   status: 'connected' | 'disconnected' | 'error';
   lastSync?: Date;
   lastSyncError?: string;
   projectCount: number;
-  // NEW: Simple metadata addition (optional for now)
   metadata?: {
     selectedProjects?: string[];
     defaultTemplate?: string;
@@ -36,7 +33,7 @@ const connectionSchema = new Schema<IConnection>({
   platform: { 
     type: String, 
     required: true, 
-    enum: ['monday', 'jira'] 
+    enum: ['monday', 'jira', 'trofos'] // ✅ ADDED: 'trofos' to enum
   },
   encryptedConfig: { type: String, required: true },
   status: { 
@@ -48,7 +45,6 @@ const connectionSchema = new Schema<IConnection>({
   lastSync: { type: Date },
   lastSyncError: { type: String },
   projectCount: { type: Number, default: 0 },
-  // NEW: Optional metadata (backward compatible)
   metadata: {
     selectedProjects: [{ type: String }],
     defaultTemplate: { type: String, default: 'standard' },

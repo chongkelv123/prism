@@ -20,6 +20,6 @@
       "src/types"
     ]
   },
-  "include": ["src/**/*", "src/types/**/*"],
+  "include": ["src/**/*", "src/types/**/*", "test-step1.js"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

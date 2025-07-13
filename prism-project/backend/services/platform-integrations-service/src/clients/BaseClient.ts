@@ -186,10 +186,12 @@ export class JiraClient extends BaseClient {
   }
 }
 
-// TROFOS Client
+// TROFOS Client - CORRECTED VERSION
 export class TrofosClient extends BaseClient {
   private get serverUrl(): string {
-    return this.connection.config.serverUrl.replace(/\/$/, '');
+    // Normalize the server URL - remove trailing slash
+    const url = this.connection.config.serverUrl || 'https://trofos-production.comp.nus.edu.sg/api/external';
+    return url.replace(/\/$/, '');
   }
 
   private get apiKey(): string {
@@ -202,19 +204,34 @@ export class TrofosClient extends BaseClient {
 
   constructor(connection: PlatformConnection) {
     super(connection);
+    
+    // ✅ CORRECTED: Set base URL to include /api/external/v1
     this.http.defaults.baseURL = `${this.serverUrl}/v1`;
-    this.http.defaults.headers['Authorization'] = `Bearer ${this.apiKey}`;
+    
+    // ✅ CORRECTED: Use x-api-key header instead of Authorization Bearer
+    this.http.defaults.headers['x-api-key'] = this.apiKey;
+    
+    // Remove any Authorization header that might be set by parent
+    delete this.http.defaults.headers['Authorization'];
+    
+    logger.info(`TROFOS Client initialized with baseURL: ${this.http.defaults.baseURL}`);
   }
 
   async testConnection(): Promise<boolean> {
     try {
-      const response = await this.http.post('/project', {
-        pageNum: 1,
-        pageSize: 1,
-        sort: 'name',
-        direction: 'ASC'
+      logger.info('Testing TROFOS connection...');
+      
+      // ✅ CORRECTED: Use POST endpoint with correct payload format
+      const response = await this.http.post('/project/list', {
+        option: "all",
+        pageIndex: 0,
+        pageSize: 1  // Just test with 1 project to verify connection
       });
-      return response.status === 200;
+      
+      const success = response.status === 200 && response.data;
+      logger.info(`TROFOS connection test result: ${success ? 'SUCCESS' : 'FAILED'}`);
+      
+      return success;
     } catch (error) {
       logger.error('TROFOS connection test failed:', error);
       return false;
@@ -222,15 +239,20 @@ export class TrofosClient extends BaseClient {
   }
 
   async getProjects(): Promise<ProjectData[]> {
-    // Implementation...
+    // Placeholder - will implement in Step 4
+    logger.info('TrofosClient.getProjects() - placeholder, will implement in Step 4');
     return [];
   }
 
   async getProject(projectId: string): Promise<ProjectData> {
-    throw new Error('Not implemented');
+    // Placeholder - will implement in Step 3  
+    logger.info(`TrofosClient.getProject(${projectId}) - placeholder, will implement in Step 3`);
+    throw new Error('Will implement in Step 3');
   }
 
   async getProjectMetrics(projectId: string): Promise<Metric[]> {
+    // Placeholder - will implement later
+    logger.info(`TrofosClient.getProjectMetrics(${projectId}) - placeholder`);
     return [];
   }
 }

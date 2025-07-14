@@ -25,7 +25,7 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
   const { validatePlatformConfig } = useConnections();
   const [config, setConfig] = useState<TrofosConfig>({
     name: '',
-    serverUrl: '',
+    serverUrl: 'https://trofos-production.comp.nus.edu.sg/api/external',
     apiKey: '',
     projectId: ''
   });
@@ -34,7 +34,7 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [connectionTested, setConnectionTested] = useState(false);
   const [availableProjects, setAvailableProjects] = useState<TrofosProject[]>([]);
-  const [testResult, setTestResult] = useState<{valid: boolean, message: string} | null>(null);
+  const [testResult, setTestResult] = useState<{ valid: boolean, message: string } | null>(null);
 
   const handleChange = (field: keyof TrofosConfig, value: string) => {
     setConfig(prev => ({ ...prev, [field]: value }));
@@ -51,21 +51,19 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
 
   const validateForm = (): boolean => {
     const newErrors: Partial<TrofosConfig> = {};
-    
+
     if (!config.name.trim()) {
       newErrors.name = 'Connection name is required';
     }
-    
+
     if (!config.serverUrl.trim()) {
       newErrors.serverUrl = 'TROFOS server URL is required';
-    } else if (!config.serverUrl.startsWith('http')) {
-      newErrors.serverUrl = 'Please enter a valid URL (starting with http:// or https://)';
     }
-    
+
     if (!config.apiKey.trim()) {
       newErrors.apiKey = 'API key is required';
     }
-    
+
     if (!config.projectId.trim()) {
       newErrors.projectId = 'Project ID is required';
     }
@@ -85,44 +83,44 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
 
     setIsTestingConnection(true);
     setTestResult(null);
-    
+
     try {
       console.log('🔄 Testing TROFOS connection with backend...');
-      
+
       // Call real backend API to validate TROFOS configuration
       const result = await validatePlatformConfig('trofos', {
         serverUrl: config.serverUrl,
         apiKey: config.apiKey,
         projectId: config.projectId || 'test' // Use a test project ID for validation
       });
-      
+
       console.log('✅ Backend validation result:', result);
-      
+
       setTestResult(result);
       setConnectionTested(result.valid);
-      
+
       if (result.valid) {
-        // If connection is successful, simulate loading available projects
-        // In a real implementation, the backend would return available projects
-        const mockProjects: TrofosProject[] = [
-          { id: 'proj-1', name: 'PRISM Development Project' },
-          { id: 'proj-2', name: 'Mobile App Project' },
-          { id: 'proj-3', name: 'API Integration Project' }
-        ];
-        
-        setAvailableProjects(mockProjects);
+        setConnectionTested(true);
         setErrors({});
+        setTestResult(result);
+
+        // Clear projects - user will manually enter project ID
+        setAvailableProjects([]);
+
+        console.log('✅ TROFOS connection test successful');
       } else {
+        setConnectionTested(false);
         setErrors({ apiKey: result.message });
+        setTestResult(result);
         setAvailableProjects([]);
       }
     } catch (error) {
       console.error('❌ TROFOS connection test failed:', error);
-      
-      const errorMessage = error instanceof Error 
-        ? error.message 
+
+      const errorMessage = error instanceof Error
+        ? error.message
         : 'Failed to connect. Please check your credentials and server URL.';
-      
+
       setErrors({ apiKey: errorMessage });
       setTestResult({ valid: false, message: errorMessage });
       setConnectionTested(false);
@@ -134,16 +132,16 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
-    
+
     if (!connectionTested) {
       setErrors({ apiKey: 'Please test the connection before submitting' });
       return;
     }
 
     const selectedProject = availableProjects.find(p => p.id === config.projectId);
-    
+
     // Submit the real configuration to backend
     onSubmit({
       name: config.name,
@@ -182,9 +180,8 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
           value={config.name}
           onChange={(e) => handleChange('name', e.target.value)}
           placeholder="e.g., TROFOS Production Server"
-          className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-            errors.name ? 'border-red-500' : 'border-gray-300'
-          }`}
+          className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.name ? 'border-red-500' : 'border-gray-300'
+            }`}
         />
         {errors.name && (
           <p className="mt-1 text-sm text-red-600">{errors.name}</p>
@@ -201,9 +198,8 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
           value={config.serverUrl}
           onChange={(e) => handleChange('serverUrl', e.target.value)}
           placeholder="https://your-trofos-server.com"
-          className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-            errors.serverUrl ? 'border-red-500' : 'border-gray-300'
-          }`}
+          className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.serverUrl ? 'border-red-500' : 'border-gray-300'
+            }`}
         />
         {errors.serverUrl && (
           <p className="mt-1 text-sm text-red-600">{errors.serverUrl}</p>
@@ -224,9 +220,8 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
             value={config.apiKey}
             onChange={(e) => handleChange('apiKey', e.target.value)}
             placeholder="Enter your TROFOS API key"
-            className={`w-full px-3 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-              errors.apiKey ? 'border-red-500' : 'border-gray-300'
-            }`}
+            className={`w-full px-3 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.apiKey ? 'border-red-500' : 'border-gray-300'
+              }`}
           />
           <button
             type="button"
@@ -252,6 +247,16 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
                 <li>Generate a new API key for external integrations</li>
                 <li>Copy the key and paste it here</li>
               </ol>
+              <div className="mt-2">
+                <a
+                  href="https://trofos-production.comp.nus.edu.sg"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline text-xs"
+                >
+                  → Open TROFOS to get your API key
+                </a>
+              </div>
             </div>
           </div>
         </div>
@@ -270,7 +275,7 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
             {isTestingConnection ? 'Testing...' : 'Test Connection'}
           </button>
         </div>
-        
+
         {testResult && testResult.valid && availableProjects.length > 0 && (
           <div className="space-y-3">
             <div className="flex items-center text-green-600">
@@ -279,7 +284,7 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
               </svg>
               <span className="text-sm">Connection successful! Found {availableProjects.length} project(s)</span>
             </div>
-            
+
             {/* Project Selection */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -288,9 +293,8 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
               <select
                 value={config.projectId}
                 onChange={(e) => handleChange('projectId', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                  errors.projectId ? 'border-red-500' : 'border-gray-300'
-                }`}
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.projectId ? 'border-red-500' : 'border-gray-300'
+                  }`}
               >
                 <option value="">Select a project...</option>
                 {availableProjects.map(project => (
@@ -314,7 +318,7 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
             <span className="text-sm">{testResult.message}</span>
           </div>
         )}
-        
+
         {!testResult && (
           <div className="flex items-start text-gray-500">
             <AlertCircle size={16} className="mr-2 mt-0.5 flex-shrink-0" />
@@ -345,7 +349,7 @@ const TrofosConfigForm: React.FC<TrofosConfigFormProps> = ({ onSubmit, onBack, i
         >
           Back
         </button>
-        
+
         <button
           type="submit"
           disabled={isSubmitting || !connectionTested || !config.projectId}

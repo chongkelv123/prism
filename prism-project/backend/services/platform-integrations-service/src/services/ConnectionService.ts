@@ -5,6 +5,7 @@
 import { Connection, IConnection } from '../models/Connection';
 import logger from '../utils/logger';
 import axios from 'axios';
+import { ClientFactory, PlatformConnection, TeamMember, Task, Metric } from '../clients/BaseClient';
 
 export interface ConnectionCreateData {
   name: string;
@@ -42,35 +43,10 @@ export interface ProjectData {
   platform: string;
   description?: string;
   status: string;
-  tasks: Array<{
-    id?: string;
-    name: string;
-    status: string;
-    assignee?: string;
-    priority?: string;
-    created?: string;
-    updated?: string;
-    description?: string;
-    labels?: string[];
-    storyPoints?: number;
-    timeEstimate?: string;
-    group?: string; // Monday.com group/Jira component
-  }>;
-  team?: Array<{
-    id?: string;
-    name: string;
-    role: string;
-    email?: string;
-    avatar?: string;
-    department?: string;
-    taskCount?: number;
-  }>;
-  metrics: Array<{
-    name: string;
-    value: string | number;
-    type?: string;
-    category?: string;
-  }>;
+  progress?: number; // Percentage complete
+  tasks: Task[];
+  team?: TeamMember[];
+  metrics: Metric[];
   sprints?: Array<{
     name: string;
     startDate: string;
@@ -195,6 +171,9 @@ export class ConnectionService {
         case 'monday':
           rawData = await this.getMondayProjectData(connection, projectId);
           break;
+        case 'trofos':  // ✅ ADDED: TROFOS case
+          rawData = await this.getTrofosProjectData(connection, projectId);
+          break;
         default:
           throw new Error(`Unsupported platform: ${connection.platform}`);
       }
@@ -213,6 +192,47 @@ export class ConnectionService {
     } catch (error) {
       logger.error('❌ Failed to get project data:', error);
       throw error;
+    }
+  }
+
+  /**
+ * Get TROFOS project data using real API calls
+ */
+  private async getTrofosProjectData(connection: IConnection, projectId?: string): Promise<any> {
+    try {
+      const { serverUrl, apiKey } = connection.config;
+
+      if (!serverUrl || !apiKey) {
+        throw new Error('Missing TROFOS configuration (serverUrl, apiKey required)');
+      }
+
+      logger.info(`🎯 Fetching TROFOS project data - Project ID: ${projectId || 'all projects'}`);
+
+      // Use ClientFactory to create TROFOS client
+      const trofosClient = ClientFactory.createClient(connection as PlatformConnection);
+
+      if (projectId) {
+        // Fetch specific project with enhanced sprint data
+        logger.info(`Fetching individual TROFOS project: ${projectId}`);
+
+        // Use the enhanced method that includes sprint data
+        if ('getProjectWithSprints' in trofosClient) {
+          const enhancedProject = await (trofosClient as any).getProjectWithSprints(projectId);
+          return [enhancedProject]; // Return as array for consistency
+        } else {
+          const basicProject = await trofosClient.getProject(projectId);
+          return [basicProject];
+        }
+      } else {
+        // Fetch all projects
+        logger.info('Fetching all TROFOS projects');
+        const allProjects = await trofosClient.getProjects();
+        return allProjects;
+      }
+
+    } catch (error) {
+      logger.error('❌ Failed to fetch TROFOS project data:', error);
+      throw new Error(`TROFOS API error: ${(error as Error).message}`);
     }
   }
 
@@ -633,36 +653,384 @@ export class ConnectionService {
    */
   private transformProjectData(rawData: any, platform: string): ProjectData[] {
     try {
-      if (!rawData) {
-        logger.warn('⚠️ No raw data to transform');
-        return [];
+      logger.info(`🔄 Transforming data for platform: ${platform}`);
+
+      if (!Array.isArray(rawData)) {
+        logger.warn('Raw data is not an array, converting...');
+        rawData = [rawData];
       }
 
-      let projects: ProjectData[] = [];
+      const transformedProjects: ProjectData[] = rawData.map((project: any) => {
+        let enhancedProject: ProjectData;
 
-      switch (platform) {
-        case 'jira':
-          projects = this.transformJiraData(rawData);
-          break;
-        case 'monday':
-          projects = this.transformMondayData(rawData);
-          break;
-        default:
-          throw new Error(`Unsupported platform: ${platform}`);
-      }
+        switch (platform) {
+          case 'monday':
+            enhancedProject = this.transformMondayProject(project);
+            break;
+          case 'jira':
+            enhancedProject = this.transformJiraProject(project);
+            break;
+          case 'trofos':
+            enhancedProject = this.transformTrofosProject(project);
+            break;
+          default:
+            // Fallback: assume data is already in ProjectData format
+            enhancedProject = project;
+        }
 
-      // Filter out invalid projects
-      const validProjects = projects.filter(project =>
-        project && project.id && project.name && project.platform
-      );
+        // Add universal platform metadata to all projects
+        enhancedProject.metrics = [
+          ...(enhancedProject.metrics || []),
+          {
+            name: 'Data Source',
+            value: platform.toUpperCase(),
+            unit: 'platform'
+          },
+          {
+            name: 'Last Updated',
+            value: new Date().toISOString().split('T')[0],
+            unit: 'date'
+          }
+        ];
 
-      logger.info(`✅ Transformed ${validProjects.length} valid projects from ${projects.length} raw items`);
-      return validProjects;
+        return enhancedProject;
+      });
+
+      logger.info(`✅ Successfully transformed ${transformedProjects.length} projects for ${platform} platform`);
+      return transformedProjects;
 
     } catch (error) {
       logger.error('❌ Failed to transform project data:', error);
-      return [];
+      throw new Error(`Data transformation failed: ${(error as Error).message}`);
     }
+  }
+
+  /**
+ * Transform TROFOS project data to PRISM format (data is already mostly transformed by TrofosClient)
+ */
+  private transformTrofosProject(trofosProject: any): ProjectData {
+    try {
+      // TROFOS data is already in PRISM format from TrofosClient, but add quality scoring
+      const enhancedProject = {
+        ...trofosProject,
+        metrics: [
+          ...(trofosProject.metrics || []),
+          {
+            name: 'Data Quality',
+            value: this.calculateTrofosDataQuality(trofosProject),
+            unit: 'score'
+          }
+        ]
+      };
+
+      return enhancedProject;
+    } catch (error) {
+      logger.error('Failed to transform TROFOS project:', error);
+      throw error;
+    }
+  }
+
+  /**
+ * Transform Monday.com project data to PRISM format
+ */
+  private transformMondayProject(mondayProject: any): ProjectData {
+    try {
+      return {
+        id: String(mondayProject.id || mondayProject.board_id),
+        name: mondayProject.name || mondayProject.title || `Monday Project ${mondayProject.id}`,
+        description: mondayProject.description || `Monday.com Board: ${mondayProject.name}`,
+        status: this.mapMondayStatus(mondayProject.status || mondayProject.state),
+        progress: this.calculateMondayProgress(mondayProject),
+        platform: 'monday',
+        team: this.extractMondayTeam(mondayProject),
+        tasks: this.extractMondayTasks(mondayProject),
+        metrics: [
+          {
+            name: 'Board ID',
+            value: mondayProject.id || mondayProject.board_id,
+            unit: 'board'
+          },
+          {
+            name: 'Total Items',
+            value: mondayProject.items?.length || 0,
+            unit: 'items'
+          },
+          {
+            name: 'Data Quality',
+            value: this.calculateMondayDataQuality(mondayProject),
+            unit: 'score'
+          }
+        ]
+      };
+    } catch (error) {
+      logger.error('Failed to transform Monday project:', error);
+      throw error;
+    }
+  }
+
+  private mapMondayStatus(status: any): string {
+    if (!status) return 'Active';
+    const statusStr = String(status).toLowerCase();
+
+    if (statusStr.includes('done') || statusStr.includes('complete')) return 'Completed';
+    if (statusStr.includes('progress') || statusStr.includes('working')) return 'In Progress';
+    if (statusStr.includes('archived')) return 'Archived';
+
+    return 'Active';
+  }
+
+  private calculateMondayProgress(project: any): number {
+    if (!project.items || project.items.length === 0) return 0;
+
+    let completed = 0;
+    for (const item of project.items) {
+      if (item.column_values) {
+        const statusColumn = item.column_values.find((col: any) => col.type === 'color');
+        if (statusColumn && statusColumn.text && statusColumn.text.toLowerCase().includes('done')) {
+          completed++;
+        }
+      }
+    }
+
+    return Math.round((completed / project.items.length) * 100);
+  }
+
+  private extractMondayTeam(project: any): TeamMember[] {
+    const team = new Map<string, TeamMember>();
+
+    if (project.items) {
+      for (const item of project.items) {
+        if (item.column_values) {
+          const personColumn = item.column_values.find((col: any) => col.type === 'multiple-person');
+          if (personColumn && personColumn.personsAndTeams) {
+            for (const person of personColumn.personsAndTeams) {
+              if (!team.has(person.id)) {
+                team.set(person.id, {
+                  id: String(person.id),
+                  name: person.name,
+                  email: person.email,
+                  role: 'Team Member'
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return Array.from(team.values());
+  }
+
+  private extractMondayTasks(project: any): Task[] {
+    if (!project.items) return [];
+
+    return project.items.map((item: any) => ({
+      id: String(item.id),
+      title: item.name || `Task ${item.id}`,
+      status: this.extractMondayItemStatus(item),
+      assignee: this.extractMondayItemAssignee(item),
+      priority: 'Medium',
+      tags: [`Board: ${project.name}`]
+    }));
+  }
+
+  private extractMondayItemStatus(item: any): string {
+    if (!item.column_values) return 'Not Started';
+
+    const statusColumn = item.column_values.find((col: any) => col.type === 'color');
+    return statusColumn?.text || 'Not Started';
+  }
+
+  private extractMondayItemAssignee(item: any): TeamMember | undefined {
+    if (!item.column_values) return undefined;
+
+    const personColumn = item.column_values.find((col: any) => col.type === 'multiple-person');
+    if (personColumn && personColumn.personsAndTeams && personColumn.personsAndTeams.length > 0) {
+      const person = personColumn.personsAndTeams[0];
+      return {
+        id: String(person.id),
+        name: person.name,
+        email: person.email,
+        role: 'Assignee'
+      };
+    }
+
+    return undefined;
+  }
+
+  private calculateMondayDataQuality(project: any): number {
+    let score = 0;
+    let maxScore = 0;
+
+    // Basic info check
+    maxScore += 20;
+    if (project.name && project.description) score += 20;
+    else if (project.name) score += 10;
+
+    // Items check
+    maxScore += 30;
+    if (project.items && project.items.length > 0) score += 30;
+
+    // Team data check
+    maxScore += 25;
+    const team = this.extractMondayTeam(project);
+    if (team.length > 0) score += 25;
+
+    // Column structure check
+    maxScore += 25;
+    if (project.columns && project.columns.length > 0) score += 25;
+
+    return maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
+  }
+
+  /**
+ * Transform Jira project data to PRISM format
+ */
+  private transformJiraProject(jiraProject: any): ProjectData {
+    try {
+      return {
+        id: String(jiraProject.id || jiraProject.key),
+        name: jiraProject.name || jiraProject.key || `Jira Project ${jiraProject.id}`,
+        description: jiraProject.description || `Jira Project: ${jiraProject.name}`,
+        status: this.mapJiraStatus(jiraProject.projectCategory?.name || 'Active'),
+        progress: this.calculateJiraProgress(jiraProject),
+        platform: 'jira',
+        team: this.extractJiraTeam(jiraProject),
+        tasks: this.extractJiraTasks(jiraProject),
+        metrics: [
+          {
+            name: 'Project Key',
+            value: jiraProject.key,
+            unit: 'key'
+          },
+          {
+            name: 'Total Issues',
+            value: jiraProject.issues?.length || 0,
+            unit: 'issues'
+          },
+          {
+            name: 'Components',
+            value: jiraProject.components?.length || 0,
+            unit: 'components'
+          },
+          {
+            name: 'Data Quality',
+            value: this.calculateJiraDataQuality(jiraProject),
+            unit: 'score'
+          }
+        ]
+      };
+    } catch (error) {
+      logger.error('Failed to transform Jira project:', error);
+      throw error;
+    }
+  }
+
+  private mapJiraStatus(status: any): string {
+    if (!status) return 'Active';
+    const statusStr = String(status).toLowerCase();
+
+    if (statusStr.includes('complete') || statusStr.includes('done')) return 'Completed';
+    if (statusStr.includes('progress')) return 'In Progress';
+    if (statusStr.includes('archived')) return 'Archived';
+
+    return 'Active';
+  }
+
+  private calculateJiraProgress(project: any): number {
+    if (!project.issues || project.issues.length === 0) return 0;
+
+    let completed = 0;
+    for (const issue of project.issues) {
+      const status = issue.fields?.status?.name?.toLowerCase();
+      if (status && (status.includes('done') || status.includes('resolved') || status.includes('closed'))) {
+        completed++;
+      }
+    }
+
+    return Math.round((completed / project.issues.length) * 100);
+  }
+
+  private extractJiraTeam(project: any): TeamMember[] {
+    const team = new Map<string, TeamMember>();
+
+    if (project.issues) {
+      for (const issue of project.issues) {
+        // Add assignee
+        const assignee = issue.fields?.assignee;
+        if (assignee && !team.has(assignee.accountId)) {
+          team.set(assignee.accountId, {
+            id: assignee.accountId,
+            name: assignee.displayName,
+            email: assignee.emailAddress,
+            role: 'Developer',
+            avatar: assignee.avatarUrls?.['32x32']
+          });
+        }
+
+        // Add reporter
+        const reporter = issue.fields?.reporter;
+        if (reporter && !team.has(reporter.accountId)) {
+          team.set(reporter.accountId, {
+            id: reporter.accountId,
+            name: reporter.displayName,
+            email: reporter.emailAddress,
+            role: 'Reporter',
+            avatar: reporter.avatarUrls?.['32x32']
+          });
+        }
+      }
+    }
+
+    return Array.from(team.values());
+  }
+
+  private extractJiraTasks(project: any): Task[] {
+    if (!project.issues) return [];
+
+    return project.issues.map((issue: any) => ({
+      id: issue.key,
+      title: issue.fields?.summary || `Issue ${issue.key}`,
+      status: issue.fields?.status?.name || 'Unknown',
+      assignee: issue.fields?.assignee ? {
+        id: issue.fields.assignee.accountId,
+        name: issue.fields.assignee.displayName,
+        email: issue.fields.assignee.emailAddress,
+        role: 'Assignee'
+      } : undefined,
+      priority: issue.fields?.priority?.name || 'Medium',
+      dueDate: issue.fields?.duedate ? new Date(issue.fields.duedate) : undefined,
+      tags: [
+        `Type: ${issue.fields?.issuetype?.name}`,
+        `Project: ${project.key}`
+      ]
+    }));
+  }
+
+  private calculateJiraDataQuality(project: any): number {
+    let score = 0;
+    let maxScore = 0;
+
+    // Basic info check
+    maxScore += 20;
+    if (project.name && project.description) score += 20;
+    else if (project.name) score += 10;
+
+    // Issues check
+    maxScore += 30;
+    if (project.issues && project.issues.length > 0) score += 30;
+
+    // Team data check
+    maxScore += 25;
+    const team = this.extractJiraTeam(project);
+    if (team.length > 0) score += 25;
+
+    // Project configuration check
+    maxScore += 25;
+    if (project.components && project.components.length > 0) score += 15;
+    if (project.versions && project.versions.length > 0) score += 10;
+
+    return maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
   }
 
   /**
@@ -712,9 +1080,11 @@ export class ConnectionService {
 
         // Transform team members
         const teamMembers = Object.entries(assigneeCounts).map(([name, count]) => ({
+          id: `user-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
           name: name,
           role: name === 'Unassigned' ? 'Unassigned' : 'Developer',
-          taskCount: count as number
+          email: undefined, 
+          avatar: undefined
         }));
 
         // Create metrics
@@ -908,9 +1278,11 @@ export class ConnectionService {
             });
 
             return {
+              id: `user-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
               name: name.trim(),
               role: role,
-              taskCount: count as number
+              email: undefined,
+              avatar: undefined
             };
           });
 
@@ -986,28 +1358,65 @@ export class ConnectionService {
   }
 
   /**
-   * Test connection configuration
-   */
-  private async testConnectionConfig(platform: string, config: any): Promise<ConnectionTestResult> {
+ * Test connection configuration for all platforms including TROFOS
+ */
+  async testConnectionConfig(platform: string, config: Record<string, any>): Promise<{ success: boolean; message: string }> {
     try {
-      switch (platform) {
-        case 'jira':
-          return await this.testJiraConnection(config);
-        case 'monday':
-          return await this.testMondayConnection(config);
-        default:
-          return {
-            success: false,
-            message: `Unsupported platform: ${platform}`
-          };
+      logger.info(`🧪 Testing ${platform} connection configuration`);
+
+      // Create a temporary connection object for testing
+      const testConnection: IConnection = {
+        platform: platform as any,
+        config: config,
+        status: 'disconnected'
+      } as IConnection;
+
+      const client = ClientFactory.createClient(testConnection as PlatformConnection);
+      const isConnected = await client.testConnection();
+
+      if (isConnected) {
+        logger.info(`✅ ${platform} connection test successful`);
+        return { success: true, message: `${platform} connection successful` };
+      } else {
+        logger.warn(`❌ ${platform} connection test failed`);
+        return { success: false, message: `${platform} connection failed - check credentials` };
       }
+
     } catch (error) {
-      logger.error('Connection test failed:', error);
+      logger.error(`❌ ${platform} connection test error:`, error);
       return {
         success: false,
-        message: error instanceof Error ? error.message : 'Connection test failed'
+        message: `${platform} connection error: ${(error as Error).message}`
       };
     }
+  }
+
+  /**
+ * Calculate data quality score for TROFOS projects
+ */
+  private calculateTrofosDataQuality(project: ProjectData): number {
+    let score = 0;
+    let maxScore = 0;
+
+    // Check if project has basic info
+    maxScore += 20;
+    if (project.name && project.description) score += 20;
+    else if (project.name) score += 10;
+
+    // Check if project has team data
+    maxScore += 30;
+    if (project.team && project.team.length > 0) score += 30;
+
+    // Check if project has task data
+    maxScore += 30;
+    if (project.tasks && project.tasks.length > 0) score += 30;
+
+    // Check if project has metrics
+    maxScore += 20;
+    if (project.metrics && project.metrics.length > 3) score += 20;
+    else if (project.metrics && project.metrics.length > 0) score += 10;
+
+    return maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
   }
 
   /**
@@ -1068,7 +1477,7 @@ export class ConnectionService {
 
       return {
         success: false,
-        message: `Connection failed: ${error.message}`
+        message: `Connection failed: ${(error as Error).message}`
       };
     }
   }
@@ -1133,7 +1542,7 @@ export class ConnectionService {
 
       return {
         success: false,
-        message: `Connection failed: ${error.message}`
+        message: `Connection failed: ${(error as Error).message}`
       };
     }
   }

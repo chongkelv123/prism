@@ -84,7 +84,7 @@ export abstract class BaseClient {
       (error) => {
         // Fix: Use type guard to safely access error properties
         if (axios.isAxiosError(error)) {
-          logger.error('Response error:', error.response?.status, error.response?.data);
+          logger.error('Response error:', `${error.response?.status} - ${JSON.stringify(error.response?.data)}`);
         } else {
           logger.error('Response error:', error);
         }
@@ -161,7 +161,7 @@ export class MondayClient extends BaseClient {
 
     } catch (error) {
       logger.error('Failed to fetch TROFOS projects list:', error);
-      throw new Error(`Failed to fetch projects list: ${error.message}`);
+      throw new Error(`Failed to fetch projects list: ${(error as Error).message}`);
     }
   }
 
@@ -184,8 +184,8 @@ export class MondayClient extends BaseClient {
         id: String(trofosProject.id),
         name: trofosProject.pname || trofosProject.pkey || `Project ${trofosProject.id}`,
         description: `TROFOS Project: ${trofosProject.pname || trofosProject.pkey}`,
-        status: this.determineProjectStatus(trofosProject),
-        progress: this.calculateProjectProgress(trofosProject),
+        status: 'Active',
+        progress: 50,
         team: [], // Empty for project list - would need individual project call for details
         tasks: [], // Empty for project list - would need individual project call for details
         metrics: this.generateProjectListMetrics(trofosProject)
@@ -195,7 +195,7 @@ export class MondayClient extends BaseClient {
 
     } catch (error) {
       logger.error('Failed to transform TROFOS project list item:', error);
-      throw new Error(`Project list item transformation failed: ${error.message}`);
+      throw new Error(`Project list item transformation failed: ${(error as Error).message}`);
     }
   }
 
@@ -264,7 +264,7 @@ export class MondayClient extends BaseClient {
 
     } catch (error) {
       logger.error(`Failed to get project with sprints for ${projectId}:`, error);
-      throw new Error(`Failed to get enhanced project data: ${error.message}`);
+      throw new Error(`Failed to get enhanced project data: ${(error as Error).message}`);
     }
   }
 
@@ -289,7 +289,7 @@ export class MondayClient extends BaseClient {
 
     } catch (error) {
       logger.error(`Failed to fetch sprint data for project ${projectId}:`, error);
-      throw new Error(`Failed to fetch sprint data: ${error.message}`);
+      throw new Error(`Failed to fetch sprint data: ${(error as Error).message}`);
     }
   }
 
@@ -703,7 +703,7 @@ export class TrofosClient extends BaseClient {
 
     } catch (error) {
       logger.error(`Failed to fetch TROFOS project ${projectId}:`, error);
-      throw new Error(`Failed to fetch project ${projectId}: ${error.message}`);
+      throw new Error(`Failed to fetch project ${projectId}: ${(error as Error).message}`);
     }
   }
 
@@ -753,7 +753,7 @@ export class TrofosClient extends BaseClient {
 
     } catch (error) {
       logger.error('Failed to transform TROFOS project data:', error);
-      throw new Error(`Data transformation failed: ${error.message}`);
+      throw new Error(`Data transformation failed: ${(error as Error).message}`);
     }
   }
 

@@ -1,9 +1,10 @@
-// frontend/src/components/feature-specific/connections/AddConnectionModal.tsx - UPDATED WITH MONDAY SUPPORT
+// frontend/src/components/feature-specific/connections/AddConnectionModal.tsx - FIXED WITH TROFOS SUPPORT
 import React, { useState } from 'react';
 import { X, CheckCircle, AlertCircle } from 'lucide-react';
 import PlatformSelector from './PlatformSelector';
 import JiraConfigForm from './JiraConfigForm';
 import MondayConfigForm from './MondayConfigForm';
+import TrofosConfigForm from './TrofosConfigForm';
 
 interface AddConnectionModalProps {
   isOpen: boolean;
@@ -121,15 +122,11 @@ const AddConnectionModal: React.FC<AddConnectionModalProps> = ({
               />
             )}
             {selectedPlatform === 'trofos' && (
-              <div className="text-center py-8">
-                <p className="text-gray-600 mb-4">TROFOS configuration coming soon!</p>
-                <button 
-                  onClick={handleBack}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-lg"
-                >
-                  Back to Platform Selection
-                </button>
-              </div>
+              <TrofosConfigForm 
+                onSubmit={handleConnectionSubmit}
+                onBack={handleBack}
+                isSubmitting={isSubmitting}
+              />
             )}
           </div>
         );
@@ -163,7 +160,7 @@ const AddConnectionModal: React.FC<AddConnectionModalProps> = ({
           <div>
             <h2 className="text-xl font-semibold text-gray-900">
               {step === 'platform' && 'Add New Connection'}
-              {step === 'configure' && `Connect to ${selectedPlatform}`}
+              {step === 'configure' && `Connect to ${selectedPlatform?.toUpperCase()}`}
               {step === 'success' && 'Success!'}
             </h2>
             <p className="text-sm text-gray-500 mt-1">

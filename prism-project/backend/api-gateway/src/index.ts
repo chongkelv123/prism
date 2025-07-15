@@ -6,6 +6,8 @@ import proxy from 'express-http-proxy';
 import dotenv from 'dotenv';
 import jiraProxy from './routes/jiraProxy';
 import mondayProxy from './routes/mondayProxy';
+import trofosProxy from './routes/trofosProxy';  // ADD THIS LINE
+
 
 dotenv.config();
 
@@ -56,7 +58,8 @@ app.get('/api/health', (req, res) => {
       platformIntegrations: PLATFORM_INTEGRATIONS_SERVICE_URL,
       reportGeneration: REPORT_SERVICE_URL,
       jiraProxy: 'enabled',
-      mondayProxy: 'enabled'
+      mondayProxy: 'enabled',
+      trofosProxy: 'enabled'  // ADD THIS LINE
     }
   });
 });
@@ -72,7 +75,8 @@ app.get('/health', (req, res) => {
       platformIntegrations: PLATFORM_INTEGRATIONS_SERVICE_URL,
       reportGeneration: REPORT_SERVICE_URL,
       jiraProxy: 'enabled',
-      mondayProxy: 'enabled'
+      mondayProxy: 'enabled',
+      trofosProxy: 'enabled'  // ADD THIS LINE
     }
   });
 });
@@ -92,6 +96,7 @@ app.get('/api/status', (req, res) => {
 // PROXY ROUTES - These must come BEFORE other routes to avoid conflicts
 app.use('/api/jira-proxy', jiraProxy);
 app.use('/api/monday-proxy', mondayProxy);
+app.use('/api/trofos-proxy', trofosProxy);  // ADD THIS LINE
 
 // Route logging middleware (for debugging)
 app.use((req, res, next) => {
@@ -190,6 +195,8 @@ app.use('/api/*', (req, res) => {
       'POST /api/jira-proxy/test-connection',
       'POST /api/monday-proxy/test-connection',
       'POST /api/monday-proxy/get-boards',
+      'POST /api/trofos-proxy/test-connection',      // ADD THIS LINE
+      'POST /api/trofos-proxy/get-projects',         // ADD THIS LINE
       'GET /api/platform-integrations/health',
       'GET /api/platform-integrations/status',
       'GET /api/platform-integrations/info',
@@ -213,6 +220,7 @@ app.listen(PORT, () => {
   console.log(`  Auth: /api/auth/* -> ${AUTH_SERVICE_URL}`);
   console.log(`  Jira Proxy: /api/jira-proxy/* -> Direct proxy`);
   console.log(`  Monday Proxy: /api/monday-proxy/* -> Direct proxy`);
+  console.log(`  TROFOS Proxy: /api/trofos-proxy/* -> Direct proxy`);  // ADD THIS LINE
   console.log(`  Platform Integrations: /api/platform-integrations/* -> ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);
   console.log(`  Platforms: /api/platforms/* -> ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);
   console.log(`  Connections: /api/connections/* -> ${PLATFORM_INTEGRATIONS_SERVICE_URL}`);

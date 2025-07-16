@@ -1,6 +1,4 @@
 // backend/services/platform-integrations-service/src/services/ConnectionService.ts
-// CORRECTED VERSION - Fixed TypeScript errors and status field values
-// Replace your ConnectionService.ts with this corrected version
 
 import { Connection, IConnection } from '../models/Connection';
 import logger from '../utils/logger';
@@ -9,7 +7,7 @@ import { ClientFactory, PlatformConnection, TeamMember, Task, Metric } from '../
 
 export interface ConnectionCreateData {
   name: string;
-  platform: 'monday' | 'jira';
+  platform: 'monday' | 'jira' | 'trofos'; // ✅ ADDED: 'trofos' platform
   config: Record<string, any>;
   metadata?: {
     selectedProjects?: string[];
@@ -69,6 +67,14 @@ export interface ProjectData {
       groups?: Array<{ id: string; title: string; color?: string }>;
       columns?: Array<{ id: string; title: string; type: string }>;
       automations?: number;
+    };
+    // ✅ ADDED: TROFOS platform-specific data structure
+    trofos?: {
+      projectKey?: string;
+      backlogItems?: Array<{ id: string; title: string; type: string }>;
+      sprints?: Array<{ id: string; name: string; status: string }>;
+      resources?: Array<{ id: string; name: string; role: string }>;
+      metrics?: Array<{ name: string; value: number | string }>;
     };
   };
   lastUpdated?: string;
@@ -653,55 +659,72 @@ export class ConnectionService {
    */
   private transformProjectData(rawData: any, platform: string): ProjectData[] {
     try {
-      logger.info(`🔄 Transforming data for platform: ${platform}`);
-
-      if (!Array.isArray(rawData)) {
-        logger.warn('Raw data is not an array, converting...');
-        rawData = [rawData];
+      if (!rawData) {
+        logger.warn('⚠️ No raw data to transform');
+        return [];
       }
 
-      const transformedProjects: ProjectData[] = rawData.map((project: any) => {
-        let enhancedProject: ProjectData;
+      let projects: ProjectData[] = [];
 
-        switch (platform) {
-          case 'monday':
-            enhancedProject = this.transformMondayProject(project);
-            break;
-          case 'jira':
-            enhancedProject = this.transformJiraProject(project);
-            break;
-          case 'trofos':
-            enhancedProject = this.transformTrofosProject(project);
-            break;
-          default:
-            // Fallback: assume data is already in ProjectData format
-            enhancedProject = project;
+      switch (platform) {
+        case 'jira':
+          projects = this.transformJiraData(rawData);
+          break;
+        case 'monday':
+          projects = this.transformMondayData(rawData);
+          break;
+        default:
+          throw new Error(`Unsupported platform: ${platform}`);
+      }
+
+      // ENHANCED: More thorough validation filtering
+      const validProjects = projects.filter((project, index) => {
+        // Basic null check
+        if (!project) {
+          logger.warn(`⚠️ Project at index ${index} is null/undefined`);
+          return false;
         }
 
-        // Add universal platform metadata to all projects
-        enhancedProject.metrics = [
-          ...(enhancedProject.metrics || []),
-          {
-            name: 'Data Source',
-            value: platform.toUpperCase(),
-            unit: 'platform'
-          },
-          {
-            name: 'Last Updated',
-            value: new Date().toISOString().split('T')[0],
-            unit: 'date'
-          }
-        ];
+        // Check required fields with proper validation
+        const hasValidId = project.id && typeof project.id === 'string' && project.id.trim().length > 0;
+        const hasValidName = project.name && typeof project.name === 'string' && project.name.trim().length > 0 && project.name !== 'undefined';
+        const hasValidPlatform = project.platform && typeof project.platform === 'string';
 
-        return enhancedProject;
+        if (!hasValidId) {
+          logger.warn(`⚠️ Project at index ${index} has invalid ID:`, project.id);
+          return false;
+        }
+
+        if (!hasValidName) {
+          logger.warn(`⚠️ Project at index ${index} has invalid name:`, {
+            name: project.name,
+            type: typeof project.name,
+            length: project.name?.length
+          });
+          return false;
+        }
+
+        if (!hasValidPlatform) {
+          logger.warn(`⚠️ Project at index ${index} has invalid platform:`, project.platform);
+          return false;
+        }
+
+        return true;
       });
 
-      logger.info(`✅ Successfully transformed ${transformedProjects.length} projects for ${platform} platform`);
-      return transformedProjects;
+      logger.info(`✅ Transformed ${validProjects.length} valid projects from ${projects.length} raw items`);
+
+      // ENHANCED: Log invalid projects for debugging
+      if (projects.length !== validProjects.length) {
+        const invalidCount = projects.length - validProjects.length;
+        logger.warn(`⚠️ Filtered out ${invalidCount} invalid projects`);
+      }
+
+      return validProjects;
 
     } catch (error) {
       logger.error('❌ Failed to transform project data:', error);
-      throw new Error(`Data transformation failed: ${(error as Error).message}`);
+      return [];
     }
   }
 
@@ -1045,6 +1068,35 @@ export class ConnectionService {
         const project = projectData.project || projectData;
         const issues = projectData.issues || [];
 
+        // ENHANCED: Defensive project name extraction with multiple fallbacks
+        const extractProjectName = (proj: any): string => {
+          // Check multiple possible name fields and ensure they're not empty/falsy
+          const candidates = [
+            proj.name,
+            proj.displayName,
+            proj.key,
+            proj.projectName
+          ];
+
+          for (const candidate of candidates) {
+            if (candidate && typeof candidate === 'string' && candidate.trim().length > 0) {
+              return candidate.trim();
+            }
+          }
+
+          // Final fallback with project identifier
+          return `Jira Project ${proj.key || proj.id || 'Unknown'}`;
+        };
+
+        // ENHANCED: Defensive project ID extraction
+        const extractProjectId = (proj: any): string => {
+          return proj.key || proj.id || `jira-${Math.random().toString(36).substr(2, 9)}`;
+        };
+
+        // Use enhanced extractors
+        const projectName = extractProjectName(project);
+        const projectId = extractProjectId(project);
+
         // Status distribution
         const statusCounts: Record<string, number> = {};
         const priorityCounts: Record<string, number> = {};
@@ -1080,11 +1132,10 @@ export class ConnectionService {
 
         // Transform team members
         const teamMembers = Object.entries(assigneeCounts).map(([name, count]) => ({
-          id: `user-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-          name: name,
+          id: `jira-${name.toLowerCase().replace(/\s+/g, '-')}-${Math.random().toString(36).substring(2, 6)}`,
+          name: name,          
           role: name === 'Unassigned' ? 'Unassigned' : 'Developer',
-          email: undefined, 
-          avatar: undefined
+          taskCount: count as number
         }));
 
         // Create metrics
@@ -1106,9 +1157,10 @@ export class ConnectionService {
           }))
         ];
 
-        return {
-          id: project.key || project.id,
-          name: project.name || 'Unnamed Jira Project',
+        // CRITICAL: Create project with guaranteed valid name
+        const transformedProject = {
+          id: projectId,
+          name: projectName, // ← GUARANTEED to be a valid, non-empty string
           platform: 'jira',
           description: project.description || '',
           status: 'active',
@@ -1117,7 +1169,7 @@ export class ConnectionService {
           metrics: metrics,
           platformSpecific: {
             jira: {
-              projectKey: project.key,
+              projectKey: project.key || projectId,
               issueTypes: project.issueTypes?.map((t: any) => t.name) || [],
               components: project.components?.map((c: any) => c.name) || [],
               versions: project.versions?.map((v: any) => v.name) || []
@@ -1130,6 +1182,16 @@ export class ConnectionService {
             freshness: 100
           }
         };
+
+        // ENHANCED: Log the transformation for debugging
+        logger.info(`✅ Transformed Jira project: "${transformedProject.name}"`, {
+          originalName: project.name,
+          extractedName: projectName,
+          projectId: transformedProject.id,
+          issuesCount: issues.length
+        });
+
+        return transformedProject;
       });
 
     } catch (error) {

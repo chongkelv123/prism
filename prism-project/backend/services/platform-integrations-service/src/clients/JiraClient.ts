@@ -82,25 +82,25 @@ export class JiraClient extends BaseClient {
       }
     } catch (error) {
       logger.error('Jira connection test failed:', {
-        error: error.message,
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data
+        error: (error as Error).message,
+        status: (error as any).response?.status,
+        statusText: (error as any).response?.statusText,
+        data: (error as any).response?.data
       });
       
       // Re-throw with more specific error information
-      if (error.response?.status === 401) {
+      if ((error as any).response?.status === 401) {
         throw new Error('Invalid email or API token');
-      } else if (error.response?.status === 403) {
+      } else if ((error as any).response?.status === 403) {
         throw new Error('API token does not have sufficient permissions');
-      } else if (error.response?.status === 404) {
+      } else if ((error as any).response?.status === 404) {
         throw new Error('Jira instance not found. Please check your domain');
-      } else if (error.code === 'ENOTFOUND') {
+      } else if ((error as any).code === 'ENOTFOUND') {
         throw new Error(`Cannot resolve domain '${this.domain}'. Please check your Jira domain`);
-      } else if (error.code === 'ECONNREFUSED') {
+      } else if ((error as any).code === 'ECONNREFUSED') {
         throw new Error('Connection refused. Please check your domain and internet connection');
       } else {
-        throw new Error(`Connection test failed: ${error.message}`);
+        throw new Error(`Connection test failed: ${(error as Error).message}`);
       }
     }
   }
@@ -211,14 +211,14 @@ export class JiraClient extends BaseClient {
     } catch (error) {
       logger.error('Failed to fetch Jira projects:', error);
       
-      if (error.response?.status === 404) {
+      if ((error as any).response?.status === 404) {
         throw new Error(`Project '${this.projectKey}' not found or not accessible`);
-      } else if (error.response?.status === 403) {
+      } else if ((error as any).response?.status === 403) {
         throw new Error(`No permission to access project '${this.projectKey}'`);
-      } else if (error.response?.status === 401) {
+      } else if ((error as any).response?.status === 401) {
         throw new Error('Authentication failed. Please check your credentials');
       } else {
-        throw new Error(`Failed to fetch projects from Jira: ${error.message}`);
+        throw new Error(`Failed to fetch projects from Jira: ${(error as Error).message}`);
       }
     }
   }

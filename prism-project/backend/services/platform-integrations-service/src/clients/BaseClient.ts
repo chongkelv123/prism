@@ -633,9 +633,7 @@ export class JiraClient extends BaseClient {
 // TROFOS Client - CORRECTED VERSION
 export class TrofosClient extends BaseClient {
   private get serverUrl(): string {
-    // Normalize the server URL - remove trailing slash
-    const url = this.connection.config.serverUrl || 'https://trofos-production.comp.nus.edu.sg/api/external';
-    return url.replace(/\/$/, '');
+    return this.connection.config.serverUrl.replace(/\/$/, '');
   }
 
   private get apiKey(): string {
@@ -648,177 +646,142 @@ export class TrofosClient extends BaseClient {
 
   constructor(connection: PlatformConnection) {
     super(connection);
-
-    // ✅ Set base URL to include /api/external/v1
     this.http.defaults.baseURL = `${this.serverUrl}/v1`;
-
-    // ✅ Use x-api-key header instead of Authorization Bearer
+    // FIXED: Use x-api-key header instead of Authorization Bearer
     this.http.defaults.headers['x-api-key'] = this.apiKey;
+    this.http.defaults.headers['Content-Type'] = 'application/json';
 
-    // Remove any Authorization header that might be set by parent
+    // Remove Authorization header if it exists
     delete this.http.defaults.headers['Authorization'];
-
-    logger.info(`TROFOS Client initialized with baseURL: ${this.http.defaults.baseURL}`);
   }
 
   async testConnection(): Promise<boolean> {
     try {
-      logger.info('Testing TROFOS connection...');
-
-      // ✅ Use POST endpoint with correct payload format
       const response = await this.http.post('/project/list', {
-        option: "all",
-        pageIndex: 0,
-        pageSize: 1  // Just test with 1 project to verify connection
+        pageNum: 1,
+        pageSize: 1,
+        sort: 'name',
+        direction: 'ASC'
       });
-
-      const success = response.status === 200 && response.data;
-      logger.info(`TROFOS connection test result: ${success ? 'SUCCESS' : 'FAILED'}`);
-
-      return success;
+      return response.status === 200;
     } catch (error) {
       logger.error('TROFOS connection test failed:', error);
       return false;
     }
   }
 
-  async getProject(projectId: string): Promise<ProjectData> {
+  // FIXED: Implement getProjects method
+  async getProjects(): Promise<ProjectData[]> {
     try {
-      logger.info(`Fetching TROFOS project data for project ID: ${projectId}`);
+      logger.info('🔄 TrofosClient: Fetching projects list');
 
-      // ✅ Individual project endpoint - GET /project/{projectId}
-      const response = await this.http.get(`/project/${projectId}`);
+      const response = await this.http.post('/project/list', {
+        pageNum: 1,
+        pageSize: 50,
+        sort: 'name',
+        direction: 'ASC'
+      });
 
-      if (!response.data) {
-        throw new Error('No project data returned from TROFOS API');
+      if (response.data && response.data.projects) {
+        logger.info(`✅ TrofosClient: Retrieved ${response.data.projects.length} projects`);
+        return this.transformTrofosProjects(response.data.projects);
+      } else {
+        logger.warn('⚠️ TrofosClient: No projects returned');
+        return [];
       }
-
-      const trofosProject = response.data;
-      logger.info(`Successfully fetched TROFOS project: ${trofosProject.pname || 'Unknown'}`);
-
-      // Transform TROFOS project data to PRISM ProjectData format
-      const projectData: ProjectData = this.transformProjectData(trofosProject);
-
-      return projectData;
-
     } catch (error) {
-      logger.error(`Failed to fetch TROFOS project ${projectId}:`, error);
-      throw new Error(`Failed to fetch project ${projectId}: ${(error as Error).message}`);
+      logger.error('❌ TrofosClient: Failed to fetch projects:', error);
+      throw error;
     }
   }
 
-  async getProjects(): Promise<ProjectData[]> {
-    // Placeholder - will implement in Step 4
-    logger.info('TrofosClient.getProjects() - placeholder, will implement in Step 4');
-    return [];
+  // FIXED: Implement getProject method
+  async getProject(projectId: string): Promise<ProjectData> {
+    try {
+      logger.info(`🔄 TrofosClient: Fetching single project ${projectId}`);
+
+      const response = await this.http.get(`/project/${projectId}`);
+
+      if (response.data) {
+        logger.info(`✅ TrofosClient: Retrieved project ${projectId} (${response.data.pname || response.data.name})`);
+        const transformedProjects = this.transformTrofosProjects([response.data]);
+        return transformedProjects[0];
+      } else {
+        throw new Error(`Project ${projectId} not found`);
+      }
+    } catch (error) {
+      logger.error(`❌ TrofosClient: Failed to fetch project ${projectId}:`, error);
+      throw error;
+    }
   }
 
   async getProjectMetrics(projectId: string): Promise<Metric[]> {
-    // Placeholder - will implement later
-    logger.info(`TrofosClient.getProjectMetrics(${projectId}) - placeholder`);
-    return [];
-  }
-
-  /**
-   * Transform TROFOS project data to PRISM ProjectData format
-   */
-  private transformProjectData(trofosProject: any): ProjectData {
     try {
-      // TROFOS project format:
-      // {
-      //   "id": 127,
-      //   "pname": "CS4218 2420 Team 40",
-      //   "pkey": "CS4218 2420 Team 40", 
-      //   "description": null,
-      //   "course_id": 70,
-      //   "owner_id": null,
-      //   "public": false,
-      //   "created_at": "2025-02-03T03:35:02.409Z",
-      //   "backlog_counter": 137
-      // }
-
-      const projectData: ProjectData = {
-        id: String(trofosProject.id),
-        name: trofosProject.pname || trofosProject.pkey || `Project ${trofosProject.id}`,
-        description: trofosProject.description || `TROFOS Project: ${trofosProject.pname}`,
-        status: this.determineProjectStatus(trofosProject),
-        progress: this.calculateProjectProgress(trofosProject),
-        team: [], // Will be populated when we fetch sprint/backlog data
-        tasks: [], // Will be populated when we fetch sprint/backlog data  
-        metrics: this.generateProjectMetrics(trofosProject)
-      };
-
-      logger.info(`Transformed TROFOS project to PRISM format: ${projectData.name}`);
-      return projectData;
-
+      // Get project data first
+      const project = await this.getProject(projectId);
+      return project.metrics || [];
     } catch (error) {
-      logger.error('Failed to transform TROFOS project data:', error);
-      throw new Error(`Data transformation failed: ${(error as Error).message}`);
+      logger.error(`❌ TrofosClient: Failed to fetch metrics for project ${projectId}:`, error);
+      return [];
     }
   }
 
-  /**
-   * Determine project status based on TROFOS data
-   */
-  private determineProjectStatus(trofosProject: any): string {
-    // Basic status determination - can be enhanced later
-    if (trofosProject.backlog_counter > 0) {
-      return 'Active';
-    } else if (trofosProject.public) {
-      return 'Published';
-    } else {
-      return 'Planning';
-    }
+  // Helper method to transform TROFOS data to ProjectData format
+  private transformTrofosProjects(trofosProjects: any[]): ProjectData[] {
+    return trofosProjects.map((trofosProject: any) => {
+      try {
+        const projectData: ProjectData = {
+          id: trofosProject.id?.toString() || 'unknown',
+          name: trofosProject.pname || trofosProject.name || 'Unnamed TROFOS Project',          
+          description: trofosProject.description || `TROFOS project: ${trofosProject.pkey || 'No key'}`,
+          status: this.mapTrofosStatus(trofosProject.status),
+          tasks: [],
+          team: [],
+          metrics: [
+            { name: 'Project ID', value: trofosProject.id || 'N/A' },
+            { name: 'Project Key', value: trofosProject.pkey || 'N/A' },
+            { name: 'Backlog Counter', value: trofosProject.backlog_counter || 0 },
+            { name: 'Course ID', value: trofosProject.course_id || 'N/A' },
+            { name: 'Public', value: trofosProject.public ? 'Yes' : 'No' },
+            { name: 'Created', value: trofosProject.created_at ? new Date(trofosProject.created_at).toLocaleDateString() : 'Unknown' }
+          ]
+        };
+        
+
+        return projectData;
+
+      } catch (error) {
+        logger.error('❌ TrofosClient: Failed to transform project:', error);
+
+        // Return minimal valid project
+        return {
+          id: trofosProject.id?.toString() || 'error',
+          name: trofosProject.pname || trofosProject.name || 'Error Project',
+          platform: 'trofos',
+          description: 'Error occurred during transformation',
+          status: 'error',
+          tasks: [],
+          team: [],
+          metrics: [{ name: 'Status', value: 'Transformation Error' }],
+          lastUpdated: new Date().toISOString()
+        };
+      }
+    });
   }
 
-  /**
-   * Calculate project progress based on available data
-   */
-  private calculateProjectProgress(trofosProject: any): number {
-    // Basic progress calculation - will be enhanced when we add sprint data
-    if (trofosProject.backlog_counter > 0) {
-      // Assume some progress if there are backlog items
-      return Math.min(50, trofosProject.backlog_counter * 2);
-    }
-    return 0;
-  }
+  // Helper method to map TROFOS status
+  private mapTrofosStatus(status: any): string {
+    if (!status) return 'active';
 
-  /**
-   * Generate project metrics from TROFOS data
-   */
-  private generateProjectMetrics(trofosProject: any): Metric[] {
-    const metrics: Metric[] = [];
+    const statusStr = status.toString().toLowerCase();
+    const statusMap: Record<string, string> = {
+      'active': 'active',
+      'inactive': 'inactive',
+      'archived': 'archived',
+      'completed': 'completed'
+    };
 
-    // Add backlog counter metric
-    if (trofosProject.backlog_counter !== undefined) {
-      metrics.push({
-        name: 'Total Backlog Items',
-        value: trofosProject.backlog_counter,
-        unit: 'items'
-      });
-    }
-
-    // Add course ID metric
-    if (trofosProject.course_id) {
-      metrics.push({
-        name: 'Course ID',
-        value: trofosProject.course_id,
-        unit: 'course'
-      });
-    }
-
-    // Add creation date metric
-    if (trofosProject.created_at) {
-      const createdDate = new Date(trofosProject.created_at);
-      const daysSinceCreation = Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
-      metrics.push({
-        name: 'Days Since Creation',
-        value: daysSinceCreation,
-        unit: 'days'
-      });
-    }
-
-    return metrics;
+    return statusMap[statusStr] || 'active';
   }
 }
 

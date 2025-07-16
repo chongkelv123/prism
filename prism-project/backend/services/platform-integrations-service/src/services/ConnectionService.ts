@@ -206,39 +206,112 @@ export class ConnectionService {
  */
   private async getTrofosProjectData(connection: IConnection, projectId?: string): Promise<any> {
     try {
-      const { serverUrl, apiKey } = connection.config;
+      const { serverUrl, apiKey, projectId: configProjectId } = connection.config;
 
       if (!serverUrl || !apiKey) {
-        throw new Error('Missing TROFOS configuration (serverUrl, apiKey required)');
+        throw new Error('Missing TROFOS configuration');
       }
 
-      logger.info(`🎯 Fetching TROFOS project data - Project ID: ${projectId || 'all projects'}`);
+      // Clean server URL and ensure correct path construction
+      const baseUrl = serverUrl.replace(/\/$/, ''); // Remove trailing slash
 
-      // Use ClientFactory to create TROFOS client
-      const trofosClient = ClientFactory.createClient(connection as PlatformConnection);
+      // FIXED: Ensure we use the exact same URL structure as PowerShell
+      // PowerShell uses: https://trofos-production.comp.nus.edu.sg/api/external/v1/project/172
+      const apiUrl = `${baseUrl}/v1`; // Add /v1 to the base URL
 
-      if (projectId) {
-        // Fetch specific project with enhanced sprint data
-        logger.info(`Fetching individual TROFOS project: ${projectId}`);
+      logger.info('🔄 Making TROFOS API request', {
+        baseUrl,
+        apiUrl,
+        requestedProjectId: projectId || 'none',
+        configProjectId: configProjectId || 'none',
+        hasApiKey: !!apiKey,
+        fullUrl: projectId ? `${apiUrl}/project/${projectId}` : `${apiUrl}/project/list`
+      });
 
-        // Use the enhanced method that includes sprint data
-        if ('getProjectWithSprints' in trofosClient) {
-          const enhancedProject = await (trofosClient as any).getProjectWithSprints(projectId);
-          return [enhancedProject]; // Return as array for consistency
-        } else {
-          const basicProject = await trofosClient.getProject(projectId);
-          return [basicProject];
+      // FIXED: Use correct headers - x-api-key instead of Authorization
+      const headers = {
+        'x-api-key': apiKey,
+        'Content-Type': 'application/json'
+      };
+
+      // Try specific project first if requested
+      if (projectId || configProjectId) {
+        const targetProjectId = projectId || configProjectId;
+
+        // FIXED: Construct exact URL as PowerShell
+        const projectUrl = `${apiUrl}/project/${targetProjectId}`;
+
+        logger.info(`🎯 Fetching single TROFOS project from: ${projectUrl}`);
+
+        try {
+          const response = await axios.get(projectUrl, {
+            headers,
+            timeout: 15000
+          });
+
+          if (response.data) {
+            logger.info('✅ TROFOS single project data retrieved successfully', {
+              projectId: response.data.id,
+              projectName: response.data.pname || response.data.name,
+              dataSize: JSON.stringify(response.data).length
+            });
+            return response.data;
+          }
+        } catch (singleProjectError: any) {
+          logger.warn(`⚠️ Failed to fetch single project ${targetProjectId}:`, {
+            status: singleProjectError.response?.status,
+            statusText: singleProjectError.response?.statusText,
+            url: projectUrl
+          });
+          // Continue to project list fallback below
         }
-      } else {
-        // Fetch all projects
-        logger.info('Fetching all TROFOS projects');
-        const allProjects = await trofosClient.getProjects();
-        return allProjects;
       }
 
-    } catch (error) {
-      logger.error('❌ Failed to fetch TROFOS project data:', error);
-      throw new Error(`TROFOS API error: ${(error as Error).message}`);
+      // Get list of available projects as fallback
+      logger.info('📋 Fetching TROFOS project list as fallback');
+
+      // FIXED: Use correct endpoint for project list
+      const listUrl = `${apiUrl}/project/list`;
+
+      const listResponse = await axios.post(listUrl, {
+        pageNum: 1,
+        pageSize: 50,
+        sort: 'name',
+        direction: 'ASC'
+      }, {
+        headers,
+        timeout: 15000
+      });
+
+      if (listResponse.data && listResponse.data.projects) {
+        logger.info(`✅ TROFOS project list retrieved: ${listResponse.data.projects.length} projects`);
+        return listResponse.data.projects;
+      } else {
+        logger.warn('⚠️ TROFOS API returned no projects in list');
+        return [];
+      }
+
+    } catch (error: any) {
+      logger.error('❌ TROFOS API request failed:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        url: error.config?.url,
+        responseData: error.response?.data
+      });
+
+      // Return more specific error messages
+      if (error.response?.status === 401) {
+        throw new Error('TROFOS authentication failed - please check your API key');
+      } else if (error.response?.status === 403) {
+        throw new Error('TROFOS access denied - insufficient permissions');
+      } else if (error.response?.status === 404) {
+        throw new Error('TROFOS project not found or endpoint incorrect');
+      } else if (error.code === 'ECONNREFUSED') {
+        throw new Error('Cannot connect to TROFOS server - please check server URL');
+      } else {
+        throw new Error(`TROFOS API error: ${error.message}`);
+      }
     }
   }
 
@@ -673,6 +746,9 @@ export class ConnectionService {
         case 'monday':
           projects = this.transformMondayData(rawData);
           break;
+        case 'trofos':  // ✅ ADDED: TROFOS platform
+          projects = this.transformTrofosData(rawData);
+          break;
         default:
           throw new Error(`Unsupported platform: ${platform}`);
       }
@@ -731,25 +807,268 @@ export class ConnectionService {
   /**
  * Transform TROFOS project data to PRISM format (data is already mostly transformed by TrofosClient)
  */
-  private transformTrofosProject(trofosProject: any): ProjectData {
+  private transformTrofosData(rawData: any): ProjectData[] {
     try {
-      // TROFOS data is already in PRISM format from TrofosClient, but add quality scoring
-      const enhancedProject = {
-        ...trofosProject,
-        metrics: [
-          ...(trofosProject.metrics || []),
-          {
-            name: 'Data Quality',
-            value: this.calculateTrofosDataQuality(trofosProject),
-            unit: 'score'
-          }
-        ]
-      };
+      logger.info('🔄 Transforming TROFOS data into standard format');
 
-      return enhancedProject;
+      if (!rawData) {
+        logger.warn('⚠️ No TROFOS data to transform');
+        return [];
+      }
+
+      // Handle both single project and project list responses
+      const projects = Array.isArray(rawData) ? rawData : [rawData];
+
+      return projects.map((trofosProject: any, index: number) => {
+        try {
+          // Extract basic project information
+          const projectData: ProjectData = {
+            id: trofosProject.id?.toString() || `trofos-project-${index}`,
+            name: trofosProject.name || trofosProject.title || `TROFOS Project ${index + 1}`,
+            platform: 'trofos',
+            description: trofosProject.description || `TROFOS project data from API`,
+            status: this.normalizeTrofosStatus(trofosProject.status),
+            tasks: [],
+            team: [],
+            metrics: [],
+            lastUpdated: new Date().toISOString()
+          };
+
+          // Transform team members if available
+          if (trofosProject.members && Array.isArray(trofosProject.members)) {
+            projectData.team = trofosProject.members.map((member: any, memberIndex: number) => ({
+              id: member.id?.toString() || `member-${memberIndex}`,
+              name: member.name || member.username || member.displayName || `User ${memberIndex + 1}`,
+              role: member.role || member.position || 'Team Member',
+              email: member.email || undefined,
+              avatar: member.avatar || member.profilePicture || undefined,
+              department: member.department || undefined,
+              taskCount: member.taskCount || 0
+            }));
+          }
+
+          // Transform backlogs/tasks if available
+          if (trofosProject.backlogs && Array.isArray(trofosProject.backlogs)) {
+            projectData.tasks = trofosProject.backlogs.map((backlog: any, taskIndex: number) => ({
+              id: backlog.id?.toString() || `task-${taskIndex}`,
+              name: backlog.title || backlog.name || `Task ${taskIndex + 1}`,
+              status: this.normalizeTrofosTaskStatus(backlog.status),
+              assignee: backlog.assignee?.name || backlog.assignedTo?.name || 'Unassigned',
+              priority: backlog.priority || 'medium',
+              created: backlog.createdAt || backlog.created || new Date().toISOString(),
+              updated: backlog.updatedAt || backlog.updated || new Date().toISOString(),
+              description: backlog.description || '',
+              labels: backlog.tags || backlog.labels || [],
+              storyPoints: backlog.storyPoints || backlog.points || undefined,
+              timeEstimate: backlog.timeEstimate || backlog.estimatedHours || undefined,
+              group: backlog.sprint?.name || backlog.group || 'Backlog'
+            }));
+          }
+
+          // Transform sprints if available
+          if (trofosProject.sprints && Array.isArray(trofosProject.sprints)) {
+            projectData.sprints = trofosProject.sprints.map((sprint: any) => ({
+              name: sprint.name || sprint.title || 'Unnamed Sprint',
+              startDate: sprint.startDate || sprint.start || new Date().toISOString(),
+              endDate: sprint.endDate || sprint.end || new Date().toISOString(),
+              completed: sprint.completed || sprint.progress || '0%',
+              velocity: sprint.velocity || 0,
+              plannedPoints: sprint.plannedPoints || sprint.totalPoints || 0,
+              completedPoints: sprint.completedPoints || sprint.finishedPoints || 0
+            }));
+          }
+
+          // Add basic metrics
+          projectData.metrics = [
+            { name: 'Project ID', value: projectData.id },
+            { name: 'Platform', value: 'TROFOS' },
+            { name: 'Total Tasks', value: projectData.tasks.length },
+            { name: 'Team Size', value: projectData.team.length },
+            { name: 'Status', value: projectData.status },
+            { name: 'Last Updated', value: new Date().toLocaleDateString() }
+          ];
+
+          // Add project-specific metrics if available
+          if (trofosProject.metrics || trofosProject.statistics) {
+            const stats = trofosProject.metrics || trofosProject.statistics;
+
+            if (stats.completedTasks !== undefined) {
+              projectData.metrics.push({
+                name: 'Completed Tasks',
+                value: stats.completedTasks
+              });
+            }
+
+            if (stats.progress !== undefined) {
+              projectData.metrics.push({
+                name: 'Progress',
+                value: `${stats.progress}%`
+              });
+            }
+
+            if (stats.burndownRate !== undefined) {
+              projectData.metrics.push({
+                name: 'Burndown Rate',
+                value: stats.burndownRate
+              });
+            }
+          }
+
+          // Add TROFOS-specific platform data
+          projectData.platformSpecific = {
+            trofos: {
+              projectKey: trofosProject.id?.toString(),
+              backlogItems: trofosProject.backlogs?.map((backlog: any) => ({
+                id: backlog.id?.toString() || 'unknown',
+                title: backlog.title || backlog.name || 'Unnamed',
+                type: backlog.type || 'task'
+              })) || [],
+              sprints: trofosProject.sprints?.map((sprint: any) => ({
+                id: sprint.id?.toString() || 'unknown',
+                name: sprint.name || 'Unnamed Sprint',
+                status: sprint.status || 'active'
+              })) || [],
+              resources: trofosProject.members?.map((member: any) => ({
+                id: member.id?.toString() || 'unknown',
+                name: member.name || 'Unknown',
+                role: member.role || 'Team Member'
+              })) || [],
+              metrics: [
+                { name: 'Project ID', value: trofosProject.id },
+                { name: 'Status', value: trofosProject.status || 'active' }
+              ]
+            }
+          };
+
+          // Set data quality metrics
+          projectData.dataQuality = {
+            completeness: this.calculateTrofosDataCompleteness(trofosProject),
+            accuracy: 95, // Assume high accuracy for real API data
+            freshness: this.calculateDataFreshness(trofosProject.updatedAt)
+          };
+
+          logger.info(`✅ Transformed TROFOS project: ${projectData.name} (${projectData.tasks.length} tasks, ${projectData.team.length} members)`);
+
+          return projectData;
+
+        } catch (error) {
+          logger.error(`❌ Failed to transform TROFOS project at index ${index}:`, error);
+
+          // Return minimal valid project data to prevent complete failure
+          return {
+            id: `trofos-error-${index}`,
+            name: `TROFOS Project ${index + 1} (Error)`,
+            platform: 'trofos',
+            description: 'Error occurred during data transformation',
+            status: 'error',
+            tasks: [],
+            team: [],
+            metrics: [
+              { name: 'Status', value: 'Transformation Error' }
+            ],
+            lastUpdated: new Date().toISOString()
+          };
+        }
+      });
+
     } catch (error) {
-      logger.error('Failed to transform TROFOS project:', error);
-      throw error;
+      logger.error('❌ Critical error transforming TROFOS data:', error);
+      return [];
+    }
+  }
+
+  /**
+ * Helper method to normalize TROFOS project status
+ */
+  private normalizeTrofosStatus(status: any): string {
+    if (!status) return 'active';
+
+    const statusStr = status.toString().toLowerCase();
+
+    // Map TROFOS status values to standard status
+    const statusMap: Record<string, string> = {
+      'active': 'active',
+      'inactive': 'inactive',
+      'completed': 'completed',
+      'archived': 'archived',
+      'on_hold': 'on_hold',
+      'planning': 'planning',
+      'in_progress': 'active',
+      'done': 'completed'
+    };
+
+    return statusMap[statusStr] || 'active';
+  }
+
+  /**
+   * Helper method to normalize TROFOS task status
+   */
+  private normalizeTrofosTaskStatus(status: any): string {
+    if (!status) return 'pending';
+
+    const statusStr = status.toString().toLowerCase();
+
+    const statusMap: Record<string, string> = {
+      'todo': 'pending',
+      'to_do': 'pending',
+      'pending': 'pending',
+      'in_progress': 'in_progress',
+      'in-progress': 'in_progress',
+      'doing': 'in_progress',
+      'review': 'review',
+      'testing': 'testing',
+      'done': 'completed',
+      'completed': 'completed',
+      'closed': 'completed',
+      'blocked': 'blocked',
+      'cancelled': 'cancelled'
+    };
+
+    return statusMap[statusStr] || 'pending';
+  }
+
+  /**
+   * Calculate data completeness score for TROFOS project
+   */
+  private calculateTrofosDataCompleteness(project: any): number {
+    let score = 0;
+    let totalFields = 10; // Total number of fields we check
+
+    // Check essential fields
+    if (project.id) score++;
+    if (project.name) score++;
+    if (project.description) score++;
+    if (project.status) score++;
+    if (project.createdAt || project.created) score++;
+    if (project.updatedAt || project.updated) score++;
+    if (project.members && Array.isArray(project.members)) score++;
+    if (project.backlogs && Array.isArray(project.backlogs)) score++;
+    if (project.sprints && Array.isArray(project.sprints)) score++;
+    if (project.metrics || project.statistics) score++;
+
+    return Math.round((score / totalFields) * 100);
+  }
+
+  /**
+   * Calculate data freshness score based on last update time
+   */
+  private calculateDataFreshness(updatedAt: any): number {
+    if (!updatedAt) return 50; // Default score if no update time
+
+    try {
+      const lastUpdate = new Date(updatedAt);
+      const now = new Date();
+      const hoursSinceUpdate = (now.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60);
+
+      // Freshness score: 100% for data updated within 24 hours, decreasing over time
+      if (hoursSinceUpdate <= 24) return 100;
+      if (hoursSinceUpdate <= 48) return 90;
+      if (hoursSinceUpdate <= 168) return 75; // 1 week
+      if (hoursSinceUpdate <= 720) return 50; // 1 month
+      return 25; // Older than 1 month
+
+    } catch (error) {
+      return 50; // Default score if date parsing fails
     }
   }
 
@@ -1133,7 +1452,7 @@ export class ConnectionService {
         // Transform team members
         const teamMembers = Object.entries(assigneeCounts).map(([name, count]) => ({
           id: `jira-${name.toLowerCase().replace(/\s+/g, '-')}-${Math.random().toString(36).substring(2, 6)}`,
-          name: name,          
+          name: name,
           role: name === 'Unassigned' ? 'Unassigned' : 'Developer',
           taskCount: count as number
         }));

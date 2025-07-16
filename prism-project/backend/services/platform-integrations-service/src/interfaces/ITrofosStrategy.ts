@@ -172,12 +172,12 @@ export interface ITrofosConnectionManager {
    * Test connection to TROFOS server
    */
   testConnection(config: TrofosConnectionConfig): Promise<TrofosConnectionTestResult>;
-  
+
   /**
    * Validate API configuration
    */
   validateConfig(config: TrofosConnectionConfig): Promise<boolean>;
-  
+
   /**
    * Get server information
    */
@@ -193,22 +193,22 @@ export interface ITrofosDataFetcher {
    * Fetch project data from TROFOS
    */
   fetchProject(config: TrofosConnectionConfig, projectId: string): Promise<TrofosProject>;
-  
+
   /**
    * Fetch all accessible projects
    */
   fetchProjects(config: TrofosConnectionConfig): Promise<TrofosProject[]>;
-  
+
   /**
    * Fetch backlog items for a project
    */
   fetchBacklogItems(config: TrofosConnectionConfig, projectId: string): Promise<TrofosBacklogItem[]>;
-  
+
   /**
    * Fetch sprints for a project
    */
   fetchSprints(config: TrofosConnectionConfig, projectId: string): Promise<TrofosSprint[]>;
-  
+
   /**
    * Fetch team resources for a project
    */
@@ -229,17 +229,17 @@ export interface ITrofosDataTransformer {
     sprints: TrofosSprint[],
     resources: TrofosResource[]
   ): StandardizedTrofosProject;
-  
+
   /**
    * Transform backlog items to standardized tasks
    */
   transformBacklogItems(items: TrofosBacklogItem[]): StandardizedTask[];
-  
+
   /**
    * Transform resources to standardized team members
    */
   transformResources(resources: TrofosResource[]): StandardizedTeamMember[];
-  
+
   /**
    * Generate metrics from project data
    */
@@ -258,40 +258,22 @@ export interface ITrofosDataTransformer {
  * It composes the smaller interfaces to provide a complete TROFOS integration strategy.
  */
 export interface ITrofosStrategy {
-  /**
-   * Connection manager for TROFOS operations
-   */
   readonly connectionManager: ITrofosConnectionManager;
-  
-  /**
-   * Data fetcher for TROFOS API calls
-   */
   readonly dataFetcher: ITrofosDataFetcher;
-  
-  /**
-   * Data transformer for standardization
-   */
   readonly dataTransformer: ITrofosDataTransformer;
-  
-  /**
-   * Test TROFOS connection
-   */
+
   testConnection(config: TrofosConnectionConfig): Promise<TrofosConnectionTestResult>;
-  
-  /**
-   * Fetch and transform project data for report generation
-   */
   getProjectData(config: TrofosConnectionConfig, projectId?: string): Promise<TrofosDataFetchResult>;
-  
-  /**
-   * Get platform identifier
-   */
   getPlatform(): 'trofos';
-  
-  /**
-   * Get strategy version for compatibility
-   */
   getVersion(): string;
+  validateConfiguration(config: TrofosConnectionConfig): { valid: boolean; errors: string[] };
+  getSupportedOperations(): string[];
+  getApiInfo(): { version: string; baseUrl: string; authMethod: string };
+  healthCheck(config: TrofosConnectionConfig): Promise<{
+    healthy: boolean;
+    components: Record<string, boolean>;
+    message: string;
+  }>;
 }
 
 /**

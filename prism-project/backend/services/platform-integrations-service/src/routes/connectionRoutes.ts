@@ -1,68 +1,38 @@
 // backend/services/platform-integrations-service/src/routes/connectionRoutes.ts
-// MISSING ENDPOINTS FIX - Add the endpoints that report generation service is calling
-// Replace your existing connectionRoutes.ts with this complete version
+// UPDATED CONNECTION ROUTES - Fixed TypeScript syntax errors
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { authenticateJWT } from '../middleware/auth';
-import { ConnectionService } from '../services/ConnectionService';
 import logger from '../utils/logger';
+import { ConnectionService } from '../services/ConnectionService';
+import { PlatformConnectionFactory } from '../factories/PlatformConnectionFactory';
 
 interface AuthRequest extends Request {
   user?: {
     userId: string;
     email: string;
-    name: string;
   };
 }
 
 const router = Router();
 const connectionService = new ConnectionService();
+const platformFactory = new PlatformConnectionFactory();
 
 // Apply authentication to all routes
 router.use(authenticateJWT);
 
-// CREATE: Add new connection
-router.post('/', async (req: AuthRequest, res: Response) => {
+// Get all connections for a user
+router.get('/', async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.userId;
-    if (!userId) {
-      return res.status(401).json({ message: 'User ID required' });
-    }
-
-    const { name, platform, config, metadata } = req.body;
-
-    if (!name || !platform || !config) {
-      return res.status(400).json({ 
-        message: 'Name, platform, and config are required' 
-      });
-    }
-
-    const connection = await connectionService.createConnection(userId, {
-      name,
-      platform,
-      config,
-      metadata
-    });
-
-    res.status(201).json(connection);
-  } catch (error: any) {
-    logger.error('Create connection error:', error);
-    const message = error.message || 'Failed to create connection';
-    res.status(500).json({ message });
-  }
-});
-
-// READ: Get all connections for user
-router.get('/', async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user?.userId;
+    const authReq = req as AuthRequest;
+    const userId = authReq.user?.userId;
+    
     if (!userId) {
       return res.status(401).json({ message: 'User ID required' });
     }
 
     const connections = await connectionService.getConnections(userId);
     
-    // Return connections without sensitive config data
     const safeConnections = connections.map(conn => ({
       id: conn.id,
       name: conn.name,
@@ -81,15 +51,75 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-// **CRITICAL MISSING ENDPOINT #1**: Projects endpoint 
-// This is the PRIMARY endpoint that report generation service calls
-router.get('/:connectionId/projects', async (req: AuthRequest, res: Response) => {
+// Create a new connection (supports all platforms including TROFOS)
+router.post('/', async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.userId;
+    const authReq = req as AuthRequest;
+    const userId = authReq.user?.userId;
+    
+    if (!userId) {
+      return res.status(401).json({ message: 'User ID required' });
+    }
+
+    const { name, platform, config } = req.body;
+
+    if (!name || !platform || !config) {
+      return res.status(400).json({
+        message: 'Missing required fields: name, platform, config'
+      });
+    }
+
+    // Validate platform is supported
+    const supportedPlatforms = platformFactory.getSupportedPlatforms();
+    if (!supportedPlatforms.includes(platform)) {
+      return res.status(400).json({
+        message: `Unsupported platform: ${platform}. Supported: ${supportedPlatforms.join(', ')}`
+      });
+    }
+
+    // Validate configuration using platform factory
+    const configValidation = await platformFactory.validatePlatformConfig(platform, config);
+    if (!configValidation.valid) {
+      return res.status(400).json({
+        message: 'Invalid configuration',
+        details: configValidation.message,
+        errors: configValidation.details
+      });
+    }
+
+    // Create connection using existing ConnectionService (works for all platforms)
+    const connection = await connectionService.createConnection(userId, {
+      name,
+      platform,
+      config
+    });
+
+    res.status(201).json({
+      id: connection.id,
+      name: connection.name,
+      platform: connection.platform,
+      status: connection.status,
+      createdAt: connection.createdAt
+    });
+
+  } catch (error) {
+    logger.error('Create connection error:', error);
+    res.status(500).json({ 
+      message: 'Failed to create connection',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Get projects for a connection - ENHANCED WITH PLATFORM FACTORY
+router.get('/:connectionId/projects', async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthRequest;
+    const userId = authReq.user?.userId;
     const { connectionId } = req.params;
     const { projectId } = req.query;
 
-    logger.info('🎯 CRITICAL ENDPOINT CALLED: Projects endpoint', {
+    logger.info('Projects endpoint called via platform factory', {
       userId,
       connectionId,
       projectId: projectId || 'all projects',
@@ -100,73 +130,70 @@ router.get('/:connectionId/projects', async (req: AuthRequest, res: Response) =>
       return res.status(401).json({ message: 'User ID required' });
     }
 
-    // Get connection first to verify it exists and belongs to user
-    const connection = await connectionService.getConnection(userId, connectionId);
-    
-    if (!connection) {
-      logger.warn('❌ Connection not found:', { userId, connectionId });
-      return res.status(404).json({ message: 'Connection not found' });
-    }
-
-    if (connection.status !== 'connected') {
-      logger.warn('❌ Connection not active:', { 
-        connectionId, 
-        status: connection.status 
-      });
-      return res.status(400).json({ 
-        message: 'Connection is not active',
-        status: connection.status 
-      });
-    }
-
-    // Get project data using ConnectionService
-    logger.info('🔄 Fetching project data from external API...');
-    const projectData = await connectionService.getProjectData(
-      userId, 
-      connectionId, 
+    // Use platform factory to route to appropriate handler
+    const result = await platformFactory.getProjectData(
+      userId,
+      connectionId,
       projectId as string
     );
 
-    if (!projectData) {
-      logger.warn('⚠️ No project data returned from platform');
-      return res.status(404).json({ 
-        message: 'Project data not found',
-        details: 'The platform returned no data for this project'
+    if (!result.success) {
+      logger.warn('Platform factory returned error', {
+        connectionId,
+        error: result.error,
+        handler: result.handler
+      });
+      
+      return res.status(404).json({
+        message: result.error || 'Failed to get project data',
+        handler: result.handler
       });
     }
 
-    // Transform data for consistent format
-    let projects = Array.isArray(projectData) ? projectData : [projectData];
+    const projects = result.data || [];
+
+    // Filter out any null/undefined projects (defensive)
+    const validProjects = projects.filter(project => 
+      project && project.id && project.name
+    );
     
-    // Filter out any null/undefined projects
-    projects = projects.filter(project => project && project.id && project.name);
-    
-    if (projects.length === 0) {
-      logger.warn('⚠️ No valid projects after filtering');
+    if (validProjects.length === 0) {
+      logger.warn('No valid projects after filtering', {
+        connectionId,
+        originalCount: projects.length,
+        handler: result.handler
+      });
+      
       return res.status(404).json({ 
         message: 'No valid projects found',
-        details: 'All returned projects were invalid or empty'
+        details: 'All returned projects were invalid or empty',
+        handler: result.handler
       });
     }
 
-    // Add metadata for report generation
+    // Add metadata for response
     const response = {
-      projects: projects,
+      projects: validProjects,
       connectionInfo: {
-        id: connection.id,
-        name: connection.name,
-        platform: connection.platform,
-        lastSync: connection.lastSync
+        id: connectionId,
+        handler: result.handler,
+        architecture: result.handler === 'trofos' ? 'SOLID' : 'Legacy'
       },
-      totalCount: projects.length,
+      totalCount: validProjects.length,
+      metadata: result.metadata,
       timestamp: new Date().toISOString()
     };
 
-    logger.info(`✅ Successfully returned ${projects.length} projects for connection ${connectionId}`);
+    logger.info(`Successfully returned ${validProjects.length} projects via ${result.handler} handler`, {
+      connectionId,
+      handler: result.handler,
+      projectsCount: validProjects.length
+    });
+
     res.json(response);
 
   } catch (error) {
-    logger.error('❌ Get project data error:', error);
+    logger.error('Get project data error:', error);
     res.status(500).json({ 
       message: 'Failed to get project data',
       error: error instanceof Error ? error.message : 'Unknown error'
@@ -174,149 +201,84 @@ router.get('/:connectionId/projects', async (req: AuthRequest, res: Response) =>
   }
 });
 
-// **MISSING ENDPOINT #2**: Platform-specific Jira endpoint 
-// Report service sometimes calls this for backward compatibility
-router.get('/:connectionId/jira/projects/:projectId', async (req: AuthRequest, res: Response) => {
+// Test connection - ENHANCED WITH PLATFORM FACTORY
+router.post('/:connectionId/test', async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.userId;
-    const { connectionId, projectId } = req.params;
-
-    logger.info('🎯 Jira-specific project endpoint called:', {
-      userId,
-      connectionId,
-      projectId,
-      endpoint: 'GET /api/connections/:connectionId/jira/projects/:projectId'
-    });
-
-    if (!userId) {
-      return res.status(401).json({ message: 'User ID required' });
-    }
-
-    // Verify connection is Jira
-    const connection = await connectionService.getConnection(userId, connectionId);
-    if (!connection) {
-      return res.status(404).json({ message: 'Connection not found' });
-    }
-
-    if (connection.platform !== 'jira') {
-      return res.status(400).json({ 
-        message: 'This endpoint is only for Jira connections',
-        actualPlatform: connection.platform
-      });
-    }
-
-    // Get project data
-    const projectData = await connectionService.getProjectData(userId, connectionId, projectId);
-    
-    if (!projectData) {
-      return res.status(404).json({ message: 'Jira project not found' });
-    }
-
-    // Return single project or first project from array
-    const project = Array.isArray(projectData) ? projectData[0] : projectData;
-    
-    if (!project || !project.id || !project.name) {
-      return res.status(404).json({ message: 'Invalid Jira project data' });
-    }
-
-    res.json({
-      project: project,
-      connectionInfo: {
-        id: connection.id,
-        name: connection.name,
-        platform: connection.platform
-      },
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    logger.error('❌ Get Jira project error:', error);
-    res.status(500).json({ message: 'Failed to get Jira project data' });
-  }
-});
-
-// **MISSING ENDPOINT #3**: Platform-specific Monday.com endpoint
-router.get('/:connectionId/monday/projects/:projectId', async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user?.userId;
-    const { connectionId, projectId } = req.params;
-
-    logger.info('🎯 Monday.com-specific project endpoint called:', {
-      userId,
-      connectionId,
-      projectId,
-      endpoint: 'GET /api/connections/:connectionId/monday/projects/:projectId'
-    });
-
-    if (!userId) {
-      return res.status(401).json({ message: 'User ID required' });
-    }
-
-    // Verify connection is Monday.com
-    const connection = await connectionService.getConnection(userId, connectionId);
-    if (!connection) {
-      return res.status(404).json({ message: 'Connection not found' });
-    }
-
-    if (connection.platform !== 'monday') {
-      return res.status(400).json({ 
-        message: 'This endpoint is only for Monday.com connections',
-        actualPlatform: connection.platform
-      });
-    }
-
-    // Get project data
-    const projectData = await connectionService.getProjectData(userId, connectionId, projectId);
-    
-    if (!projectData) {
-      return res.status(404).json({ message: 'Monday.com project not found' });
-    }
-
-    // Return single project or first project from array
-    const project = Array.isArray(projectData) ? projectData[0] : projectData;
-    
-    if (!project || !project.id || !project.name) {
-      return res.status(404).json({ message: 'Invalid Monday.com project data' });
-    }
-
-    res.json({
-      project: project,
-      connectionInfo: {
-        id: connection.id,
-        name: connection.name,
-        platform: connection.platform
-      },
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    logger.error('❌ Get Monday.com project error:', error);
-    res.status(500).json({ message: 'Failed to get Monday.com project data' });
-  }
-});
-
-// CONNECTION MANAGEMENT: Test connection
-router.post('/:connectionId/test', async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user?.userId;
+    const authReq = req as AuthRequest;
+    const userId = authReq.user?.userId;
     const { connectionId } = req.params;
 
     if (!userId) {
       return res.status(401).json({ message: 'User ID required' });
     }
 
-    const result = await connectionService.testConnection(userId, connectionId);
-    res.json(result);
+    logger.info('Testing connection via platform factory', {
+      userId,
+      connectionId
+    });
+
+    // Use platform factory to route to appropriate handler
+    const result = await platformFactory.testConnection(userId, connectionId);
+
+    logger.info('Connection test completed', {
+      connectionId,
+      success: result.success,
+      handler: result.handler
+    });
+
+    res.json({
+      success: result.success,
+      message: result.message,
+      handler: result.handler,
+      details: result.details,
+      timestamp: new Date().toISOString()
+    });
+
   } catch (error) {
     logger.error('Test connection error:', error);
-    res.status(500).json({ message: 'Failed to test connection' });
+    res.status(500).json({
+      success: false,
+      message: 'Connection test failed',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 });
 
-// CONNECTION MANAGEMENT: Sync connection data
-router.post('/:connectionId/sync', async (req: AuthRequest, res: Response) => {
+// Health check for connection - NEW ENDPOINT
+router.get('/:connectionId/health', async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.userId;
+    const authReq = req as AuthRequest;
+    const userId = authReq.user?.userId;
+    const { connectionId } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'User ID required' });
+    }
+
+    const result = await platformFactory.healthCheck(userId, connectionId);
+
+    res.json({
+      healthy: result.healthy,
+      handler: result.handler,
+      components: result.components,
+      message: result.message,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logger.error('Health check error:', error);
+    res.status(500).json({
+      healthy: false,
+      message: error instanceof Error ? error.message : 'Health check failed'
+    });
+  }
+});
+
+// Sync connection (uses existing ConnectionService for all platforms)
+router.post('/:connectionId/sync', async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthRequest;
+    const userId = authReq.user?.userId;
     const { connectionId } = req.params;
 
     if (!userId) {
@@ -325,16 +287,21 @@ router.post('/:connectionId/sync', async (req: AuthRequest, res: Response) => {
 
     const result = await connectionService.syncConnection(userId, connectionId);
     res.json(result);
+
   } catch (error) {
     logger.error('Sync connection error:', error);
-    res.status(500).json({ message: 'Failed to sync connection' });
+    res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : 'Sync failed'
+    });
   }
 });
 
-// DELETE: Remove connection
-router.delete('/:connectionId', async (req: AuthRequest, res: Response) => {
+// Delete connection (uses existing ConnectionService)
+router.delete('/:connectionId', async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.userId;
+    const authReq = req as AuthRequest;
+    const userId = authReq.user?.userId;
     const { connectionId } = req.params;
 
     if (!userId) {
@@ -342,48 +309,77 @@ router.delete('/:connectionId', async (req: AuthRequest, res: Response) => {
     }
 
     await connectionService.deleteConnection(userId, connectionId);
-    res.status(204).send();
+    res.json({ message: 'Connection deleted successfully' });
+
   } catch (error) {
     logger.error('Delete connection error:', error);
-    res.status(500).json({ message: 'Failed to delete connection' });
+    res.status(500).json({
+      message: error instanceof Error ? error.message : 'Failed to delete connection'
+    });
   }
 });
 
-// IMPORT: Import connections from file/backup
-router.post('/import', async (req: AuthRequest, res: Response) => {
+// Get platform information - NEW ENDPOINT
+router.get('/platforms/:platform/info', async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.userId;
+    const { platform } = req.params;
+    
+    const supportedPlatforms = platformFactory.getSupportedPlatforms();
+    if (!supportedPlatforms.includes(platform)) {
+      return res.status(404).json({
+        message: `Platform '${platform}' not supported`,
+        supportedPlatforms
+      });
+    }
+
+    const platformInfo = platformFactory.getPlatformInfo(platform);
+    
+    res.json({
+      platform,
+      ...platformInfo,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logger.error('Get platform info error:', error);
+    res.status(500).json({
+      message: 'Failed to get platform information'
+    });
+  }
+});
+
+// Legacy platform-specific endpoints (for backward compatibility)
+router.get('/:connectionId/jira/projects/:projectId', async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthRequest;
+    const userId = authReq.user?.userId;
+    const { connectionId, projectId } = req.params;
+
     if (!userId) {
       return res.status(401).json({ message: 'User ID required' });
     }
 
-    const { connections } = req.body;
-    if (!Array.isArray(connections)) {
-      return res.status(400).json({ message: 'Connections array required' });
+    // Route through platform factory
+    const result = await platformFactory.getProjectData(userId, connectionId, projectId);
+    
+    if (!result.success || !result.data || result.data.length === 0) {
+      return res.status(404).json({ message: 'Jira project not found' });
     }
 
-    const results = [];
-    for (const connData of connections) {
-      try {
-        const connection = await connectionService.createConnection(userId, connData);
-        results.push({ success: true, connection });
-      } catch (error: any) {
-        results.push({ 
-          success: false, 
-          error: error.message,
-          connectionName: connData.name 
-        });
-      }
-    }
-
-    res.json({ 
-      imported: results.filter(r => r.success).length,
-      failed: results.filter(r => !r.success).length,
-      results 
+    const project = result.data[0];
+    
+    res.json({
+      project: project,
+      connectionInfo: {
+        id: connectionId,
+        handler: result.handler
+      },
+      timestamp: new Date().toISOString()
     });
+
   } catch (error) {
-    logger.error('Import connections error:', error);
-    res.status(500).json({ message: 'Failed to import connections' });
+    logger.error('Get Jira project error:', error);
+    res.status(500).json({ message: 'Failed to get Jira project data' });
   }
 });
 

@@ -646,142 +646,249 @@ export class TrofosClient extends BaseClient {
 
   constructor(connection: PlatformConnection) {
     super(connection);
+
+    // FIXED: Correct base URL - serverUrl already includes /api/external
     this.http.defaults.baseURL = `${this.serverUrl}/v1`;
+
     // FIXED: Use x-api-key header instead of Authorization Bearer
     this.http.defaults.headers['x-api-key'] = this.apiKey;
-    this.http.defaults.headers['Content-Type'] = 'application/json';
 
-    // Remove Authorization header if it exists
+    // Remove the incorrect Authorization header
     delete this.http.defaults.headers['Authorization'];
+
+    logger.info('TrofosClient: Initialized with corrected configuration', {
+      baseURL: this.http.defaults.baseURL,
+      hasApiKey: !!this.apiKey,
+      projectId: this.projectId
+    });
   }
 
   async testConnection(): Promise<boolean> {
     try {
+      logger.info('TrofosClient: Testing connection with project list endpoint');
+
+      // FIXED: Use /project/list endpoint (POST) as per your PowerShell script
       const response = await this.http.post('/project/list', {
         pageNum: 1,
         pageSize: 1,
         sort: 'name',
         direction: 'ASC'
       });
-      return response.status === 200;
-    } catch (error) {
-      logger.error('TROFOS connection test failed:', error);
+
+      // FIXED: TROFOS returns projects in response.data.data, not response.data.projects
+      const isValid = response.status === 200 &&
+        response.data &&
+        Array.isArray(response.data.data);
+
+      logger.info('TrofosClient: Connection test result', {
+        status: response.status,
+        valid: isValid,
+        projectCount: response.data?.data?.length || 0
+      });
+
+      return isValid;
+    } catch (error: any) {
+      logger.error('TrofosClient: Connection test failed', {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data
+      });
       return false;
     }
   }
 
-  // FIXED: Implement getProjects method
   async getProjects(): Promise<ProjectData[]> {
     try {
-      logger.info('🔄 TrofosClient: Fetching projects list');
+      logger.info('TrofosClient: Fetching all projects');
 
+      // FIXED: Use /project/list endpoint (POST) as per your PowerShell script
       const response = await this.http.post('/project/list', {
         pageNum: 1,
-        pageSize: 50,
+        pageSize: 100,
         sort: 'name',
         direction: 'ASC'
       });
 
-      if (response.data && response.data.projects) {
-        logger.info(`✅ TrofosClient: Retrieved ${response.data.projects.length} projects`);
-        return this.transformTrofosProjects(response.data.projects);
-      } else {
-        logger.warn('⚠️ TrofosClient: No projects returned');
+      // FIXED: TROFOS returns projects in response.data.data, not response.data.projects
+      if (!response.data || !Array.isArray(response.data.data)) {
+        logger.warn('TrofosClient: Invalid response format for project list');
         return [];
       }
-    } catch (error) {
-      logger.error('❌ TrofosClient: Failed to fetch projects:', error);
-      throw error;
+
+      const projects = response.data.data.map((project: any) =>
+        this.transformProjectData(project)
+      );
+
+      logger.info(`TrofosClient: Successfully fetched ${projects.length} projects`);
+      return projects.filter(p => p.id && p.name); // Filter valid projects
+    } catch (error: any) {
+      logger.error('TrofosClient: Failed to fetch projects', {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data
+      });
+      return [];
     }
   }
 
-  // FIXED: Implement getProject method
   async getProject(projectId: string): Promise<ProjectData> {
     try {
-      logger.info(`🔄 TrofosClient: Fetching single project ${projectId}`);
+      logger.info(`TrofosClient: Fetching single project ${projectId}`);
 
+      // FIXED: Use /project/{id} endpoint (GET) as per your PowerShell script
       const response = await this.http.get(`/project/${projectId}`);
 
-      if (response.data) {
-        logger.info(`✅ TrofosClient: Retrieved project ${projectId} (${response.data.pname || response.data.name})`);
-        const transformedProjects = this.transformTrofosProjects([response.data]);
-        return transformedProjects[0];
-      } else {
-        throw new Error(`Project ${projectId} not found`);
+      if (!response.data) {
+        throw new Error(`No data returned for project ${projectId}`);
       }
-    } catch (error) {
-      logger.error(`❌ TrofosClient: Failed to fetch project ${projectId}:`, error);
-      throw error;
+
+      const projectData = this.transformProjectData(response.data);
+
+      logger.info(`TrofosClient: Successfully fetched project: ${projectData.name}`);
+      return projectData;
+    } catch (error: any) {
+      logger.error(`TrofosClient: Failed to fetch project ${projectId}`, {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data
+      });
+      throw new Error(`Failed to fetch TROFOS project ${projectId}: ${error.message}`);
     }
   }
 
   async getProjectMetrics(projectId: string): Promise<Metric[]> {
     try {
-      // Get project data first
       const project = await this.getProject(projectId);
       return project.metrics || [];
     } catch (error) {
-      logger.error(`❌ TrofosClient: Failed to fetch metrics for project ${projectId}:`, error);
+      logger.error(`TrofosClient: Failed to get metrics for project ${projectId}`, error);
       return [];
     }
   }
 
-  // Helper method to transform TROFOS data to ProjectData format
-  private transformTrofosProjects(trofosProjects: any[]): ProjectData[] {
-    return trofosProjects.map((trofosProject: any) => {
-      try {
-        const projectData: ProjectData = {
-          id: trofosProject.id?.toString() || 'unknown',
-          name: trofosProject.pname || trofosProject.name || 'Unnamed TROFOS Project',          
-          description: trofosProject.description || `TROFOS project: ${trofosProject.pkey || 'No key'}`,
-          status: this.mapTrofosStatus(trofosProject.status),
-          tasks: [],
-          team: [],
-          metrics: [
-            { name: 'Project ID', value: trofosProject.id || 'N/A' },
-            { name: 'Project Key', value: trofosProject.pkey || 'N/A' },
-            { name: 'Backlog Counter', value: trofosProject.backlog_counter || 0 },
-            { name: 'Course ID', value: trofosProject.course_id || 'N/A' },
-            { name: 'Public', value: trofosProject.public ? 'Yes' : 'No' },
-            { name: 'Created', value: trofosProject.created_at ? new Date(trofosProject.created_at).toLocaleDateString() : 'Unknown' }
-          ]
-        };
-        
-
-        return projectData;
-
-      } catch (error) {
-        logger.error('❌ TrofosClient: Failed to transform project:', error);
-
-        // Return minimal valid project
-        return {
-          id: trofosProject.id?.toString() || 'error',
-          name: trofosProject.pname || trofosProject.name || 'Error Project',
-          platform: 'trofos',
-          description: 'Error occurred during transformation',
-          status: 'error',
-          tasks: [],
-          team: [],
-          metrics: [{ name: 'Status', value: 'Transformation Error' }],
-          lastUpdated: new Date().toISOString()
-        };
-      }
-    });
+  // ADDED: Transform TROFOS project data to PRISM format
+  private transformProjectData(trofosProject: any): ProjectData {
+    return {
+      id: trofosProject.id?.toString() || trofosProject.projectId?.toString() || 'unknown',
+      name: trofosProject.name || trofosProject.pname || trofosProject.title || `Project ${trofosProject.id}`,
+      description: trofosProject.description || trofosProject.desc || '',
+      status: this.mapTrofosStatus(trofosProject.status),
+      progress: trofosProject.progress || 0,
+      team: this.transformTeamData(trofosProject.members || trofosProject.team || []),
+      tasks: this.transformTaskData(trofosProject.backlog || trofosProject.tasks || trofosProject.items || []),
+      metrics: this.transformMetricsData(trofosProject)
+    };
   }
 
-  // Helper method to map TROFOS status
+  // ADDED: Map TROFOS status to PRISM status
   private mapTrofosStatus(status: any): string {
-    if (!status) return 'active';
-
+    if (!status) return 'unknown';
     const statusStr = status.toString().toLowerCase();
-    const statusMap: Record<string, string> = {
-      'active': 'active',
-      'inactive': 'inactive',
-      'archived': 'archived',
-      'completed': 'completed'
-    };
 
-    return statusMap[statusStr] || 'active';
+    if (statusStr.includes('active') || statusStr.includes('progress') || statusStr.includes('ongoing')) {
+      return 'active';
+    }
+    if (statusStr.includes('complete') || statusStr.includes('done') || statusStr.includes('finished')) {
+      return 'completed';
+    }
+    if (statusStr.includes('plan') || statusStr.includes('draft') || statusStr.includes('pending')) {
+      return 'planning';
+    }
+    if (statusStr.includes('pause') || statusStr.includes('hold')) {
+      return 'paused';
+    }
+    return statusStr;
+  }
+
+  // ADDED: Transform team member data
+  private transformTeamData(members: any[]): TeamMember[] {
+    if (!Array.isArray(members)) return [];
+
+    return members.map((member: any) => ({
+      id: member.id?.toString() || member.userId?.toString() || member.memberId?.toString() || 'unknown',
+      name: member.name || member.displayName || member.username || member.fullName || 'Unknown User',
+      email: member.email || member.emailAddress || '',
+      role: member.role || member.position || member.title || 'Team Member',
+      avatar: member.avatar || member.profilePicture || member.photo || ''
+    }));
+  }
+
+  // ADDED: Transform task/backlog data  
+  private transformTaskData(tasks: any[]): Task[] {
+    if (!Array.isArray(tasks)) return [];
+
+    return tasks.map((task: any) => ({
+      id: task.id?.toString() || task.taskId?.toString() || task.itemId?.toString() || 'unknown',
+      title: task.title || task.name || task.summary || task.description || 'Untitled Task',
+      status: this.mapTrofosStatus(task.status || task.state),
+      assignee: task.assignee ? {
+        id: task.assignee.id?.toString() || 'unknown',
+        name: task.assignee.name || task.assignee.displayName || 'Unknown',
+        email: task.assignee.email || '',
+        role: task.assignee.role || ''
+      } : undefined,
+      priority: task.priority || task.importance || 'medium',
+      dueDate: task.dueDate || task.deadline ? new Date(task.dueDate || task.deadline) : undefined,
+      tags: task.tags || task.labels || task.categories || []
+    }));
+  }
+
+  // ADDED: Transform metrics data
+  private transformMetricsData(project: any): Metric[] {
+    const metrics: Metric[] = [];
+
+    // Add common TROFOS metrics
+    if (project.totalTasks !== undefined || project.taskCount !== undefined) {
+      metrics.push({
+        name: 'Total Tasks',
+        value: project.totalTasks || project.taskCount || 0,
+        unit: 'tasks'
+      });
+    }
+
+    if (project.completedTasks !== undefined || project.completedCount !== undefined) {
+      metrics.push({
+        name: 'Completed Tasks',
+        value: project.completedTasks || project.completedCount || 0,
+        unit: 'tasks'
+      });
+    }
+
+    if (project.progress !== undefined) {
+      metrics.push({
+        name: 'Progress',
+        value: project.progress,
+        unit: '%'
+      });
+    }
+
+    if (project.budget !== undefined || project.cost !== undefined) {
+      metrics.push({
+        name: 'Budget',
+        value: project.budget || project.cost,
+        unit: 'currency'
+      });
+    }
+
+    if (project.duration !== undefined || project.timeSpent !== undefined) {
+      metrics.push({
+        name: 'Duration',
+        value: project.duration || project.timeSpent,
+        unit: 'hours'
+      });
+    }
+
+    // Add team size metric
+    const teamSize = project.members?.length || project.team?.length || 0;
+    if (teamSize > 0) {
+      metrics.push({
+        name: 'Team Size',
+        value: teamSize,
+        unit: 'members'
+      });
+    }
+
+    return metrics;
   }
 }
 

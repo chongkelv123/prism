@@ -69,7 +69,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Validate platform is supported
-    const supportedPlatforms = ['monday', 'jira']; // Based on ConnectionService
+    const supportedPlatforms = ['monday', 'jira', 'trofos']; // Based on ConnectionService
     if (!supportedPlatforms.includes(platform)) {
       return res.status(400).json({
         message: `Unsupported platform: ${platform}. Supported: ${supportedPlatforms.join(', ')}`

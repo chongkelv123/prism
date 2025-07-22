@@ -1,7 +1,6 @@
 // backend/services/platform-integrations-service/jest.config.js
-// FIXED: Jest configuration with proper environment variable loading
+// FINAL VERSION: Removed moduleNameMapping to eliminate warnings
 
-// Load test environment variables if .env.test exists
 require('dotenv').config({ path: '.env.test' });
 
 module.exports = {
@@ -13,7 +12,9 @@ module.exports = {
     '**/*.test.ts'
   ],
   transform: {
-    '^.+\\.tsx?$': 'ts-jest',
+    '^.+\\.tsx?$': ['ts-jest', {
+      tsconfig: 'tsconfig.json'
+    }],
   },
   coverageDirectory: './coverage',
   collectCoverageFrom: [
@@ -24,17 +25,12 @@ module.exports = {
     '!src/**/__mocks__/**'
   ],
   setupFilesAfterEnv: ['<rootDir>/src/__tests__/setup.ts'],
-  moduleNameMapping: {
-    '^@/(.*)$': '<rootDir>/src/$1',
-  },
   testTimeout: 10000,
   clearMocks: true,
   resetMocks: true,
   restoreMocks: true,
   verbose: true,
-  
-  // Coverage settings for bug detection tests
-  collectCoverage: false, // Set to true for coverage reports
+  collectCoverage: false,
   coverageReporters: ['text', 'lcov', 'html'],
   coverageThreshold: {
     global: {
@@ -44,25 +40,12 @@ module.exports = {
       statements: 80,
     },
   },
-  
-  // Test environment variables
-  globals: {
-    'ts-jest': {
-      tsconfig: 'tsconfig.json'
-    }
-  },
-  
-  // Module path mapping for easier imports
   moduleDirectories: ['node_modules', '<rootDir>/src'],
-  
-  // Files to ignore during testing
   testPathIgnorePatterns: [
     '/node_modules/',
     '/dist/',
     '/coverage/'
   ],
-  
-  // Transform ignore patterns
   transformIgnorePatterns: [
     'node_modules/(?!(axios)/)'
   ]

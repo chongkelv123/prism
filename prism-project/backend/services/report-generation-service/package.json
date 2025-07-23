@@ -17,6 +17,8 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^7.6.3",
     "pptxgenjs": "^3.12.0",
+    "ts-jest": "^29.4.0",
+    "ts-node": "^10.9.2",
     "uuid": "^9.0.1",
     "winston": "^3.11.0"
   },

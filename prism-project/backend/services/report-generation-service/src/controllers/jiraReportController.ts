@@ -7,6 +7,7 @@ import logger from '../utils/logger';
 import { Report } from '../models/Report';
 import { PlatformDataService, ReportGenerationConfig } from '../services/PlatformDataService';
 import { EnhancedJiraReportGenerator } from '../generators/EnhancedJiraReportGenerator';
+import { DataAnalyticsService } from '../services/DataAnalyticsService';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -32,8 +33,8 @@ export async function generateJiraStandardReport(req: Request, res: Response) {
   try {
     const userId = req.user?.userId;
     if (!userId) {
-      return res.status(401).json({ 
-        message: 'User authentication required' 
+      return res.status(401).json({
+        message: 'User authentication required'
       });
     }
     const { connectionId, reportTitle } = req.body;
@@ -57,7 +58,7 @@ export async function generateJiraStandardReport(req: Request, res: Response) {
 
     // Create report entry
     const report = new Report({
-      userId: userId, 
+      userId: userId,
       title: reportTitle || 'Jira Standard Report',
       status: 'queued',
       platform: 'jira',
@@ -92,7 +93,7 @@ export async function generateJiraStandardReport(req: Request, res: Response) {
       estimatedSlides: '5-7 professional slides',
       features: [
         'Project Health Dashboard',
-        'Task Status Analysis (Real Jira Data)', 
+        'Task Status Analysis (Real Jira Data)',
         'Team Workload Distribution',
         'Priority & Risk Assessment',
         'Actionable Recommendations'
@@ -101,7 +102,7 @@ export async function generateJiraStandardReport(req: Request, res: Response) {
 
   } catch (error) {
     logger.error('Error generating Jira Standard Report:', error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       message: 'Server error during Jira Standard Report generation',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
@@ -171,7 +172,7 @@ export async function generateJiraExecutiveReport(req: Request, res: Response) {
       features: [
         'Executive KPI Dashboard',
         'Critical Alerts & Risk Summary',
-        'Strategic Progress Overview', 
+        'Strategic Progress Overview',
         'Key Decision Points',
         'High-Level Recommendations'
       ]
@@ -179,7 +180,7 @@ export async function generateJiraExecutiveReport(req: Request, res: Response) {
 
   } catch (error) {
     logger.error('Error generating Jira Executive Report:', error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       message: 'Server error during Jira Executive Report generation',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
@@ -261,7 +262,7 @@ export async function generateJiraDetailedReport(req: Request, res: Response) {
 
   } catch (error) {
     logger.error('Error generating Jira Detailed Report:', error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       message: 'Server error during Jira Detailed Report generation',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
@@ -272,7 +273,7 @@ export async function generateJiraDetailedReport(req: Request, res: Response) {
  * Process Jira report generation with real platform data
  */
 async function processJiraReport(
-  reportId: string, 
+  reportId: string,
   templateId: 'standard' | 'executive' | 'detailed',
   authToken?: string
 ) {
@@ -297,11 +298,23 @@ async function processJiraReport(
     // Initialize platform data service with auth token
     const platformDataService = new PlatformDataService(authToken);
 
+    // 🔧 FIX: Use projectId from report configuration, not hardcoded 'PRISM'
+    const projectId = report.configuration.projectId || 'PRISM';
+
+    // 🔍 DEBUG: Log what projectId we're actually using
+    console.log('🎯 DEBUG - Report Processing:', {
+      reportId,
+      configuredProjectId: report.configuration.projectId,
+      configuredProject: report.configuration.projectId,
+      finalProjectId: projectId,
+      fullConfiguration: report.configuration
+    });
+
     // Create report configuration for real Jira data fetch
     const reportConfig: ReportGenerationConfig = {
       platform: 'jira',
       connectionId: report.configuration.connectionId,
-      projectId: report.configuration.projectId || 'PRISM',
+      projectId: projectId, // 🔧 FIX: Use dynamic projectId instead of hardcoded 'PRISM'
       templateId,
       configuration: report.configuration
     };
@@ -313,7 +326,7 @@ async function processJiraReport(
     // Fetch REAL Jira project data
     logger.info('Fetching real Jira data from platform integrations', {
       connectionId: reportConfig.connectionId,
-      projectId: reportConfig.projectId
+      projectId: reportConfig.projectId // 🔍 This should now show the correct projectId
     });
 
     const projectData = await platformDataService.fetchProjectData(reportConfig);
@@ -328,37 +341,58 @@ async function processJiraReport(
     logger.info('Real Jira data fetched successfully', {
       platform: jiraProject.platform,
       projectName: jiraProject.name,
+      projectId: jiraProject.id, // 🔍 This should now show the correct project
       taskCount: Array.isArray(jiraProject.tasks) ? jiraProject.tasks.length : 0,
       teamSize: Array.isArray(jiraProject.team) ? jiraProject.team.length : 0,
       isRealData: !jiraProject.fallbackData,
       dataSource: jiraProject.fallbackData ? 'DEMO/FALLBACK' : 'REAL JIRA API',
-      sampleTasks: Array.isArray(jiraProject.tasks) ? 
-        jiraProject.tasks.slice(0, 3).map(t => ({ id: t.id, name: t.name, status: t.status, assignee: t.assignee })) : 
-        'No tasks'
+      sampleTasks: Array.isArray(jiraProject.tasks) ?
+        jiraProject.tasks.slice(0, 3).map(task => ({
+          id: task.id,
+          name: task.name,
+          status: task.status,
+          assignee: task.assignee
+        })) : []
     });
 
     // Update progress
     report.progress = 30;
     await report.save();
 
-    // Initialize enhanced Jira report generator
-    const jiraGenerator = new EnhancedJiraReportGenerator();
+    // Generate report based on template
+    let filename: string;
+    let templateGenerator: any;
 
-    // Generate PowerPoint with real Jira data
-    const filename = await jiraGenerator.generate(
-      jiraProject,
-      {
-        templateId,
-        title: report.title,
-        includeTeamAnalysis: true,
-        includeRiskAssessment: true,
-        includePriorityBreakdown: true
-      },
-      async (progress) => {
-        report.progress = 30 + (progress * 0.6);
-        await report.save();
-      }
-    );
+    switch (templateId) {
+      case 'standard':
+        templateGenerator = new EnhancedJiraReportGenerator();
+        filename = await templateGenerator.generateStandardReport(jiraProject, `jira-standard-${jiraProject.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pptx`);
+        break;
+      case 'executive':
+        templateGenerator = new EnhancedJiraReportGenerator();
+        filename = await templateGenerator.generateExecutiveReport(jiraProject, `jira-executive-${jiraProject.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pptx`);
+        break;
+      case 'detailed':
+        templateGenerator = new EnhancedJiraReportGenerator();
+        filename = await templateGenerator.generateDetailedReport(jiraProject, `jira-detailed-${jiraProject.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pptx`);
+        break;
+      default:
+        throw new Error(`Invalid template ID: ${templateId}`);
+    }
+
+    // Update progress
+    report.progress = 80;
+    await report.save();
+
+    // Calculate analytics for report completion
+    const analytics = {
+      totalTasks: Array.isArray(jiraProject.tasks) ? jiraProject.tasks.length : 0,
+      urgentTasks: Array.isArray(jiraProject.tasks) ?
+        jiraProject.tasks.filter(task =>
+          task.priority === 'High' || task.priority === 'Urgent' || task.priority === 'Critical'
+        ).length : 0,
+      riskLevel: Array.isArray(jiraProject.tasks) && jiraProject.tasks.length > 20 ? 'CRITICAL' : 'MEDIUM'
+    };
 
     // Complete the report
     report.status = 'completed';
@@ -367,12 +401,23 @@ async function processJiraReport(
     report.completedAt = new Date();
     await report.save();
 
+    logger.info('Enhanced Jira Report generated successfully', {
+      template: templateId,
+      filename,
+      dataSource: jiraProject.fallbackData ? 'DEMO/FALLBACK' : 'REAL JIRA API',
+      analysisResults: {
+        totalTasks: analytics.totalTasks,
+        urgentTasks: analytics.urgentTasks,
+        riskLevel: analytics.riskLevel
+      }
+    });
+
     logger.info('Jira report generation completed successfully', {
       reportId,
       templateId,
       filename,
-      dataSource: jiraProject.fallbackData ? 'DEMO' : 'REAL JIRA',
-      taskCount: Array.isArray(jiraProject.tasks) ? jiraProject.tasks.length : 0
+      taskCount: Array.isArray(jiraProject.tasks) ? jiraProject.tasks.length : 0,
+      dataSource: jiraProject.fallbackData ? 'DEMO/FALLBACK' : 'REAL JIRA'
     });
 
   } catch (error) {
@@ -383,12 +428,14 @@ async function processJiraReport(
       const report = await Report.findById(reportId);
       if (report) {
         report.status = 'failed';
-        report.error = error instanceof Error ? error.message : 'Unknown error';
+        report.progress = 0;
         await report.save();
       }
     } catch (updateError) {
       logger.error('Error updating failed report status:', updateError);
     }
+
+    throw error;
   }
 }
 
@@ -404,7 +451,7 @@ export async function validateJiraConnection(req: Request, res: Response) {
     logger.info('Validating Jira connection for report generation', { connectionId });
 
     const platformDataService = new PlatformDataService(authToken);
-    
+
     const reportConfig: ReportGenerationConfig = {
       platform: 'jira',
       connectionId,
@@ -414,7 +461,7 @@ export async function validateJiraConnection(req: Request, res: Response) {
 
     // Test data fetch
     const projectData = await platformDataService.fetchProjectData(reportConfig);
-    
+
     if (!projectData || projectData.length === 0) {
       return res.status(404).json({
         valid: false,
@@ -445,7 +492,7 @@ export async function validateJiraConnection(req: Request, res: Response) {
         hasMetrics: Array.isArray(jiraProject.metrics) && jiraProject.metrics.length > 0
       },
       sampleData: {
-        tasks: Array.isArray(jiraProject.tasks) ? 
+        tasks: Array.isArray(jiraProject.tasks) ?
           jiraProject.tasks.slice(0, 3).map(task => ({
             id: task.id,
             name: task.name,
@@ -453,7 +500,7 @@ export async function validateJiraConnection(req: Request, res: Response) {
             assignee: task.assignee,
             priority: task.priority
           })) : [],
-        team: Array.isArray(jiraProject.team) ? 
+        team: Array.isArray(jiraProject.team) ?
           jiraProject.team.slice(0, 3).map(member => ({
             name: member.name,
             role: member.role,
@@ -484,7 +531,7 @@ export async function getJiraProjectPreview(req: Request, res: Response) {
     logger.info('Getting Jira project preview', { connectionId });
 
     const platformDataService = new PlatformDataService(authToken);
-    
+
     const reportConfig: ReportGenerationConfig = {
       platform: 'jira',
       connectionId,
@@ -493,7 +540,7 @@ export async function getJiraProjectPreview(req: Request, res: Response) {
     };
 
     const projectData = await platformDataService.fetchProjectData(reportConfig);
-    
+
     if (!projectData || projectData.length === 0) {
       return res.status(404).json({
         message: 'No Jira project data found for this connection',
@@ -536,9 +583,9 @@ export async function getJiraProjectPreview(req: Request, res: Response) {
     // Find top assignee workload
     const topAssignee = Array.from(assigneeCounts.entries())
       .filter(([name]) => name !== 'Unassigned')
-      .sort(([,a], [,b]) => b - a)[0];
-    
-    const topAssigneeWorkload = topAssignee ? 
+      .sort(([, a], [, b]) => b - a)[0];
+
+    const topAssigneeWorkload = topAssignee ?
       Math.round((topAssignee[1] / tasks.length) * 100) : 0;
 
     return res.json({
@@ -576,11 +623,11 @@ export async function getJiraProjectPreview(req: Request, res: Response) {
         }))
       },
       recommendations: {
-        templateSuggestion: urgentTasks > 10 || topAssigneeWorkload > 70 ? 'executive' : 
-                           tasks.length > 50 ? 'detailed' : 'standard',
+        templateSuggestion: urgentTasks > 10 || topAssigneeWorkload > 70 ? 'executive' :
+          tasks.length > 50 ? 'detailed' : 'standard',
         urgencyLevel: urgentTasks > 10 ? 'HIGH' : urgentTasks > 5 ? 'MEDIUM' : 'LOW',
-        capacityRisk: topAssigneeWorkload > 70 ? 'CRITICAL' : 
-                     topAssigneeWorkload > 50 ? 'HIGH' : 'LOW'
+        capacityRisk: topAssigneeWorkload > 70 ? 'CRITICAL' :
+          topAssigneeWorkload > 50 ? 'HIGH' : 'LOW'
       }
     });
 

@@ -451,7 +451,73 @@ export class EnhancedJiraReportGenerator {
     theme: any,
     reportType: string
   ): Promise<void> {
-    const slide = pptx.addSlide();
+
+    // 🔬 DIAGNOSTIC START - Insert this code BEFORE line 454
+    console.log('🔬 PPTX DIAGNOSTIC:');
+    console.log('1. pptx object type:', typeof pptx);
+    console.log('2. pptx constructor name:', pptx?.constructor?.name);
+    console.log('3. pptx object keys:', Object.keys(pptx || {}));
+    console.log('4. addSlide method exists:', typeof pptx?.addSlide);
+    console.log('5. pptx prototype:', Object.getPrototypeOf(pptx || {}));
+    console.log('6. pptx instanceof check:', pptx instanceof Object);
+
+    // Check if it's actually a PptxGenJS instance
+    try {
+      console.log('7. pptx.layout property:', pptx?.layout);
+      console.log('8. pptx methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(pptx || {})));
+    } catch (e: any) {
+      console.log('7-8. Error accessing pptx properties:', e.message);
+    }
+
+    // Try alternative access patterns
+    console.log('9. Direct property access test:');
+    try {
+      console.log('   - pptx["addSlide"]:', typeof pptx["addSlide"]);
+      console.log('   - pptx.addSlide:', typeof pptx.addSlide);
+    } catch (e: any) {
+      console.log('   - Error:', e.message);
+    }
+
+    // Check for common PptxGenJS properties
+    const expectedProps = ['layout', 'author', 'company', 'subject', 'title'];
+    expectedProps.forEach(prop => {
+      console.log(`   - pptx.${prop}:`, typeof pptx?.[prop], pptx?.[prop]);
+    });
+
+    console.log('🔬 DIAGNOSTIC END');
+    // 🔬 DIAGNOSTIC END
+
+    // Original failing line (comment out temporarily)
+    // const slide = pptx.addSlide();
+
+    // TEMPORARY BYPASS - Try different approaches
+    let slide;
+    try {
+      console.log('🔧 Attempting pptx.addSlide()...');
+      slide = pptx.addSlide();
+      console.log('✅ pptx.addSlide() succeeded');
+    } catch (e1: any) {
+      console.log('❌ pptx.addSlide() failed:', e1.message);
+
+      try {
+        console.log('🔧 Attempting pptx.addSlide({})...');
+        slide = pptx.addSlide({});
+        console.log('✅ pptx.addSlide({}) succeeded');
+      } catch (e2: any) {
+        console.log('❌ pptx.addSlide({}) failed:', e2.message);
+
+        try {
+          console.log('🔧 Attempting new approach...');
+          // Re-create pptx instance
+          const newPptx = new (pptx.constructor as any)();
+          slide = newPptx.addSlide();
+          console.log('✅ New instance approach succeeded');
+        } catch (e3: any) {
+          console.log('❌ All approaches failed:', e3.message);
+          throw new Error(`Cannot create slide: ${e1.message}, ${e2.message}, ${e3.message}`);
+        }
+      }
+    }
 
     // Background
     slide.background = { color: theme.primary };

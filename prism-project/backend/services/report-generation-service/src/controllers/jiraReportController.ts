@@ -363,23 +363,18 @@ async function processJiraReport(
     let filename: string;
     let templateGenerator: any;
 
-    switch (templateId) {
-      case 'standard':
-        templateGenerator = new EnhancedJiraReportGenerator();
-        filename = await templateGenerator.generateStandardReport(jiraProject, `jira-standard-${jiraProject.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pptx`);
-        break;
-      case 'executive':
-        templateGenerator = new EnhancedJiraReportGenerator();
-        filename = await templateGenerator.generateExecutiveReport(jiraProject, `jira-executive-${jiraProject.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pptx`);
-        break;
-      case 'detailed':
-        templateGenerator = new EnhancedJiraReportGenerator();
-        filename = await templateGenerator.generateDetailedReport(jiraProject, `jira-detailed-${jiraProject.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pptx`);
-        break;
-      default:
-        throw new Error(`Invalid template ID: ${templateId}`);
-    }
+    // Generate report using EnhancedJiraReportGenerator
+    templateGenerator = new EnhancedJiraReportGenerator();
 
+    const reportConfig2 = {
+      templateId,
+      title: `${jiraProject.name} - ${templateId.charAt(0).toUpperCase() + templateId.slice(1)} Analysis`,
+      includeTeamAnalysis: templateId !== 'executive',
+      includeRiskAssessment: true,
+      includePriorityBreakdown: true
+    };
+
+    filename = await templateGenerator.generate(jiraProject, reportConfig2);
     // Update progress
     report.progress = 80;
     await report.save();

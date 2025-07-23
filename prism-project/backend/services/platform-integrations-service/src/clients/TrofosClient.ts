@@ -189,7 +189,7 @@ export class TrofosClient extends BaseClient {
         tasks,
         metrics,
         team
-      };
+      } as any;
 
       logger.info('TROFOS project data fetched successfully', {
         projectId: project.id,

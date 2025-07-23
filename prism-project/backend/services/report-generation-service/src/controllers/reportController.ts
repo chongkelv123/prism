@@ -127,6 +127,22 @@ async function processReportWithTemplateSystem(reportId: string, authToken?: str
       return;
     }
 
+    const reportConfig: ReportGenerationConfig = {
+      platform: report.platform,
+      connectionId: report.configuration.connectionId,
+      projectId: report.configuration.projectId,
+      templateId: report.template,
+      configuration: report.configuration
+    };
+
+    // ✅ ADD THIS DEBUG LOG:
+    console.log('🔍 DEBUG - ReportConfig created:', {
+      platform: reportConfig.platform,
+      connectionId: reportConfig.connectionId,
+      projectId: reportConfig.projectId,  // ← This should be different for different projects
+      reportTitle: report.title
+    });
+
     // Update status to processing
     report.status = 'processing';
     report.progress = 0;

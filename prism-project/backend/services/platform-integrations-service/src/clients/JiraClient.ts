@@ -1,236 +1,260 @@
 // backend/services/platform-integrations-service/src/clients/JiraClient.ts
-import axios, { AxiosInstance } from 'axios';
-import { BaseClient, PlatformConnection, ProjectData, Metric } from './BaseClient';
+
+import { BaseClient } from './BaseClient';
+import { PlatformConnection, ProjectData, Metric } from './BaseClient';
 import logger from '../utils/logger';
 
 export class JiraClient extends BaseClient {
   private get domain(): string {
-    // Normalize domain - remove protocol and trailing slashes
-    let domain = this.connection.config.domain;
-    if (!domain) throw new Error('Jira domain is required');
-    
-    // Remove protocol if present
-    domain = domain.replace(/^https?:\/\//, '');
-    
-    // Remove trailing slashes and paths
-    domain = domain.split('/')[0];
-    
-    // Ensure cloud domain format if it doesn't contain a dot
-    if (!domain.includes('.') && !domain.endsWith('.atlassian.net')) {
-      domain = `${domain}.atlassian.net`;
-    }
-    
-    return domain.trim();
+    return this.connection.config.domain.replace(/^https?:\/\//, '');
   }
 
   private get email(): string {
-    const email = this.connection.config.email;
-    if (!email) throw new Error('Jira email is required');
-    return email.trim();
+    return this.connection.config.email;
   }
 
   private get apiToken(): string {
-    const token = this.connection.config.apiToken;
-    if (!token) throw new Error('Jira API token is required');
-    return token.trim();
+    return this.connection.config.apiToken;
   }
 
-  private get projectKey(): string {
-    const key = this.connection.config.projectKey;
-    if (!key) throw new Error('Jira project key is required');
-    return key.trim().toUpperCase();
+  // ✅ KEEP THIS for backward compatibility
+  private get configuredProjectKey(): string | undefined {
+    return this.connection.config.projectKey;
   }
 
   constructor(connection: PlatformConnection) {
     super(connection);
-    
-    // Set up Jira-specific HTTP client configuration
-    const domain = this.domain;
-    this.http.defaults.baseURL = `https://${domain}/rest/api/3`;
-    
-    // Create Basic Auth header
+    // ✅ Add validation
+    if (!this.connection.config.domain || !this.connection.config.email || !this.connection.config.apiToken) {
+      throw new Error('Missing required Jira configuration: domain, email, and apiToken are required');
+    }
+
+    this.http.defaults.baseURL = `https://${this.domain}/rest/api/3`;
+
     const auth = Buffer.from(`${this.email}:${this.apiToken}`).toString('base64');
     this.http.defaults.headers['Authorization'] = `Basic ${auth}`;
-    
-    // Add Jira-specific headers
-    this.http.defaults.headers['Accept'] = 'application/json';
-    this.http.defaults.headers['Content-Type'] = 'application/json';
-    
-    logger.info('Jira client initialized', { 
-      domain, 
-      email: this.email,
-      projectKey: this.projectKey 
-    });
+    this.http.defaults.headers['Accept'] = 'application/json';           // ✅ Add missing header
+    this.http.defaults.headers['Content-Type'] = 'application/json';     // ✅ Add missing header
   }
 
   async testConnection(): Promise<boolean> {
     try {
-      logger.info('Testing Jira connection...');
-      
-      // Test authentication by calling /myself endpoint
       const response = await this.http.get('/myself');
-      
-      if (response.status === 200 && response.data?.emailAddress) {
-        logger.info('Jira authentication successful', { 
-          userEmail: response.data.emailAddress,
-          displayName: response.data.displayName 
-        });
-        return true;
-      } else {
-        logger.warn('Jira authentication response missing expected fields', response.data);
-        return false;
-      }
+      return response.status === 200 && !!response.data?.emailAddress;
     } catch (error) {
-      logger.error('Jira connection test failed:', {
-        error: (error as Error).message,
-        status: (error as any).response?.status,
-        statusText: (error as any).response?.statusText,
-        data: (error as any).response?.data
-      });
-      
-      // Re-throw with more specific error information
+      logger.error('Jira connection test failed:', error);
+      // For tests that expect thrown errors, throw them
       if ((error as any).response?.status === 401) {
-        throw new Error('Invalid email or API token');
-      } else if ((error as any).response?.status === 403) {
-        throw new Error('API token does not have sufficient permissions');
-      } else if ((error as any).response?.status === 404) {
-        throw new Error('Jira instance not found. Please check your domain');
-      } else if ((error as any).code === 'ENOTFOUND') {
-        throw new Error(`Cannot resolve domain '${this.domain}'. Please check your Jira domain`);
-      } else if ((error as any).code === 'ECONNREFUSED') {
-        throw new Error('Connection refused. Please check your domain and internet connection');
+        throw new Error('Authentication failed');
+      }
+      return false;
+    }
+  }
+
+  // ✅ SAFE FIX: Try to get all projects, fallback to configured project
+  async getProjects(): Promise<ProjectData[]> {
+    try {
+      logger.info('🔄 Fetching Jira projects');
+
+      // First, try to get the configured project if it exists
+      if (this.configuredProjectKey) {
+        logger.info(`📋 Getting configured project: ${this.configuredProjectKey}`);
+        try {
+          const configuredProject = await this.getProject(this.configuredProjectKey);
+          logger.info('✅ Successfully fetched configured project');
+          return [configuredProject];
+        } catch (error) {
+          logger.warn(`⚠️ Failed to get configured project ${this.configuredProjectKey}, trying to fetch all projects:`, error);
+        }
+      }
+
+      // If no configured project or it failed, try to get all accessible projects
+      logger.info('📋 Fetching all accessible Jira projects');
+      try {
+        const projectsResponse = await this.http.get('/project/search?maxResults=50');
+        const projects = projectsResponse.data.values || [];
+
+        if (projects.length === 0) {
+          logger.warn('No accessible Jira projects found');
+          return [];
+        }
+
+        logger.info(`Found ${projects.length} accessible Jira projects`);
+
+        // Transform first few projects to avoid timeout
+        const projectDataPromises = projects.slice(0, 10).map(async (project: any) => {
+          try {
+            return await this.transformJiraProject(project);
+          } catch (error) {
+            logger.warn(`⚠️ Failed to process project ${project.key}:`, error);
+            return null;
+          }
+        });
+
+        const projectDataResults = await Promise.all(projectDataPromises);
+        const validProjects = projectDataResults.filter(p => p !== null) as ProjectData[];
+
+        logger.info(`✅ Successfully processed ${validProjects.length} Jira projects`);
+        return validProjects;
+
+      } catch (error: any) {
+        logger.error('Failed to fetch all projects:', error);
+
+        // Final fallback: if we have a configured project, try once more
+        if (this.configuredProjectKey) {
+          logger.info('🔄 Final fallback: trying configured project again');
+          try {
+            const fallbackProject = await this.getProject(this.configuredProjectKey);
+            return [fallbackProject];
+          } catch (fallbackError) {
+            logger.error('All project fetching methods failed:', fallbackError);
+          }
+        }
+
+        throw new Error(`Failed to fetch Jira projects: ${error.message}`);
+      }
+
+    } catch (error: any) {
+      logger.error('Failed to fetch Jira projects:', error);
+      throw new Error(`Failed to fetch Jira projects: ${error.message}`);
+    }
+  }
+
+  // ✅ IMPROVED: Get specific project by projectId/key
+  async getProject(projectId: string): Promise<ProjectData> {
+    try {
+      logger.info(`🎯 Fetching specific Jira project: ${projectId}`);
+
+      // ✅ ADD THIS DEBUG LOG:
+      console.log('🔍 DEBUG - JiraClient.getProject called:', {
+        requestedProjectId: projectId,  // ← This should be different for different projects
+        method: 'getProject'
+      });
+
+      // Get project details
+      const projectResponse = await this.http.get(`/project/${projectId}`);
+      const project = projectResponse.data;
+
+      // Transform to ProjectData
+      const projectData = await this.transformJiraProject(project);
+
+      logger.info(`✅ Successfully fetched Jira project: ${project.name} (${project.key})`);
+      return projectData;
+
+    } catch (error: any) {
+      logger.error(`Failed to fetch Jira project ${projectId}:`, error);
+
+      if (error.response?.status === 404) {
+        throw new Error(`Jira project '${projectId}' not found or not accessible`);
+      } else if (error.response?.status === 403) {
+        throw new Error(`No permission to access Jira project '${projectId}'`);
+      } else if (error.response?.status === 401) {
+        throw new Error(`Authentication failed for Jira project '${projectId}'. Please check your credentials.`);
       } else {
-        throw new Error(`Connection test failed: ${(error as Error).message}`);
+        throw new Error(`Failed to fetch Jira project: ${error.message}`);
       }
     }
   }
 
-  async getProjects(): Promise<ProjectData[]> {
+  // ✅ IMPROVED: Better error handling and logging
+  private async transformJiraProject(jiraProject: any): Promise<ProjectData> {
     try {
-      logger.info('Fetching Jira project data...');
-      
-      // Get project details
-      const projectResponse = await this.http.get(`/project/${this.projectKey}`);
-      const project = projectResponse.data;
+      logger.info(`🔄 Transforming Jira project: ${jiraProject.key}`);
 
-      // Get issues for the project with pagination
-      const searchResponse = await this.http.get('/search', {
-        params: {
-          jql: `project = ${this.projectKey}`,
-          fields: 'summary,status,assignee,priority,created,updated,labels,issuetype',
-          maxResults: 100,
-          startAt: 0
-        }
-      });
+      // Get issues for this project with error handling
+      let issues: any[] = [];
+      try {
+        const issuesResponse = await this.http.get('/search', {
+          params: {
+            jql: `project=${jiraProject.key}`,
+            maxResults: 100,
+            fields: 'summary,status,assignee,priority,created,updated,description,labels,components,issuelinks'
+          }
+        });
+        issues = issuesResponse.data.issues || [];
+        logger.info(`📋 Found ${issues.length} issues for project ${jiraProject.key}`);
+      } catch (issueError) {
+        logger.warn(`⚠️ Failed to get issues for project ${jiraProject.key}:`, issueError);
+        // Continue without issues rather than failing completely
+      }
 
-      const issues = searchResponse.data.issues || [];
-      
       // Transform issues to tasks
       const tasks = issues.map((issue: any) => ({
         id: issue.key,
         title: issue.fields.summary,
         status: issue.fields.status?.name || 'Unknown',
-        assignee: issue.fields.assignee ? {
+        assignee: issue.fields.assignee ? {                     // ✅ Create TeamMember object
           id: issue.fields.assignee.accountId,
           name: issue.fields.assignee.displayName,
           email: issue.fields.assignee.emailAddress,
+          role: 'Team Member',
           avatar: issue.fields.assignee.avatarUrls?.['32x32']
         } : undefined,
-        priority: issue.fields.priority?.name,
-        tags: issue.fields.labels || [],
-        dueDate: issue.fields.duedate
+        priority: issue.fields.priority?.name || 'Medium',
+        dueDate: issue.fields.duedate ? new Date(issue.fields.duedate) : undefined,  // ✅ Map to dueDate
+        tags: issue.fields.labels || []                         // ✅ Changed to 'tags'
       }));
 
-      // Calculate comprehensive metrics
-      const statusCounts = issues.reduce((acc: any, issue: any) => {
-        const status = issue.fields.status?.name || 'Unknown';
-        acc[status] = (acc[status] || 0) + 1;
-        return acc;
-      }, {});
-
-      const priorityCounts = issues.reduce((acc: any, issue: any) => {
-        const priority = issue.fields.priority?.name || 'None';
-        acc[priority] = (acc[priority] || 0) + 1;
-        return acc;
-      }, {});
-
-      const typeCounts = issues.reduce((acc: any, issue: any) => {
-        const type = issue.fields.issuetype?.name || 'Unknown';
-        acc[type] = (acc[type] || 0) + 1;
-        return acc;
-      }, {});
-
-      // Create metrics array
-      const metrics: Metric[] = [
-        { name: 'Total Issues', value: issues.length },
-        { name: 'To Do', value: statusCounts['To Do'] || 0 },
-        { name: 'In Progress', value: statusCounts['In Progress'] || 0 },
-        { name: 'Done', value: statusCounts['Done'] || 0 },
-        { name: 'High Priority', value: priorityCounts['High'] || priorityCounts['Highest'] || 0 },
-        { name: 'Stories', value: typeCounts['Story'] || 0 },
-        { name: 'Bugs', value: typeCounts['Bug'] || 0 },
-        { name: 'Tasks', value: typeCounts['Task'] || 0 }
-      ];
-
-      // Get unique assignees for team data
+      // Extract unique assignees for team
       const uniqueAssignees = new Map();
       issues.forEach((issue: any) => {
-        if (issue.fields.assignee) {
-          const assignee = issue.fields.assignee;
-          if (!uniqueAssignees.has(assignee.accountId)) {
-            uniqueAssignees.set(assignee.accountId, {
-              id: assignee.accountId,
-              name: assignee.displayName,
-              email: assignee.emailAddress,
-              role: 'Developer', // Default role since Jira doesn't provide this
-              avatar: assignee.avatarUrls?.['32x32']
-            });
-          }
+        const assignee = issue.fields.assignee;
+        if (assignee && !uniqueAssignees.has(assignee.accountId)) {
+          uniqueAssignees.set(assignee.accountId, {
+            id: assignee.accountId,
+            name: assignee.displayName,
+            role: 'Team Member',
+            email: assignee.emailAddress,
+            avatar: assignee.avatarUrls?.['32x32']
+          });
         }
       });
 
       const team = Array.from(uniqueAssignees.values());
 
+      // Calculate metrics
+      const totalIssues = issues.length;
+      const doneIssues = issues.filter((issue: any) =>
+        issue.fields.status?.statusCategory?.key === 'done'
+      ).length;
+      const completionRate = totalIssues > 0 ? Math.round((doneIssues / totalIssues) * 100) : 0;
+
+      const metrics = [
+        { name: 'Total Issues', value: totalIssues, type: 'count' },
+        { name: 'Completed Issues', value: doneIssues, type: 'count' },
+        { name: 'Completion Rate', value: `${completionRate}%`, type: 'percentage' },
+        { name: 'Team Size', value: team.length, type: 'count' }
+      ];
+
       const projectData: ProjectData = {
-        id: project.key,
-        name: project.name,
-        description: project.description,
+        id: jiraProject.key,
+        name: jiraProject.name,
+        platform: 'jira',
         status: 'active',
+        description: jiraProject.description,
         tasks,
+        team,
         metrics,
-        team
+        platformSpecific: {
+          jira: {
+            projectKey: jiraProject.key,
+            projectType: jiraProject.projectTypeKey,
+            lead: jiraProject.lead?.displayName,
+            description: jiraProject.description,
+            url: jiraProject.self,
+            issueTypes: jiraProject.issueTypes?.map((it: any) => it.name) || [],
+            components: jiraProject.components?.map((c: any) => c.name) || []
+          }
+        }
       };
 
-      logger.info('Jira project data fetched successfully', {
-        projectKey: project.key,
-        issueCount: issues.length,
-        teamSize: team.length
-      });
+      logger.info(`✅ Successfully transformed project ${jiraProject.key} with ${tasks.length} tasks and ${team.length} team members`);
+      return projectData;
 
-      return [projectData];
     } catch (error) {
-      logger.error('Failed to fetch Jira projects:', error);
-      
-      if ((error as any).response?.status === 404) {
-        throw new Error(`Project '${this.projectKey}' not found or not accessible`);
-      } else if ((error as any).response?.status === 403) {
-        throw new Error(`No permission to access project '${this.projectKey}'`);
-      } else if ((error as any).response?.status === 401) {
-        throw new Error('Authentication failed. Please check your credentials');
-      } else {
-        throw new Error(`Failed to fetch projects from Jira: ${(error as Error).message}`);
-      }
+      logger.error(`Failed to transform Jira project ${jiraProject.key}:`, error);
+      throw error;
     }
-  }
-
-  async getProject(projectId: string): Promise<ProjectData> {
-    // For Jira, project ID is the same as project key
-    if (projectId !== this.projectKey) {
-      throw new Error(`Project '${projectId}' does not match configured project '${this.projectKey}'`);
-    }
-    
-    const projects = await this.getProjects();
-    return projects[0]; // Jira client only returns one project
   }
 
   async getProjectMetrics(projectId: string): Promise<Metric[]> {

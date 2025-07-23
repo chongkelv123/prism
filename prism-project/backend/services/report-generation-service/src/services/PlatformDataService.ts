@@ -91,7 +91,7 @@ export class PlatformDataService {
 
   constructor(authToken?: string) {
     this.PLATFORM_INTEGRATIONS_URL = process.env.PLATFORM_INTEGRATIONS_SERVICE_URL || 'http://localhost:4005';
-    
+
     this.httpClient = axios.create({
       baseURL: this.PLATFORM_INTEGRATIONS_URL,
       timeout: 30000,
@@ -136,6 +136,14 @@ export class PlatformDataService {
       baseUrl: this.PLATFORM_INTEGRATIONS_URL
     });
 
+    // ✅ ADD THIS DEBUG LOG:
+    console.log('🔍 DEBUG - PlatformDataService calling platform-integrations:', {
+      platform: config.platform,
+      connectionId: config.connectionId,
+      projectId: config.projectId,  // ← This should be different for different projects
+      url: `${this.PLATFORM_INTEGRATIONS_URL}/api/connections/${config.connectionId}/projects?projectId=${config.projectId}`
+    });
+
     try {
       // Try multiple endpoint patterns to ensure compatibility
       const endpointsToTry = [
@@ -156,13 +164,13 @@ export class PlatformDataService {
       for (const endpoint of endpointsToTry) {
         try {
           logger.info(`[Platform-Integrations] 🔍 Trying endpoint: ${endpoint}`);
-          
+
           const response = await this.httpClient.get(endpoint);
-          
+
           if (response.status === 200 && response.data) {
             logger.info(`[Platform-Integrations] 🎉 SUCCESS: Got data from ${endpoint}`);
             projectData = this.parseProjectDataResponse(response.data, config.platform);
-            
+
             if (projectData && projectData.length > 0) {
               break; // Success! Exit the loop
             } else {
@@ -181,26 +189,26 @@ export class PlatformDataService {
       if (!projectData || projectData.length === 0) {
         logger.error(`[Platform-Integrations] 💥 All endpoints failed. Last error:`, lastError?.message);
         logger.warn(`[Platform-Integrations] 🔄 Using enhanced fallback data for report generation`);
-        
+
         // Return enhanced fallback data instead of throwing error
         return this.generateEnhancedFallbackData(config.platform, config.projectId);
       }
 
       // Success - return real data
       logger.info(`[Platform-Integrations] 🎉 Successfully fetched ${projectData.length} projects`);
-      
+
       // Mark as real data (not fallback)
       projectData.forEach(project => {
         project.fallbackData = false;
         project.lastUpdated = project.lastUpdated || new Date().toISOString();
       });
-      
+
       return projectData;
 
     } catch (error) {
       logger.error(`[Platform-Integrations] 💥 Critical error fetching project data:`, error);
       logger.warn(`[Platform-Integrations] 🔄 Using enhanced fallback data for report generation`);
-      
+
       // Return enhanced fallback data to ensure reports can still be generated
       return this.generateEnhancedFallbackData(config.platform, config.projectId);
     }

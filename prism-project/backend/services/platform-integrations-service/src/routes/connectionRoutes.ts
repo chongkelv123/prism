@@ -24,13 +24,13 @@ router.get('/', async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthRequest;
     const userId = authReq.user?.userId;
-    
+
     if (!userId) {
       return res.status(401).json({ message: 'User ID required' });
     }
 
     const connections = await connectionService.getConnections(userId);
-    
+
     // Return safe connection data (without sensitive config)
     const safeConnections = connections.map(conn => ({
       id: conn._id || conn.id,
@@ -55,7 +55,7 @@ router.post('/', async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthRequest;
     const userId = authReq.user?.userId;
-    
+
     if (!userId) {
       return res.status(401).json({ message: 'User ID required' });
     }
@@ -63,8 +63,8 @@ router.post('/', async (req: Request, res: Response) => {
     const { name, platform, config, metadata } = req.body;
 
     if (!name || !platform || !config) {
-      return res.status(400).json({ 
-        message: 'Name, platform, and config are required' 
+      return res.status(400).json({
+        message: 'Name, platform, and config are required'
       });
     }
 
@@ -110,7 +110,7 @@ router.get('/:connectionId', async (req: Request, res: Response) => {
     }
 
     const connection = await connectionService.getConnection(userId, connectionId);
-    
+
     if (!connection) {
       return res.status(404).json({ message: 'Connection not found' });
     }
@@ -148,20 +148,27 @@ router.get('/:connectionId/projects', async (req: Request, res: Response) => {
       endpoint: 'GET /api/connections/:connectionId/projects'
     });
 
+    // ✅ ADD THIS DEBUG LOG:
+    console.log('🔍 DEBUG - Platform-integrations received request:', {
+      connectionId,
+      projectId,  // ← This should be different for different projects
+      endpoint: 'GET /api/connections/:connectionId/projects'
+    });
+
     if (!userId) {
       return res.status(401).json({ message: 'User ID required' });
     }
 
     // Use ConnectionService to get project data
     const projects = await connectionService.getProjectData(
-      userId, 
-      connectionId, 
+      userId,
+      connectionId,
       projectId as string
     );
 
     if (!projects || projects.length === 0) {
       logger.warn('No projects found', { connectionId, userId });
-      return res.status(404).json({ 
+      return res.status(404).json({
         message: 'No projects found for this connection',
         projects: []
       });
@@ -177,7 +184,7 @@ router.get('/:connectionId/projects', async (req: Request, res: Response) => {
 
   } catch (error: any) {
     logger.error('Get project data error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Failed to get project data',
       error: error.message || 'Unknown error'
     });
@@ -270,13 +277,13 @@ router.get('/:connectionId/jira/projects/:projectId', async (req: Request, res: 
     }
 
     const projects = await connectionService.getProjectData(userId, connectionId, projectId);
-    
+
     if (!projects || projects.length === 0) {
       return res.status(404).json({ message: 'Jira project not found' });
     }
 
     const project = projects[0];
-    
+
     res.json({
       project: project,
       connectionId: connectionId,

@@ -16,12 +16,33 @@ export interface PlatformConnection {
 export interface ProjectData {
   id: string;
   name: string;
+  platform: string;
   description?: string;
   status: string;
   progress?: number;
   team?: TeamMember[];
   tasks?: Task[];
   metrics?: Metric[];
+  platformSpecific?: {        // ✅ ADD THIS PROPERTY
+    jira?: {
+      projectKey?: string;
+      projectType?: string;
+      lead?: string;
+      description?: string;
+      url?: string;
+      issueTypes?: string[];
+      components?: string[];
+    };
+    monday?: {
+      boardId?: string;
+      groups?: Array<{ id: string; title: string; color?: string }>;
+      columns?: Array<{ id: string; title: string; type: string }>;
+    };
+    trofos?: {
+      projectType?: string;
+      modules?: string[];
+    };
+  };
 }
 
 export interface TeamMember {

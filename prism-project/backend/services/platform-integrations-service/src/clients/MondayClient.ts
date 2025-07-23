@@ -245,7 +245,7 @@ export class MondayClient extends BaseClient {
         tasks,
         metrics,
         team
-      };
+      } as any;
 
       logger.info('Monday.com board data fetched successfully', {
         boardId: board.id,

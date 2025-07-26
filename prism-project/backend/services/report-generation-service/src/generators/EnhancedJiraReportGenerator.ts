@@ -451,73 +451,8 @@ export class EnhancedJiraReportGenerator {
     theme: any,
     reportType: string
   ): Promise<void> {
-
-    // 🔬 DIAGNOSTIC START - Insert this code BEFORE line 454
-    console.log('🔬 PPTX DIAGNOSTIC:');
-    console.log('1. pptx object type:', typeof pptx);
-    console.log('2. pptx constructor name:', pptx?.constructor?.name);
-    console.log('3. pptx object keys:', Object.keys(pptx || {}));
-    console.log('4. addSlide method exists:', typeof pptx?.addSlide);
-    console.log('5. pptx prototype:', Object.getPrototypeOf(pptx || {}));
-    console.log('6. pptx instanceof check:', pptx instanceof Object);
-
-    // Check if it's actually a PptxGenJS instance
-    try {
-      console.log('7. pptx.layout property:', pptx?.layout);
-      console.log('8. pptx methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(pptx || {})));
-    } catch (e: any) {
-      console.log('7-8. Error accessing pptx properties:', e.message);
-    }
-
-    // Try alternative access patterns
-    console.log('9. Direct property access test:');
-    try {
-      console.log('   - pptx["addSlide"]:', typeof pptx["addSlide"]);
-      console.log('   - pptx.addSlide:', typeof pptx.addSlide);
-    } catch (e: any) {
-      console.log('   - Error:', e.message);
-    }
-
-    // Check for common PptxGenJS properties
-    const expectedProps = ['layout', 'author', 'company', 'subject', 'title'];
-    expectedProps.forEach(prop => {
-      console.log(`   - pptx.${prop}:`, typeof pptx?.[prop], pptx?.[prop]);
-    });
-
-    console.log('🔬 DIAGNOSTIC END');
-    // 🔬 DIAGNOSTIC END
-
-    // Original failing line (comment out temporarily)
-    // const slide = pptx.addSlide();
-
-    // TEMPORARY BYPASS - Try different approaches
-    let slide;
-    try {
-      console.log('🔧 Attempting pptx.addSlide()...');
-      slide = pptx.addSlide();
-      console.log('✅ pptx.addSlide() succeeded');
-    } catch (e1: any) {
-      console.log('❌ pptx.addSlide() failed:', e1.message);
-
-      try {
-        console.log('🔧 Attempting pptx.addSlide({})...');
-        slide = pptx.addSlide({});
-        console.log('✅ pptx.addSlide({}) succeeded');
-      } catch (e2: any) {
-        console.log('❌ pptx.addSlide({}) failed:', e2.message);
-
-        try {
-          console.log('🔧 Attempting new approach...');
-          // Re-create pptx instance
-          const newPptx = new (pptx.constructor as any)();
-          slide = newPptx.addSlide();
-          console.log('✅ New instance approach succeeded');
-        } catch (e3: any) {
-          console.log('❌ All approaches failed:', e3.message);
-          throw new Error(`Cannot create slide: ${e1.message}, ${e2.message}, ${e3.message}`);
-        }
-      }
-    }
+    // Clean implementation - remove all diagnostic code
+    const slide = pptx.addSlide();
 
     // Background
     slide.background = { color: theme.primary };
@@ -535,22 +470,31 @@ export class EnhancedJiraReportGenerator {
     });
 
     // Data source indicator
-    const dataSource = projectData.fallbackData ? 'DEMONSTRATION DATA' : 'LIVE JIRA DATA';
-    slide.addText(`Data Source: ${dataSource}`, {
-      x: 0.5, y: 3.3, w: '90%', h: 0.5,
-      fontSize: 14, color: 'FFFFFF', align: 'center', italic: true
-    });
+    const dataSource = projectData.fallbackData ?
+      'Demo Data' : 'Real Jira Data';
 
-    // Key stats from real data
-    slide.addText(`${this.jiraAnalysis.totalTasks} Tasks | ${this.jiraAnalysis.completionRate}% Complete | ${this.jiraAnalysis.urgentTasks} Urgent`, {
-      x: 0.5, y: 3.8, w: '90%', h: 0.5,
-      fontSize: 16, color: 'FFFFFF', align: 'center'
+    slide.addText(`Data Source: ${dataSource}`, {
+      x: 0.5, y: 3.5, w: '90%', h: 0.8,
+      fontSize: 16, color: 'FFFFFF', align: 'center', italic: true
     });
 
     // Generation timestamp
-    slide.addText(`Generated: ${new Date().toLocaleDateString()}`, {
-      x: 0.5, y: 4.7, w: '90%', h: 0.5,
-      fontSize: 12, color: 'FFFFFF', align: 'center'
+    slide.addText(`Generated: ${new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })}`, {
+      x: 0.5, y: 4.5, w: '90%', h: 0.6,
+      fontSize: 14, color: 'FFFFFF', align: 'center'
+    });
+
+    // Task count summary
+    const taskCount = Array.isArray(projectData.tasks) ? projectData.tasks.length : 0;
+    slide.addText(`${taskCount} Tasks Analyzed`, {
+      x: 0.5, y: 5.2, w: '90%', h: 0.6,
+      fontSize: 16, color: 'FFFFFF', align: 'center', bold: true
     });
   }
 

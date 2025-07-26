@@ -1,5 +1,6 @@
 // backend/services/report-generation-service/src/generators/TemplateReportGenerator.ts
 // Template Integration Layer - Windows Compatible (No Unicode/Symbols)
+// CLEANED VERSION - Removed conflicting EnhancedJiraReportGenerator class
 
 import logger from '../utils/logger';
 import { ProjectData } from '../services/PlatformDataService';
@@ -144,13 +145,10 @@ export class TemplateReportGenerator {
       errors.push(`Invalid template ID: ${config.templateId}`);
     }
 
-    // Validate boolean flags
-    const booleanFields = ['includeMetrics', 'includeTasks', 'includeTimeline', 'includeResources'];
-    booleanFields.forEach(field => {
-      if (config[field] !== undefined && typeof config[field] !== 'boolean') {
-        errors.push(`${field} must be a boolean value`);
-      }
-    });
+    // Validate title length
+    if (config.title && config.title.length > 100) {
+      errors.push('Title must be 100 characters or less');
+    }
 
     return {
       valid: errors.length === 0,
@@ -159,51 +157,27 @@ export class TemplateReportGenerator {
   }
 
   /**
-   * Get recommended template based on project data
+   * Get template scoring for auto-selection
    */
-  static getRecommendedTemplate(projectData: ProjectData): string {
-    const taskCount = projectData.tasks?.length || 0;
-    const teamSize = projectData.team?.length || 0;
-    const metricsCount = projectData.metrics?.length || 0;
-    const hasRichData = taskCount > 10 && teamSize > 3 && metricsCount > 5;
+  static getTemplateScores(projectData: ProjectData): Record<string, number> {
+    const taskCount = Array.isArray(projectData.tasks) ? projectData.tasks.length : 0;
+    const teamSize = Array.isArray(projectData.team) ? projectData.team.length : 0;
+    const metricsCount = Array.isArray(projectData.metrics) ? projectData.metrics.length : 0;
+    const sprintCount = Array.isArray(projectData.sprints) ? projectData.sprints.length : 0;
 
-    // Recommendation logic based on data richness and complexity
-    if (hasRichData && taskCount > 50) {
-      return 'detailed'; // Rich data warrants detailed analysis
-    } else if (teamSize <= 2 || taskCount <= 10) {
-      return 'executive'; // Small projects suit executive summary
-    } else {
-      return 'standard'; // Default to standard for most cases
-    }
-  }
+    const scores: Record<string, number> = {};
 
-  /**
-   * Calculate template suitability scores
-   */
-  static calculateTemplateSuitability(projectData: ProjectData): Record<string, number> {
-    const taskCount = projectData.tasks?.length || 0;
-    const teamSize = projectData.team?.length || 0;
-    const metricsCount = projectData.metrics?.length || 0;
-    const sprintCount = projectData.sprints?.length || 0;
-
-    // Calculate scores (0-100) for each template
-    const scores = {
-      standard: 0,
-      executive: 0,
-      detailed: 0
-    };
-
-    // Standard template scoring
-    scores.standard = Math.min(100, 
-      (taskCount >= 5 ? 25 : taskCount * 5) +
+    // Standard template scoring (balanced approach)
+    scores.standard = Math.min(100,
+      (taskCount >= 10 ? 25 : taskCount * 2.5) +
       (teamSize >= 3 ? 25 : teamSize * 8) +
       (metricsCount >= 3 ? 25 : metricsCount * 8) +
-      (sprintCount >= 1 ? 25 : 0)
+      (sprintCount >= 2 ? 25 : sprintCount * 12)
     );
 
-    // Executive template scoring (favors simpler projects or high-level overview needs)
+    // Executive template scoring (favors high-level overview)
     scores.executive = Math.min(100,
-      (taskCount <= 20 ? 30 : Math.max(0, 30 - (taskCount - 20) * 2)) +
+      (taskCount <= 30 ? 30 : Math.max(0, 30 - (taskCount - 20) * 2)) +
       (teamSize <= 5 ? 25 : Math.max(0, 25 - (teamSize - 5) * 3)) +
       (metricsCount >= 2 ? 25 : metricsCount * 12) +
       20 // Base score for executive reporting
@@ -221,66 +195,7 @@ export class TemplateReportGenerator {
   }
 }
 
-// Updated JiraReportGenerator.ts integration
-export class EnhancedJiraReportGenerator {
-  private templateGenerator: TemplateReportGenerator;
-
-  constructor() {
-    this.templateGenerator = new TemplateReportGenerator();
-  }
-
-  /**
-   * Generate Jira report using template system
-   */
-  async generate(
-    projectData: ProjectData,
-    config: any,
-    progressCallback?: (progress: number) => Promise<void>
-  ): Promise<string> {
-    try {
-      // Ensure we're working with Jira data
-      if (projectData.platform !== 'jira') {
-        logger.warn('Non-Jira data provided to JiraReportGenerator');
-      }
-
-      // Determine template to use
-      const templateId = config.templateId || 'standard';
-      
-      // Create template configuration
-      const templateConfig: TemplateReportConfig = {
-        templateId,
-        title: config.title || `${projectData.name} - Jira Report`,
-        includeMetrics: config.includeMetrics !== false,
-        includeTasks: config.includeTasks !== false,
-        includeTimeline: config.includeTimeline !== false,
-        includeResources: config.includeResources !== false,
-        ...config
-      };
-
-      // Validate configuration
-      const validation = TemplateReportGenerator.validateTemplateConfig(templateConfig);
-      if (!validation.valid) {
-        throw new Error(`Invalid template configuration: ${validation.errors.join(', ')}`);
-      }
-
-      logger.info('Generating Jira report with template', {
-        templateId,
-        projectId: projectData.id,
-        issueCount: projectData.tasks?.length || 0
-      });
-
-      // Generate report using template system
-      return await this.templateGenerator.generate(projectData, templateConfig, progressCallback);
-
-    } catch (error) {
-      logger.error('Error generating Jira template report:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      throw new Error(`Failed to generate Jira report: ${errorMessage}`);
-    }
-  }
-}
-
-// Updated MondayReportGenerator.ts integration
+// Keep only Monday and TROFOS generators that use the template system
 export class EnhancedMondayReportGenerator {
   private templateGenerator: TemplateReportGenerator;
 
@@ -339,7 +254,6 @@ export class EnhancedMondayReportGenerator {
   }
 }
 
-// TROFOS Report Generator for completeness
 export class TrofosReportGenerator {
   private templateGenerator: TemplateReportGenerator;
 
@@ -398,83 +312,43 @@ export class TrofosReportGenerator {
   }
 }
 
-// Template Recommendation Service
+// Template recommendation service
 export class TemplateRecommendationService {
   /**
-   * Get template recommendations with reasoning
+   * Recommend best template based on project characteristics
    */
-  static getRecommendations(projectData: ProjectData): {
-    recommended: string;
-    alternatives: string[];
+  static recommendTemplate(projectData: ProjectData): {
+    recommended: 'standard' | 'executive' | 'detailed';
+    scores: Record<string, number>;
     reasoning: string;
-    suitabilityScores: Record<string, number>;
   } {
-    const scores = TemplateReportGenerator.calculateTemplateSuitability(projectData);
-    const sortedTemplates = Object.entries(scores)
-      .sort(([,a], [,b]) => b - a)
-      .map(([template]) => template);
+    const scores = TemplateReportGenerator.getTemplateScores(projectData);
+    
+    // Find highest scoring template
+    const recommended = Object.entries(scores).reduce((a, b) => 
+      scores[a[0]] > scores[b[0]] ? a : b
+    )[0] as 'standard' | 'executive' | 'detailed';
 
-    const recommended = sortedTemplates[0];
-    const alternatives = sortedTemplates.slice(1);
-
+    // Generate reasoning
+    const taskCount = Array.isArray(projectData.tasks) ? projectData.tasks.length : 0;
+    const teamSize = Array.isArray(projectData.team) ? projectData.team.length : 0;
+    
     let reasoning = '';
-    const taskCount = projectData.tasks?.length || 0;
-    const teamSize = projectData.team?.length || 0;
-    const metricsCount = projectData.metrics?.length || 0;
-
     switch (recommended) {
-      case 'detailed':
-        reasoning = `Recommended for your project due to rich data availability (${taskCount} tasks, ${teamSize} team members, ${metricsCount} metrics). The detailed analysis template will provide comprehensive insights and advanced analytics.`;
-        break;
       case 'executive':
-        reasoning = `Recommended for streamlined reporting. With ${taskCount} tasks and ${teamSize} team members, an executive summary provides the right level of detail for stakeholder communication without overwhelming complexity.`;
+        reasoning = `Executive template recommended for high-level overview. Project has ${taskCount} tasks with ${teamSize} team members - ideal for stakeholder presentations.`;
         break;
-      case 'standard':
+      case 'detailed':
+        reasoning = `Detailed template recommended for comprehensive analysis. Project complexity (${taskCount} tasks, ${teamSize} team members) warrants deep-dive reporting.`;
+        break;
       default:
-        reasoning = `Recommended as a balanced approach for your project scope (${taskCount} tasks, ${teamSize} team members). The standard template provides comprehensive coverage while remaining accessible to all stakeholders.`;
-        break;
+        reasoning = `Standard template recommended for balanced reporting. Project scale (${taskCount} tasks, ${teamSize} team members) fits well with comprehensive overview.`;
     }
 
     return {
       recommended,
-      alternatives,
-      reasoning,
-      suitabilityScores: scores
-    };
-  }
-
-  /**
-   * Get template feature comparison
-   */
-  static getFeatureComparison(): Record<string, any> {
-    return {
-      features: [
-        { name: 'Project Overview', standard: true, executive: true, detailed: true },
-        { name: 'Key Metrics', standard: true, executive: true, detailed: true },
-        { name: 'Task Analysis', standard: true, executive: false, detailed: true },
-        { name: 'Team Performance', standard: true, executive: false, detailed: true },
-        { name: 'Timeline Analysis', standard: true, executive: false, detailed: true },
-        { name: 'Risk Assessment', standard: true, executive: true, detailed: true },
-        { name: 'Quality Metrics', standard: false, executive: false, detailed: true },
-        { name: 'Predictive Insights', standard: false, executive: false, detailed: true },
-        { name: 'Benchmarking', standard: false, executive: false, detailed: true },
-        { name: 'Statistical Analysis', standard: false, executive: false, detailed: true }
-      ],
-      complexity: {
-        standard: 'Moderate complexity with balanced detail',
-        executive: 'Low complexity focused on high-level insights',
-        detailed: 'High complexity with comprehensive analytics'
-      },
-      timeToGenerate: {
-        standard: '45 minutes',
-        executive: '30 minutes', 
-        detailed: '90 minutes'
-      },
-      bestFor: {
-        standard: 'Regular project reporting and stakeholder updates',
-        executive: 'Board meetings and senior leadership presentations',
-        detailed: 'Technical reviews and process improvement initiatives'
-      }
+      scores,
+      reasoning
     };
   }
 }

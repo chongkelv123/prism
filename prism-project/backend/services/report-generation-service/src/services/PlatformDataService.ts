@@ -9,6 +9,15 @@ export interface ProjectData {
   id: string;
   name: string;
   platform: string; // 'jira' | 'monday' | 'trofos'
+  status?: string;
+  description?: string;
+  itemsCount?: number;
+  boardState?: string;
+  groups?: {
+    id: string;
+    title: string;
+    color?: string;
+  }[];
   tasks: {
     id?: string;
     name: string;

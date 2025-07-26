@@ -274,6 +274,8 @@ async function processReportWithTemplateSystem(reportId: string, authToken?: str
   }
 }
 
+export { processReportWithTemplateSystem as processReportGenerationRequest };
+
 // ✅ GET ALL REPORTS - FILTER BY USER
 export async function getAllReports(req: AuthenticatedRequest, res: Response) {
   try {

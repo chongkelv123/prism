@@ -156,6 +156,17 @@ app.use('/api/connections', proxy(PLATFORM_INTEGRATIONS_SERVICE_URL, {
   }
 }));
 
+// Add specific route for platform-integrations connections with projects
+// 2d. CRITICAL FIX: Platform-integrations specific routes (must come before general routes)
+app.use('/api/platform-integrations/connections', proxy(PLATFORM_INTEGRATIONS_SERVICE_URL, {
+  ...createProxyOptions(PLATFORM_INTEGRATIONS_SERVICE_URL, 'platform-integrations-service'),
+  proxyReqPathResolver: (req) => {
+    const path = `/api/connections${req.url}`;
+    console.log(`Routing to platform-integrations-service: ${path}`);
+    return path;
+  }
+}));
+
 // 3. REPORT GENERATION ROUTES
 app.use('/api/reports', proxy(REPORT_SERVICE_URL, {
   ...createProxyOptions(REPORT_SERVICE_URL, 'report-generation-service'),

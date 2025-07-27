@@ -18,21 +18,22 @@ interface JiraProject {
   [key: string]: any;
 }
 
-interface JiraSearchResult {
+interface JiraProjectSearchResult {
+  values: JiraProject[];
   total: number;
-  issues: any[];
   [key: string]: any;
 }
 
 // Simple Jira proxy to bypass CORS during development
 router.post('/test-connection', async (req: Request, res: Response) => {
   try {
-    const { email, apiToken, domain, projectKey } = req.body;
+    // ✅ UPDATED: Remove projectKey requirement
+    const { email, apiToken, domain } = req.body;
     
-    if (!email || !apiToken || !domain || !projectKey) {
+    if (!email || !apiToken || !domain) {
       return res.status(400).json({ 
         success: false, 
-        error: 'Missing required fields' 
+        error: 'Missing required fields: email, apiToken, and domain are required' 
       });
     }
 
@@ -77,9 +78,9 @@ router.post('/test-connection', async (req: Request, res: Response) => {
       return res.json({ success: false, steps, error: error.message });
     }
 
-    // Step 2: Test project access
+    // ✅ UPDATED: Step 2 - Test project access (get accessible projects instead of testing specific project)
     try {
-      const projectResponse = await fetch(`${baseUrl}/rest/api/3/project/${projectKey}`, {
+      const projectsResponse = await fetch(`${baseUrl}/rest/api/3/project/search?maxResults=50`, {
         method: 'GET',
         headers: {
           'Authorization': authHeader,
@@ -88,19 +89,25 @@ router.post('/test-connection', async (req: Request, res: Response) => {
         }
       });
 
-      if (!projectResponse.ok) {
-        if (projectResponse.status === 404) {
-          throw new Error(`Project '${projectKey}' not found or not accessible`);
-        }
-        throw new Error(`Project access failed (${projectResponse.status}): ${projectResponse.statusText}`);
+      if (!projectsResponse.ok) {
+        throw new Error(`Project access failed (${projectsResponse.status}): ${projectsResponse.statusText}`);
       }
 
-      const projectData = await projectResponse.json() as JiraProject;
+      const projectsData = await projectsResponse.json() as JiraProjectSearchResult;
+      const accessibleProjects = projectsData.values || [];
+      
       steps.push({
         step: 'Testing project access...',
         status: 'success',
-        message: `Project access granted: ${projectData.name} (${projectData.key})`,
-        details: projectData
+        message: `Found ${accessibleProjects.length} accessible project(s)`,
+        details: {
+          projectCount: accessibleProjects.length,
+          projects: accessibleProjects.slice(0, 5).map(p => ({ // Show first 5 projects
+            key: p.key,
+            name: p.name,
+            id: p.id
+          }))
+        }
       });
       
     } catch (error: any) {
@@ -112,28 +119,78 @@ router.post('/test-connection', async (req: Request, res: Response) => {
       return res.json({ success: false, steps, error: error.message });
     }
 
-    // Step 3: Test data retrieval  
+    // ✅ UPDATED: Step 3 - Test data retrieval (use first available project or general search)
     try {
-      const searchResponse = await fetch(`${baseUrl}/rest/api/3/search?jql=project=${projectKey}&maxResults=10`, {
+      // Try to get projects first to test with
+      const projectsResponse = await fetch(`${baseUrl}/rest/api/3/project/search?maxResults=1`, {
         method: 'GET',
         headers: {
           'Authorization': authHeader,
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
+          'Accept': 'application/json'
         }
       });
 
-      if (!searchResponse.ok) {
-        throw new Error(`Data retrieval failed (${searchResponse.status}): ${searchResponse.statusText}`);
-      }
+      if (projectsResponse.ok) {
+        const projectsData = await projectsResponse.json() as JiraProjectSearchResult;
+        const firstProject = projectsData.values?.[0];
+        
+        if (firstProject) {
+          // Test data retrieval with first available project
+          const searchResponse = await fetch(`${baseUrl}/rest/api/3/search?jql=project=${firstProject.key}&maxResults=10`, {
+            method: 'GET',
+            headers: {
+              'Authorization': authHeader,
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            }
+          });
 
-      const searchData = await searchResponse.json() as JiraSearchResult;
-      steps.push({
-        step: 'Testing data retrieval...',
-        status: 'success',
-        message: `Successfully retrieved ${searchData.total} issues from project ${projectKey}`,
-        details: searchData
-      });
+          if (!searchResponse.ok) {
+            throw new Error(`Data retrieval failed (${searchResponse.status}): ${searchResponse.statusText}`);
+          }
+
+          const searchData = await searchResponse.json() as JiraProjectSearchResult;
+          steps.push({
+            step: 'Testing data retrieval...',
+            status: 'success',
+            message: `Successfully retrieved ${searchData.total || 0} issues from project ${firstProject.key}`,
+            details: {
+              projectKey: firstProject.key,
+              projectName: firstProject.name,
+              issueCount: searchData.total || 0
+            }
+          });
+        } else {
+          // No projects found, but auth worked
+          steps.push({
+            step: 'Testing data retrieval...',
+            status: 'success',
+            message: 'Authentication successful, but no projects found. You may need project permissions.',
+            details: { projectCount: 0 }
+          });
+        }
+      } else {
+        // Fallback: Just test general search capability
+        const searchResponse = await fetch(`${baseUrl}/rest/api/3/search?jql=created>=-1d&maxResults=1`, {
+          method: 'GET',
+          headers: {
+            'Authorization': authHeader,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!searchResponse.ok) {
+          throw new Error(`Data retrieval test failed (${searchResponse.status}): ${searchResponse.statusText}`);
+        }
+
+        steps.push({
+          step: 'Testing data retrieval...',
+          status: 'success',
+          message: 'Data retrieval capability confirmed',
+          details: { testType: 'general_search' }
+        });
+      }
       
     } catch (error: any) {
       steps.push({

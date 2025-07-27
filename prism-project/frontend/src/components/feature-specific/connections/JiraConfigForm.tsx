@@ -14,8 +14,7 @@ interface JiraConfig {
   name: string;
   domain: string;
   email: string;
-  apiToken: string;
-  projectKey: string;
+  apiToken: string;  
 }
 
 const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSubmitting }) => {
@@ -23,8 +22,7 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
     name: 'PRISM Jira Connection',
     domain: 'chongkelv.atlassian.net',
     email: 'chongkelv@gmail.com',
-    apiToken: '',
-    projectKey: 'PRISM'
+    apiToken: '',    
   });
   
   const [showApiToken, setShowApiToken] = useState(false);
@@ -64,10 +62,6 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
     if (!config.apiToken.trim()) {
       newErrors.apiToken = 'API token is required';
     }
-    
-    if (!config.projectKey.trim()) {
-      newErrors.projectKey = 'Project key is required';
-    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -92,8 +86,7 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
         body: JSON.stringify({
           email: config.email.trim(),
           apiToken: config.apiToken.trim(),
-          domain: config.domain.trim(),
-          projectKey: config.projectKey.trim().toUpperCase()
+          domain: config.domain.trim()    
         })
       });
 
@@ -146,8 +139,7 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
       config: {
         domain: config.domain.trim(),
         email: config.email.trim(),
-        apiToken: config.apiToken.trim(),
-        projectKey: config.projectKey.trim().toUpperCase()
+        apiToken: config.apiToken.trim()        
       }
     };
     
@@ -170,7 +162,7 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
     }
   };
 
-  const isFormValid = config.name && config.email && config.apiToken && config.domain && config.projectKey;
+  const isFormValid = config.name && config.email && config.apiToken && config.domain;
   const canTest = isFormValid && testStatus !== 'testing';
   const canSubmit = testStatus === 'success' && !isSubmitting;
 
@@ -285,26 +277,7 @@ const JiraConfigForm: React.FC<JiraConfigFormProps> = ({ onSubmit, onBack, isSub
         <p className="mt-1 text-sm text-gray-500">
           Your Jira Cloud domain (without https://)
         </p>
-      </div>
-
-      {/* Project Key */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Project Key
-        </label>
-        <input
-          type="text"
-          value={config.projectKey}
-          onChange={(e) => handleChange('projectKey', e.target.value.toUpperCase())}
-          placeholder="PRISM"
-          className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-            errors.projectKey ? 'border-red-500' : 'border-gray-300'
-          }`}
-        />
-        {errors.projectKey && (
-          <p className="mt-1 text-sm text-red-600">{errors.projectKey}</p>
-        )}
-      </div>
+      </div>    
 
       {/* Test Connection */}
       <div className="border border-gray-200 rounded-lg p-4">

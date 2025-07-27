@@ -30,6 +30,21 @@ function getAuthToken(req: Request): string | undefined {
  * POST /api/reports/generate-jira-standard
  */
 export async function generateJiraStandardReport(req: Request, res: Response) {
+  // 🔍 ADD THIS DIAGNOSTIC CODE HERE:
+  console.log('\n🚨 === REAL JIRA REPORT GENERATION DIAGNOSTIC ===');
+  console.log('📱 Frontend Request Data:');
+  console.log('   - Method:', req.method);
+  console.log('   - URL:', req.url);
+  console.log('   - Body:', JSON.stringify(req.body, null, 2));
+  console.log('   - User:', (req as any).user?.userId || 'No user');
+
+  const { connectionId, projectId, templateId = 'standard', configuration } = req.body;
+
+  console.log('🎯 Extracted Parameters:');
+  console.log('   - connectionId:', connectionId);
+  console.log('   - projectId:', projectId);
+  console.log('   - templateId:', templateId);
+  console.log('   - configuration:', configuration);
   try {
     const userId = req.user?.userId;
     if (!userId) {
@@ -329,6 +344,19 @@ async function processJiraReport(
       projectId: reportConfig.projectId // 🔍 This should now show the correct projectId
     });
 
+    // ADD BEFORE platformDataService.fetchProjectData call:
+    console.log('\n📡 About to call Platform Data Service with:');
+    let connectionId: any;
+    let configuration: any;
+    const reportConfig1 = {
+      platform: 'jira',
+      connectionId,
+      projectId,
+      templateId,
+      configuration
+    };
+    console.log('   Config:', JSON.stringify(reportConfig1, null, 2));
+
     const projectData = await platformDataService.fetchProjectData(reportConfig);
 
     if (!projectData || projectData.length === 0) {
@@ -336,6 +364,16 @@ async function processJiraReport(
     }
 
     const jiraProject = projectData[0];
+
+    // ADD AFTER fetchProjectData call:
+    console.log('\n📥 Platform Data Service Response:');
+    console.log('   - Project ID:', jiraProject.id);
+    console.log('   - Project Name:', jiraProject.name);
+    console.log('   - Task Count:', jiraProject.tasks?.length || 0);
+    console.log('   - Is Fallback:', jiraProject.fallbackData);
+    console.log('   - Sample Tasks:', jiraProject.tasks?.slice(0, 2).map(t => ({
+      id: t.id, name: t.name, assignee: t.assignee
+    })));
 
     // Log real data confirmation
     logger.info('Real Jira data fetched successfully', {

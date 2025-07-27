@@ -14,9 +14,13 @@ export interface ProjectData {
   itemsCount?: number;
   boardState?: string;
   groups?: {
-    id: string;
+    d: string;
     title: string;
+    name?: string;
     color?: string;
+    status?: string;
+    itemsCount?: number;
+    items?: any[];
   }[];
   tasks: {
     id?: string;
@@ -137,6 +141,7 @@ export class PlatformDataService {
    * This is called by the report generation service
    */
   async fetchProjectData(config: ReportGenerationConfig): Promise<ProjectData[]> {
+
     logger.info(`[Platform-Integrations] 🎯 Fetching project data for ${config.platform} platform`);
     logger.info(`[Platform-Integrations] Config:`, {
       platform: config.platform,
@@ -153,6 +158,19 @@ export class PlatformDataService {
       url: `${this.PLATFORM_INTEGRATIONS_URL}/api/connections/${config.connectionId}/projects?projectId=${config.projectId}`
     });
 
+    // 🔍 ADD THIS DIAGNOSTIC CODE HERE:
+    console.log('\n🌐 === PLATFORM DATA SERVICE DIAGNOSTIC ===');
+    console.log('📋 Service received config:');
+    console.log('   - Platform:', config.platform);
+    console.log('   - Connection ID:', config.connectionId);
+    console.log('   - Project ID:', config.projectId);
+    console.log('   - Template ID:', config.templateId);
+
+    // Build endpoint URL
+    const baseUrl = this.PLATFORM_INTEGRATIONS_URL;
+    const primaryEndpoint = `${baseUrl}/api/connections/${config.connectionId}/projects?projectId=${config.projectId}`;
+    console.log('   - Target Endpoint:', primaryEndpoint);
+
     try {
       // Try multiple endpoint patterns to ensure compatibility
       const endpointsToTry = [
@@ -168,13 +186,15 @@ export class PlatformDataService {
 
       let projectData: ProjectData[] | null = null;
       let lastError: any = null;
+      
+      let response;
 
       // Try each endpoint until one works
       for (const endpoint of endpointsToTry) {
         try {
           logger.info(`[Platform-Integrations] 🔍 Trying endpoint: ${endpoint}`);
 
-          const response = await this.httpClient.get(endpoint);
+          response = await this.httpClient.get(endpoint);
 
           if (response.status === 200 && response.data) {
             logger.info(`[Platform-Integrations] 🎉 SUCCESS: Got data from ${endpoint}`);
@@ -211,6 +231,29 @@ export class PlatformDataService {
         project.fallbackData = false;
         project.lastUpdated = project.lastUpdated || new Date().toISOString();
       });
+
+      // 🔍 ADD THIS DIAGNOSTIC CODE AFTER RESPONSE:
+      console.log('\n📡 Platform Integrations API Response:');
+      console.log('   - Status:', response.status);
+      console.log('   - URL Called:', response.config.url);
+      console.log('   - Response Type:', Array.isArray(response.data) ? 'Array' : 'Object');
+
+      if (Array.isArray(response.data)) {
+        console.log('   - Projects Found:', response.data.length);
+        response.data.forEach((project, index) => {
+          console.log(`   - Project ${index + 1}:`, {
+            id: project.id,
+            name: project.name,
+            key: project.key
+          });
+        });
+      } else {
+        console.log('   - Single Project:', {
+          id: response.data.id,
+          name: response.data.name,
+          key: response.data.key
+        });
+      }
 
       return projectData;
 

@@ -2,8 +2,8 @@ import amqplib, { Channel, Connection } from 'amqplib';
 import { processReportGenerationRequest } from '../controllers/reportController';
 import logger from '../utils/logger';
 
-let connection: Connection;
-let channel: Channel;
+let connection: any;
+let channel: any;
 
 // Event types
 export enum ReportEventType {

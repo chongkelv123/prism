@@ -379,8 +379,8 @@ export class MondayReportGenerator {
     // Add groups data with consistent structure
     projectData.groups?.forEach(group => {
       tableData.push([
-        { text: group.title || group.name || 'Unnamed Group', options: { bold: false, fontSize: 14, fill: { color: 'FFFFFF' }, color: '000000' } },
-        { text: String(group.itemsCount || group.items?.length || 0), options: { bold: false, fontSize: 14, fill: { color: 'FFFFFF' }, color: '000000' } },
+        { text: group.title || 'Unnamed Group', options: { bold: false, fontSize: 14, fill: { color: 'FFFFFF' }, color: '000000' } },
+        { text: String(group.itemsCount || 0), options: { bold: false, fontSize: 14, fill: { color: 'FFFFFF' }, color: '000000' } },
         { text: group.status || 'Active', options: { bold: false, fontSize: 14, fill: { color: 'FFFFFF' }, color: '000000' } }
       ]);
     });

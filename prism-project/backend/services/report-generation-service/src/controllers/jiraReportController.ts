@@ -77,6 +77,11 @@ export async function generateJiraStandardReport(req: Request, res: Response) {
         includeTeamAnalysis: true,
         includeRiskAssessment: true,
         includePriorityBreakdown: true
+      },
+      projectInfo: {
+        projectId: projectId || 'PRISM',
+        projectName: '', // Will be populated when data is fetched
+        platform: 'jira'
       }
     });
 

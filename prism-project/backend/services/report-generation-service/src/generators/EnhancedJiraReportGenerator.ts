@@ -7,6 +7,8 @@ import fs from 'fs';
 import path from 'path';
 import logger from '../utils/logger';
 import { ProjectData } from '../services/PlatformDataService';
+import { FilenameGenerator } from '../utils/filenameGenerator';
+
 
 export interface JiraReportConfig {
   templateId?: 'standard' | 'executive' | 'detailed'; // Make optional
@@ -115,7 +117,13 @@ export class EnhancedJiraReportGenerator {
       }
 
       // Save file
-      const filename = `jira-${templateId}-${projectData.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pptx`;
+      const filename = FilenameGenerator.generateStorageFilename({
+        platform: 'jira',
+        templateType: templateId,
+        projectName: projectData.name,
+        timestamp: new Date()
+      });
+
       const filepath = path.join(this.STORAGE_DIR, filename);
 
       await pptx.writeFile({ fileName: filepath });

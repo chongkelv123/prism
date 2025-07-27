@@ -15,6 +15,8 @@ import {
   TemplateRecommendationService
 } from '../generators/TemplateReportGenerator';
 import { EnhancedJiraReportGenerator } from '../generators/EnhancedJiraReportGenerator';
+import { FilenameGenerator } from '../utils/filenameGenerator';
+
 
 // ✅ EXTEND REQUEST TYPE FOR AUTHENTICATED REQUESTS
 interface AuthenticatedRequest extends Request {
@@ -543,10 +545,35 @@ export async function downloadReport(req: AuthenticatedRequest, res: Response) {
     }
 
     // ✅ GENERATE DOWNLOAD FILENAME
-    const fileName = path.basename(filePath);
-    const templateSuffix = report.template ? `_${report.template}` : '';
-    const sanitizedTitle = report.title.replace(/[^a-zA-Z0-9\-_]/g, '_');
-    const downloadFileName = `${sanitizedTitle}${templateSuffix}_${new Date().toISOString().slice(0, 10)}.pptx`;
+    // const fileName = path.basename(filePath);
+    // const templateSuffix = report.template ? `_${report.template}` : '';
+    // const sanitizedTitle = report.title.replace(/[^a-zA-Z0-9\-_]/g, '_');
+    // const downloadFileName = `${sanitizedTitle}${templateSuffix}_${new Date().toISOString().slice(0, 10)}.pptx`;
+
+    // Get project name from report data (need to fetch it)
+    let projectName = 'Unknown-Project';
+    try {
+      if (report.configuration?.projectId) {
+        // Extract project name from stored file path or configuration
+        const storedFileName = report.filePath || '';
+        const filenameParts = storedFileName.split('-');
+        if (filenameParts.length >= 3) {
+          // Extract project name from storage filename
+          projectName = filenameParts.slice(2, -1).join('-').replace('.pptx', '');
+        }
+      }
+    } catch (error) {
+      logger.warn('Could not extract project name for download filename:', error);
+    }
+
+    const downloadFileName = FilenameGenerator.generateDownloadFilename({
+      reportTitle: report.title,
+      projectName: projectName,
+      platform: report.platform,
+      templateType: report.template as 'standard' | 'executive' | 'detailed',
+      timestamp: report.createdAt || new Date()
+    });
+
 
     // ✅ SET PROPER DOWNLOAD HEADERS
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');

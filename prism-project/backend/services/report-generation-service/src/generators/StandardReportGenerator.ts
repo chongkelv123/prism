@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
 import { ProjectData } from '../services/PlatformDataService';
 import { DataAnalyticsService, AnalyticsMetrics } from '../services/DataAnalyticsService';
+import { FilenameGenerator } from '../utils/filenameGenerator';
 
 export interface StandardReportConfig {
   title?: string;
@@ -34,7 +35,7 @@ export class StandardReportGenerator {
 
   constructor() {
     this.STORAGE_DIR = process.env.STORAGE_DIR || path.join(__dirname, '../../storage');
-    
+
     // Ensure storage directory exists
     if (!fs.existsSync(this.STORAGE_DIR)) {
       fs.mkdirSync(this.STORAGE_DIR, { recursive: true });
@@ -56,21 +57,21 @@ export class StandardReportGenerator {
       'new': { category: 'todo', displayName: 'New', color: '6B7280' },
       'created': { category: 'todo', displayName: 'Created', color: '6B7280' },
       'backlog': { category: 'todo', displayName: 'Backlog', color: '6B7280' },
-      
+
       'in progress': { category: 'progress', displayName: 'In Progress', color: '3B82F6' },
       'progress': { category: 'progress', displayName: 'In Progress', color: '3B82F6' },
       'in review': { category: 'progress', displayName: 'In Review', color: '3B82F6' },
       'review': { category: 'progress', displayName: 'In Review', color: '3B82F6' },
       'testing': { category: 'progress', displayName: 'Testing', color: '3B82F6' },
       'development': { category: 'progress', displayName: 'Development', color: '3B82F6' },
-      
+
       'done': { category: 'done', displayName: 'Done', color: '10B981' },
       'complete': { category: 'done', displayName: 'Complete', color: '10B981' },
       'completed': { category: 'done', displayName: 'Completed', color: '10B981' },
       'closed': { category: 'done', displayName: 'Closed', color: '10B981' },
       'resolved': { category: 'done', displayName: 'Resolved', color: '10B981' },
       'finished': { category: 'done', displayName: 'Finished', color: '10B981' },
-      
+
       'blocked': { category: 'blocked', displayName: 'Blocked', color: 'EF4444' },
       'impediment': { category: 'blocked', displayName: 'Impediment', color: 'EF4444' },
       'on hold': { category: 'blocked', displayName: 'On Hold', color: 'EF4444' },
@@ -92,7 +93,7 @@ export class StandardReportGenerator {
     const team = Array.isArray(projectData.team) ? projectData.team : [];
 
     const assigneeMap = new Map<string, number>();
-    
+
     // Count tasks per assignee
     tasks.forEach(task => {
       if (task.assignee && task.assignee !== 'Unassigned') {
@@ -140,18 +141,18 @@ export class StandardReportGenerator {
   /**
    * FIXED: Safe status distribution calculation
    */
-  private calculateStatusDistribution(projectData: ProjectData): Array<{ 
-    status: string; 
-    count: number; 
-    percentage: number; 
-    color: string 
+  private calculateStatusDistribution(projectData: ProjectData): Array<{
+    status: string;
+    count: number;
+    percentage: number;
+    color: string
   }> {
     // FIXED: Ensure tasks array is never undefined
     const tasks = Array.isArray(projectData.tasks) ? projectData.tasks : [];
     if (tasks.length === 0) return [];
 
     const statusMap = new Map<string, { count: number; color: string }>();
-    
+
     tasks.forEach(task => {
       if (task && task.status) {
         const normalized = this.normalizeStatus(task.status);
@@ -179,7 +180,7 @@ export class StandardReportGenerator {
   private normalizeStatus(status: string): { category: string; displayName: string; color: string } {
     const normalized = status.toLowerCase().trim();
     const mapping = this.platformStatusMap[normalized];
-    
+
     if (mapping) {
       return {
         category: mapping.category,
@@ -217,8 +218,8 @@ export class StandardReportGenerator {
    * Generate Standard Report PowerPoint (8-12 slides)
    */
   async generate(
-    projectData: ProjectData, 
-    config: StandardReportConfig, 
+    projectData: ProjectData,
+    config: StandardReportConfig,
     progressCallback?: (progress: number) => Promise<void>
   ): Promise<string> {
     try {
@@ -238,7 +239,7 @@ export class StandardReportGenerator {
 
       // Initialize PowerPoint
       const pptx = new PptxGenJS();
-      
+
       // Configure presentation
       pptx.layout = 'LAYOUT_16x9';
       pptx.author = 'PRISM Report System';
@@ -285,9 +286,14 @@ export class StandardReportGenerator {
       await progressCallback?.(90);
 
       // Save file
-      const filename = `standard-report-${projectData.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pptx`;
+      // const filename = `standard-report-${projectData.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pptx`;
+      const filename = FilenameGenerator.generateStorageFilename({
+        platform: projectData.platform,
+        templateType: 'standard',
+        projectName: projectData.name
+      });
       const filepath = path.join(this.STORAGE_DIR, filename);
-      
+
       await pptx.writeFile({ fileName: filepath });
       await progressCallback?.(100);
 
@@ -322,13 +328,13 @@ export class StandardReportGenerator {
    * FIXED: Create title slide with safe data handling
    */
   private async createTitleSlide(
-    pptx: PptxGenJS, 
-    projectData: ProjectData, 
+    pptx: PptxGenJS,
+    projectData: ProjectData,
     config: StandardReportConfig,
     theme: { primary: string; secondary: string; accent: string }
   ): Promise<void> {
     const slide = pptx.addSlide();
-    
+
     // Background with platform theme
     slide.background = { color: theme.accent };
 
@@ -348,7 +354,7 @@ export class StandardReportGenerator {
     const taskCount = Array.isArray(projectData.tasks) ? projectData.tasks.length : 0;
     const teamCount = this.extractRealTeamMembers(projectData).length;
     const subtitle = `${projectData.platform.toUpperCase()} Platform Report | ${taskCount} Tasks | ${teamCount} Team Members`;
-    
+
     slide.addText(subtitle, {
       x: '10%',
       y: '42%',
@@ -360,10 +366,10 @@ export class StandardReportGenerator {
     });
 
     // Data source indicator
-    const dataSource = projectData.fallbackData ? 
-      'Data Source: Demonstration Data' : 
+    const dataSource = projectData.fallbackData ?
+      'Data Source: Demonstration Data' :
       'Data Source: Live Platform Data';
-    
+
     slide.addText(dataSource, {
       x: '10%',
       y: '52%',
@@ -391,12 +397,12 @@ export class StandardReportGenerator {
    * FIXED: Create team performance slide with safe table creation
    */
   private async createTeamPerformanceSlide(
-    pptx: PptxGenJS, 
+    pptx: PptxGenJS,
     projectData: ProjectData,
     theme: { primary: string; secondary: string; accent: string }
   ): Promise<void> {
     const slide = pptx.addSlide();
-    
+
     slide.addText('TEAM PERFORMANCE', {
       x: 0.5,
       y: 0.5,
@@ -485,7 +491,7 @@ export class StandardReportGenerator {
    * FIXED: Safe member performance calculation
    */
   private calculateMemberPerformance(
-    member: { name: string; role: string; taskCount: number; utilization: number }, 
+    member: { name: string; role: string; taskCount: number; utilization: number },
     projectData: ProjectData
   ): string {
     try {
@@ -495,7 +501,7 @@ export class StandardReportGenerator {
 
       const tasks = Array.isArray(projectData.tasks) ? projectData.tasks : [];
       const memberTasks = tasks.filter(task => task && task.assignee === member.name);
-      
+
       if (memberTasks.length === 0) {
         return 'No Tasks';
       }
@@ -521,7 +527,7 @@ export class StandardReportGenerator {
    * FIXED: Safe team insights generation
    */
   private generateTeamInsights(
-    teamMembers: Array<{ name: string; role: string; taskCount: number; utilization: number }>, 
+    teamMembers: Array<{ name: string; role: string; taskCount: number; utilization: number }>,
     projectData: ProjectData
   ): string {
     try {
@@ -530,12 +536,12 @@ export class StandardReportGenerator {
       }
 
       const insights: string[] = [];
-      
+
       // Top performer
-      const topPerformer = teamMembers.reduce((max, member) => 
+      const topPerformer = teamMembers.reduce((max, member) =>
         (member.taskCount > max.taskCount) ? member : max
-      , teamMembers[0]);
-      
+        , teamMembers[0]);
+
       insights.push(`Top Contributor: ${topPerformer.name} (${topPerformer.taskCount} tasks)`);
 
       // Average utilization
@@ -567,10 +573,10 @@ export class StandardReportGenerator {
       x: 0.5, y: 0.5, w: '90%', h: 0.8,
       fontSize: 24, color: theme.primary, bold: true
     });
-    
+
     const taskCount = Array.isArray(projectData.tasks) ? projectData.tasks.length : 0;
     const teamSize = Array.isArray(projectData.team) ? projectData.team.length : 0;
-    
+
     slide.addText([
       `Project: ${projectData.name || 'Unknown Project'}`,
       `Platform: ${projectData.platform || 'Unknown'}`,
@@ -614,10 +620,10 @@ export class StandardReportGenerator {
 
     const statusDistribution = this.calculateStatusDistribution(projectData);
     if (statusDistribution.length > 0) {
-      const statusText = statusDistribution.map(item => 
+      const statusText = statusDistribution.map(item =>
         `${item.status}: ${item.count} tasks (${item.percentage}%)`
       ).join('\n');
-      
+
       slide.addText(statusText, {
         x: 0.5, y: 1.5, w: '90%', h: 3,
         fontSize: 14, color: '374151'

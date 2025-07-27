@@ -8,6 +8,7 @@ import path from 'path';
 import logger from '../utils/logger';
 import { ProjectData } from '../services/PlatformDataService';
 import { DataAnalyticsService, AnalyticsMetrics } from '../services/DataAnalyticsService';
+import { FilenameGenerator } from '../utils/filenameGenerator';
 
 export interface ExecutiveSummaryConfig {
   title?: string;
@@ -87,7 +88,12 @@ export class ExecutiveSummaryGenerator {
       await progressCallback?.(90);
 
       // Save file
-      const filename = `executive-summary-${projectData.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pptx`;
+      // const filename = `executive-summary-${projectData.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pptx`;
+      const filename = FilenameGenerator.generateStorageFilename({
+        platform: projectData.platform,
+        templateType: 'executive',
+        projectName: projectData.name
+      });
       const filepath = path.join(this.STORAGE_DIR, filename);
       
       await pptx.writeFile({ fileName: filepath });

@@ -22,6 +22,11 @@ export interface IReport extends Document {
   error?: string;
   createdAt: Date;
   completedAt?: Date;
+  projectInfo?: {
+    projectId: string;
+    projectName: string;
+    platform: string;
+  };
 }
 
 const ReportSchema = new Schema<IReport>({

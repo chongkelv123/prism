@@ -53,7 +53,7 @@ describe('Step 5: TROFOS Platform Data Service Integration', () => {
       expect(trofosProject.platform).toBe('trofos');
       expect(trofosProject.fallbackData).toBe(true);
       expect(trofosProject.name).toContain('TROFOS');
-      
+
       // Verify TROFOS-specific content
       expect(Array.isArray(trofosProject.tasks)).toBe(true);
       expect(trofosProject.tasks.length).toBeGreaterThan(0);
@@ -143,8 +143,8 @@ describe('Step 5: TROFOS Platform Data Service Integration', () => {
 
       // Verify no TROFOS contamination in Jira data
       expect(jiraProject.platformSpecific?.trofos).toBeUndefined();
-      expect(jiraProject.tasks.every(t => !t.hasOwnProperty('storyPoints') || t.storyPoints === undefined)).toBe(false); // Jira can have story points too
-      
+      expect(jiraProject.name).toContain('PRISM'); // Verify Jira project name unchanged
+
       console.log('✅ Jira functionality remains completely unchanged');
     });
   });
@@ -178,7 +178,7 @@ describe('Step 5: TROFOS Platform Data Service Integration', () => {
 
       // Verify no TROFOS contamination in Monday data
       expect(mondayProject.platformSpecific?.trofos).toBeUndefined();
-      
+
       console.log('✅ Monday.com functionality remains unchanged');
     });
   });

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { generateReport, getReportStatus, getReportById, getAllReports, downloadReport } from '../controllers/reportController';
 import { authenticateJWT } from '../middleware/auth'; 
 import jiraReportRoutes from './jiraReportRoutes'; 
+import trofosReportRoutes from './trofosReportRoutes';
 
 const router = Router();
 
@@ -15,7 +16,7 @@ router.get('/:id', getReportById);
 router.get('/', getAllReports);
 router.get('/:id/download', downloadReport);
 
-// NEW: Add Jira-specific report routes
 router.use('/', jiraReportRoutes); // ADD THIS LINE
+router.use('/', trofosReportRoutes); // ADD THIS LINE
 
 export default router;

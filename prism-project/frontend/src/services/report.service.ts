@@ -1,5 +1,5 @@
 // frontend/src/services/report.service.ts
-// FIXED VERSION - Proper response handling for generateReport
+// UPDATED VERSION - Add TROFOS endpoint support alongside existing Jira endpoints
 
 import { apiClient } from './api.service';
 
@@ -36,6 +36,29 @@ const getAuthHeaders = (): HeadersInit => {
   return headers;
 };
 
+// ✅ NEW: Platform-specific endpoint mapping
+const getPlatformEndpoints = (platformId: string) => {
+  const endpointMapping = {
+    jira: {
+      standard: '/api/reports/generate-jira-standard',
+      executive: '/api/reports/generate-jira-executive',
+      detailed: '/api/reports/generate-jira-detailed'
+    },
+    trofos: {
+      standard: '/api/reports/generate-trofos-standard',
+      executive: '/api/reports/generate-trofos-executive',
+      detailed: '/api/reports/generate-trofos-detailed'
+    },
+    monday: {
+      standard: '/api/reports/generate', // Fallback to generic endpoint for Monday.com
+      executive: '/api/reports/generate',
+      detailed: '/api/reports/generate'
+    }
+  };
+
+  return endpointMapping[platformId as keyof typeof endpointMapping] || endpointMapping.monday;
+};
+
 const reportService = {
   // Get all reports with authentication
   async getReports(): Promise<Report[]> {
@@ -48,7 +71,7 @@ const reportService = {
     }
   },
 
-  // ✅ FIXED Generate report with proper response handling
+  // ✅ UPDATED: Generate report with platform-specific endpoint routing
   async generateReport(data: ReportGenerationRequest): Promise<Report> {
     try {
       console.log('🚀 Generating report with data:', data);
@@ -71,19 +94,17 @@ const reportService = {
 
       console.log('📤 Sending to backend:', backendPayload);
 
-      // Map template to correct endpoint
-      const templateEndpoints: Record<'standard' | 'executive' | 'detailed', string> = {
-        'standard': '/api/reports/generate-jira-standard',
-        'executive': '/api/reports/generate-jira-executive',
-        'detailed': '/api/reports/generate-jira-detailed'
-      };
-
-      const endpoint =
-        templateEndpoints[
+      // ✅ NEW: Get platform-specific endpoints
+      const platformEndpoints = getPlatformEndpoints(data.platformId);
+      
+      // ✅ NEW: Map template to correct platform-specific endpoint  
+      const endpoint = platformEndpoints[
         (data.templateId as 'standard' | 'executive' | 'detailed')
-        ] || templateEndpoints['standard'];
+      ] || platformEndpoints['standard'];
 
-      // ✅ MAKE REQUEST WITH AUTH HEADERS
+      console.log(`🎯 Using endpoint for ${data.platformId}:`, endpoint);
+
+      // ✅ MAKE REQUEST WITH AUTH HEADERS TO CORRECT PLATFORM ENDPOINT
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: getAuthHeaders(),
@@ -128,8 +149,7 @@ const reportService = {
     }
   },
 
-
-  // ✅ FIXED Check report status with auth headers
+  // ✅ Check report status with auth headers
   async getReportStatus(id: string): Promise<{ status: string, progress?: number }> {
     try {
       console.log(`🔍 Checking status for report: ${id}`);
@@ -159,7 +179,7 @@ const reportService = {
     }
   },
 
-  // ✅ FIXED Download report with auth headers and validation
+  // ✅ Download report with auth headers and validation
   async downloadReport(id: string, reportData?: Record<string, any>): Promise<void> {
     try {
       console.log(`📥 Downloading report: ${id}`);
@@ -177,37 +197,38 @@ const reportService = {
         throw new Error('Authentication required. Please login again.');
       }
 
+      // Check if report exists and get download URL
       const response = await fetch(`/api/reports/${id}/download`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: getAuthHeaders()
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`❌ Download failed for ${id}:`, errorText);
-        throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to download report');
       }
 
-      // Handle file download
+      // Get the blob data
       const blob = await response.blob();
+      
+      // Create download link
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-
-      // Get filename from Content-Disposition header or use default
-      const contentDisposition = response.headers.get('Content-Disposition');
-      const filename = contentDisposition
-        ? contentDisposition.split('filename=')[1]?.replace(/"/g, '')
-        : `report-${id}.pptx`;
-
+      
+      // Use report data to create meaningful filename
+      const filename = reportData?.title 
+        ? `${reportData.title.replace(/[^a-zA-Z0-9]/g, '_')}.pptx`
+        : `report_${id}.pptx`;
+      
       link.download = filename;
       document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
+      
+      // Cleanup
       window.URL.revokeObjectURL(url);
-
-      console.log(`✅ Report downloaded: ${filename}`);
+      document.body.removeChild(link);
+      
+      console.log('✅ Report downloaded successfully:', filename);
 
     } catch (error) {
       console.error('❌ Error downloading report:', error);

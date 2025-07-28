@@ -186,7 +186,7 @@ export class PlatformDataService {
 
       let projectData: ProjectData[] | null = null;
       let lastError: any = null;
-      
+
       let response;
 
       // Try each endpoint until one works
@@ -321,6 +321,8 @@ export class PlatformDataService {
       return this.generateMondayFallbackData(projectId);
     } else if (platform === 'jira') {
       return this.generateJiraFallbackData(projectId);
+    } else if (platform === 'trofos') {
+      return this.generateTrofosFallbackData(projectId);
     } else {
       return this.generateGenericFallbackData(platform, projectId);
     }
@@ -744,6 +746,248 @@ export class PlatformDataService {
         completeness: 85,
         accuracy: 90,
         freshness: 80
+      }
+    };
+
+    return [project];
+  }
+
+  /**
+ * Generate TROFOS fallback data for demo purposes
+ * Based on TROFOS platform structure with backlog items, sprints, and team resources
+ */
+  private generateTrofosFallbackData(projectId?: string): ProjectData[] {
+    const project: ProjectData = {
+      id: projectId || 'trofos-demo-001',
+      name: 'TROFOS Demo Project',
+      platform: 'trofos',
+      status: 'Active',
+      description: 'Sample TROFOS project data for report generation demo',
+      tasks: [
+        // Sprint 1 - User Authentication Module
+        {
+          id: 'TROFOS-001',
+          name: 'Implement user login system',
+          status: 'Done',
+          assignee: 'Alice Johnson',
+          priority: 'High',
+          storyPoints: 8,
+          description: 'Create secure user authentication with JWT tokens',
+          group: 'Authentication',
+          created: '2024-01-15',
+          updated: '2024-01-22'
+        },
+        {
+          id: 'TROFOS-002',
+          name: 'Design user registration flow',
+          status: 'Done',
+          assignee: 'Bob Smith',
+          priority: 'High',
+          storyPoints: 5,
+          group: 'Authentication',
+          created: '2024-01-16',
+          updated: '2024-01-24'
+        },
+        {
+          id: 'TROFOS-003',
+          name: 'Add password reset functionality',
+          status: 'In Progress',
+          assignee: 'Carol Davis',
+          priority: 'Medium',
+          storyPoints: 3,
+          group: 'Authentication',
+          created: '2024-01-18',
+          updated: '2024-01-28'
+        },
+        // Sprint 2 - Dashboard Development
+        {
+          id: 'TROFOS-004',
+          name: 'Create project dashboard layout',
+          status: 'In Progress',
+          assignee: 'Alice Johnson',
+          priority: 'High',
+          storyPoints: 13,
+          group: 'Dashboard',
+          created: '2024-01-20',
+          updated: '2024-01-29'
+        },
+        {
+          id: 'TROFOS-005',
+          name: 'Implement real-time data updates',
+          status: 'To Do',
+          assignee: 'David Wilson',
+          priority: 'High',
+          storyPoints: 8,
+          group: 'Dashboard',
+          created: '2024-01-22'
+        },
+        {
+          id: 'TROFOS-006',
+          name: 'Add chart visualizations',
+          status: 'To Do',
+          assignee: 'Carol Davis',
+          priority: 'Medium',
+          storyPoints: 5,
+          group: 'Dashboard',
+          created: '2024-01-23'
+        },
+        // Sprint 3 - API Integration
+        {
+          id: 'TROFOS-007',
+          name: 'Design REST API endpoints',
+          status: 'In Progress',
+          assignee: 'Bob Smith',
+          priority: 'Critical',
+          storyPoints: 10,
+          group: 'API',
+          created: '2024-01-25',
+          updated: '2024-01-30'
+        },
+        {
+          id: 'TROFOS-008',
+          name: 'Implement data validation layer',
+          status: 'To Do',
+          assignee: 'Alice Johnson',
+          priority: 'High',
+          storyPoints: 6,
+          group: 'API',
+          created: '2024-01-26'
+        },
+        {
+          id: 'TROFOS-009',
+          name: 'Add API documentation',
+          status: 'To Do',
+          assignee: 'David Wilson',
+          priority: 'Medium',
+          storyPoints: 4,
+          group: 'API',
+          created: '2024-01-27'
+        },
+        // Backlog - Future Features
+        {
+          id: 'TROFOS-010',
+          name: 'Mobile app integration',
+          status: 'Backlog',
+          assignee: 'Carol Davis',
+          priority: 'Low',
+          storyPoints: 21,
+          group: 'Mobile',
+          created: '2024-01-28'
+        },
+        {
+          id: 'TROFOS-011',
+          name: 'Advanced reporting features',
+          status: 'Backlog',
+          priority: 'Medium',
+          storyPoints: 13,
+          group: 'Reporting',
+          created: '2024-01-29'
+        },
+        {
+          id: 'TROFOS-012',
+          name: 'Performance optimization',
+          status: 'Backlog',
+          assignee: 'Bob Smith',
+          priority: 'High',
+          storyPoints: 8,
+          group: 'Performance',
+          created: '2024-01-30'
+        }
+      ],
+      team: [
+        {
+          id: 'user_alice',
+          name: 'Alice Johnson',
+          role: 'Senior Developer',
+          email: 'alice.johnson@example.com',
+          department: 'Engineering',
+          skills: ['React', 'Node.js', 'TypeScript'],
+          taskCount: 3
+        },
+        {
+          id: 'user_bob',
+          name: 'Bob Smith',
+          role: 'Backend Developer',
+          email: 'bob.smith@example.com',
+          department: 'Engineering',
+          skills: ['Python', 'PostgreSQL', 'Docker'],
+          taskCount: 2
+        },
+        {
+          id: 'user_carol',
+          name: 'Carol Davis',
+          role: 'Frontend Developer',
+          email: 'carol.davis@example.com',
+          department: 'Engineering',
+          skills: ['Vue.js', 'CSS', 'UX Design'],
+          taskCount: 2
+        },
+        {
+          id: 'user_david',
+          name: 'David Wilson',
+          role: 'DevOps Engineer',
+          email: 'david.wilson@example.com',
+          department: 'Operations',
+          skills: ['AWS', 'Kubernetes', 'CI/CD'],
+          taskCount: 2
+        }
+      ],
+      metrics: [
+        { name: 'Done', value: '2', type: 'status' },
+        { name: 'In Progress', value: '3', type: 'status' },
+        { name: 'To Do', value: '4', type: 'status' },
+        { name: 'Backlog', value: '3', type: 'status' },
+        { name: 'Total Stories', value: '12', type: 'number' },
+        { name: 'Story Points', value: '104', type: 'number' },
+        { name: 'Critical Priority', value: '1', type: 'priority' },
+        { name: 'High Priority', value: '5', type: 'priority' },
+        { name: 'Medium Priority', value: '4', type: 'priority' },
+        { name: 'Low Priority', value: '2', type: 'priority' },
+        { name: 'Sprint Velocity', value: '23', type: 'velocity' },
+        { name: 'Completion Rate', value: '17%', type: 'percentage' }
+      ],
+      sprints: [
+        {
+          name: 'Sprint 1 - Authentication',
+          startDate: '2024-01-15',
+          endDate: '2024-01-29',
+          completed: '100%',
+          velocity: 13,
+          plannedPoints: 13,
+          completedPoints: 13
+        },
+        {
+          name: 'Sprint 2 - Dashboard',
+          startDate: '2024-01-30',
+          endDate: '2024-02-13',
+          completed: '15%',
+          velocity: 26,
+          plannedPoints: 26,
+          completedPoints: 4
+        },
+        {
+          name: 'Sprint 3 - API Integration',
+          startDate: '2024-02-14',
+          endDate: '2024-02-28',
+          completed: '0%',
+          velocity: 20,
+          plannedPoints: 20,
+          completedPoints: 0
+        }
+      ],
+      platformSpecific: {
+        trofos: {
+          projectType: 'Software Development',
+          modules: ['Authentication', 'Dashboard', 'API', 'Mobile', 'Reporting'],
+          integrations: ['GitHub', 'Slack', 'JIRA']
+        }
+      },
+      fallbackData: true,
+      lastUpdated: new Date().toISOString(),
+      dataQuality: {
+        completeness: 92,
+        accuracy: 88,
+        freshness: 85
       }
     };
 

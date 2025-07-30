@@ -818,8 +818,9 @@ export class ConnectionService {
   }
 
   /**
- * Transform TROFOS project data to PRISM format (data is already mostly transformed by TrofosClient)
- */
+  * Transform TROFOS project data to PRISM format
+  * FIXED: Extract backlog items from sprint data structure
+  */
   private transformTrofosData(rawData: any): ProjectData[] {
     try {
       logger.info('🔄 Transforming TROFOS data to standard format');
@@ -849,71 +850,225 @@ export class ConnectionService {
             lastUpdated: new Date().toISOString()
           };
 
-          // Transform backlog items if available
-          if (project.backlogs && Array.isArray(project.backlogs)) {
-            projectData.tasks = project.backlogs.map((backlog: any, taskIndex: number) => ({
+          // FIXED: Extract backlog items from sprints data (where they're actually located)
+          let allBacklogItems: any[] = [];
+
+          // Method 1: Extract from sprints array (primary method based on logs)
+          if (project.sprints && Array.isArray(project.sprints)) {
+            logger.info(`🔍 Found ${project.sprints.length} sprints, extracting backlog items...`);
+
+            project.sprints.forEach((sprint: any, sprintIndex: number) => {
+              // Extract backlog items from sprint data structure
+              if (sprint.backlog_items && Array.isArray(sprint.backlog_items)) {
+                allBacklogItems.push(...sprint.backlog_items);
+                logger.debug(`📋 Sprint ${sprintIndex + 1}: ${sprint.backlog_items.length} backlog items`);
+              }
+
+              // Try alternative property names
+              if (sprint.backlogs && Array.isArray(sprint.backlogs)) {
+                allBacklogItems.push(...sprint.backlogs);
+              }
+              if (sprint.items && Array.isArray(sprint.items)) {
+                allBacklogItems.push(...sprint.items);
+              }
+              if (sprint.tasks && Array.isArray(sprint.tasks)) {
+                allBacklogItems.push(...sprint.tasks);
+              }
+            });
+          }
+
+          // Method 2: Check for direct backlogs array (fallback)
+          if (allBacklogItems.length === 0 && project.backlogs && Array.isArray(project.backlogs)) {
+            logger.info(`🔍 Using direct backlogs array: ${project.backlogs.length} items`);
+            allBacklogItems = project.backlogs;
+          }
+
+          // Method 3: Check for alternative property names
+          if (allBacklogItems.length === 0) {
+            const possibleArrays = ['backlog_items', 'items', 'tasks', 'stories', 'issues'];
+            for (const propName of possibleArrays) {
+              if (project[propName] && Array.isArray(project[propName])) {
+                logger.info(`🔍 Found backlog items in property: ${propName} (${project[propName].length} items)`);
+                allBacklogItems = project[propName];
+                break;
+              }
+            }
+          }
+
+          // Transform all found backlog items to tasks
+          if (allBacklogItems.length > 0) {
+            projectData.tasks = allBacklogItems.map((backlog: any, taskIndex: number) => ({
               id: backlog.id?.toString() || `task-${taskIndex}`,
-              name: backlog.title || backlog.name || `Backlog Item ${taskIndex + 1}`,
-              status: this.normalizeTrofosTaskStatus(backlog.status),
-              assignee: backlog.assignee?.name || 'Unassigned',
-              priority: backlog.priority || 'Medium',
-              created: backlog.createdAt || new Date().toISOString(),
-              updated: backlog.updatedAt || new Date().toISOString(),
-              description: backlog.description || '',
-              labels: backlog.tags || [],
-              group: backlog.sprint?.name || 'Backlog'
+              title: backlog.title || backlog.name || backlog.summary || `Backlog Item ${taskIndex + 1}`,
+              status: this.normalizeTrofosTaskStatus(backlog.status || backlog.state),
+              assignee: backlog.assignee?.name || backlog.assigned_to || 'Unassigned',
+              priority: this.mapTrofosPriority(backlog.priority),
+              created: backlog.createdAt || backlog.created_at || new Date().toISOString(),
+              updated: backlog.updatedAt || backlog.updated_at || new Date().toISOString(),
+              description: backlog.description || backlog.body || '',
+              labels: backlog.tags || backlog.labels || [],
+              group: backlog.sprint?.name || `Sprint ${backlog.sprint_id}` || 'Backlog'
+            }));
+
+            logger.info(`✅ Extracted ${projectData.tasks.length} tasks from TROFOS data`);
+          } else {
+            logger.warn(`⚠️ No backlog items found in TROFOS project data. Available properties:`, Object.keys(project));
+          }
+
+          // Extract team members from sprints or project level
+          if (project.sprints && Array.isArray(project.sprints)) {
+            const allTeamMembers: any[] = [];
+            project.sprints.forEach((sprint: any) => {
+              if (sprint.members && Array.isArray(sprint.members)) {
+                allTeamMembers.push(...sprint.members);
+              }
+              if (sprint.team && Array.isArray(sprint.team)) {
+                allTeamMembers.push(...sprint.team);
+              }
+            });
+
+            // Deduplicate team members by ID or email
+            const uniqueMembers = allTeamMembers.filter((member, index, arr) =>
+              index === arr.findIndex(m => (m.id && m.id === member.id) || (m.email && m.email === member.email))
+            );
+
+            projectData.team = uniqueMembers.map((member: any, memberIndex: number) => ({
+              id: member.id?.toString() || `member-${memberIndex}`,
+              name: member.name || member.username || `Team Member ${memberIndex + 1}`,
+              email: member.email || '',
+              role: member.role || member.position || 'Developer',
+              taskCount: projectData.tasks.filter(task => task.assignee === member.name).length
             }));
           }
 
-          // Add basic metrics
+          // Generate comprehensive metrics
+          const taskStatusCounts = this.getTaskStatusCounts(projectData.tasks);
+          const priorityCounts = this.getTaskPriorityCounts(projectData.tasks);
+
           projectData.metrics = [
-            { name: 'Project ID', value: projectData.id },
-            { name: 'Platform', value: 'TROFOS' },
-            { name: 'Total Items', value: projectData.tasks.length },
-            { name: 'Status', value: projectData.status }
+            { name: 'Project ID', value: projectData.id},
+            { name: 'Platform', value: 'TROFOS'},
+            { name: 'Total Items', value: projectData.tasks.length.toString()},
+            { name: 'Backlog Counter', value: project.backlog_counter?.toString() || '0'},
+            { name: 'Team Size', value: projectData.team.length.toString()},
+            { name: 'Status', value: projectData.status},
+            // Task status metrics
+            ...Object.entries(taskStatusCounts).map(([status, count]) => ({
+              name: status,
+              value: count.toString(),
+              type: 'status' as const
+            })),
+            // Priority metrics
+            ...Object.entries(priorityCounts).map(([priority, count]) => ({
+              name: `${priority} Priority`,
+              value: count.toString(),
+              type: 'priority' as const
+            })),
+            // Completion rate
+            {
+              name: 'Completion Rate',
+              value: projectData.tasks.length > 0
+                ? `${Math.round((taskStatusCounts['Done'] || 0) / projectData.tasks.length * 100)}%`
+                : '0%'    
+            }
           ];
 
           // Add TROFOS-specific platform data
           projectData.platformSpecific = {
             trofos: {
               projectKey: project.id?.toString(),
-              backlogItems: projectData.tasks.map(task => ({
-                id: task.id,
+              backlogItems: projectData.tasks.slice(0, 10).map(task => ({
+                id: task.id || '',
                 title: task.title,
-                type: 'backlog'
+                type: 'backlog_item'
               })),
-              sprints: [],
-              resources: [],
-              metrics: projectData.metrics
+              sprints: project.sprints ? project.sprints.map((sprint: any) => ({
+                id: sprint.id?.toString() || '',
+                name: sprint.name || 'Unnamed Sprint',
+                status: sprint.status || 'active'
+              })) : [],
+              resources: projectData.team.slice(0, 10).map(member => ({
+                id: member.id || '',
+                name: member.name,
+                role: member.role || 'Developer'
+              })),
+              metrics: [
+                { name: 'Data Source', value: 'LIVE TROFOS API' },
+                { name: 'Sprint Count', value: project.sprints?.length || 0 },
+                { name: 'Backlog Counter', value: project.backlog_counter || 0 }
+              ]
             }
           };
 
           logger.info(`✅ Transformed TROFOS project: ${projectData.name} (${projectData.tasks.length} items)`);
           return projectData;
 
-        } catch (error) {
-          logger.error(`❌ Failed to transform TROFOS project at index ${index}:`, error);
-
-          // Return minimal valid project to prevent complete failure
+        } catch (transformError) {
+          logger.error(`❌ Error transforming TROFOS project at index ${index}:`, transformError);
+          // Return minimal valid project data to prevent complete failure
           return {
             id: `trofos-error-${index}`,
             name: `TROFOS Project ${index + 1} (Transform Error)`,
             platform: 'trofos',
-            description: 'Data transformation error',
+            description: 'Error occurred during data transformation',
             status: 'error',
             tasks: [],
             team: [],
-            metrics: [{ name: 'Status', value: 'Transform Error', type: 'text', category: 'error' }],
+            metrics: [
+              { name: 'Transform Error', value: 'true'},
+              { name: 'Total Items', value: '0', type: 'number' }
+            ],
             lastUpdated: new Date().toISOString()
-          };
+          } as ProjectData;
         }
-      });
+      }).filter(project => project.tasks !== undefined); // Filter out any malformed projects
 
     } catch (error) {
-      logger.error('❌ Critical error transforming TROFOS data:', error);
+      logger.error('❌ Failed to transform TROFOS data:', error);
       return [];
     }
   }
+
+  // Helper methods for the transformation
+  private getTaskStatusCounts(tasks: any[]): Record<string, number> {
+    const counts: Record<string, number> = {};
+    tasks.forEach(task => {
+      const status = task.status || 'Unknown';
+      counts[status] = (counts[status] || 0) + 1;
+    });
+    return counts;
+  }
+
+  private getTaskPriorityCounts(tasks: any[]): Record<string, number> {
+    const counts: Record<string, number> = {};
+    tasks.forEach(task => {
+      const priority = task.priority || 'Medium';
+      counts[priority] = (counts[priority] || 0) + 1;
+    });
+    return counts;
+  }
+
+  private mapTrofosPriority(priority: any): string {
+    if (!priority) return 'Medium';
+
+    if (typeof priority === 'number') {
+      if (priority >= 4) return 'Critical';
+      if (priority === 3) return 'High';
+      if (priority === 2) return 'Medium';
+      if (priority === 1) return 'Low';
+    }
+
+    const priorityMap: { [key: string]: string } = {
+      'CRITICAL': 'Critical',
+      'HIGH': 'High',
+      'MEDIUM': 'Medium',
+      'LOW': 'Low',
+      'URGENT': 'Critical'
+    };
+
+    return priorityMap[priority?.toString().toUpperCase()] || 'Medium';
+  }
+
 
   /**
  * Helper method to normalize TROFOS project status

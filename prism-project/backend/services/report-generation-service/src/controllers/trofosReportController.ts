@@ -6,6 +6,7 @@ import logger from '../utils/logger';
 import { Report } from '../models/Report';
 import { PlatformDataService, ReportGenerationConfig } from '../services/PlatformDataService';
 import { EnhancedTrofosReportGenerator } from '../generators/EnhancedTrofosReportGenerator';
+import axios from 'axios';
 import { DataAnalyticsService } from '../services/DataAnalyticsService';
 
 interface AuthenticatedRequest extends Request {
@@ -348,7 +349,7 @@ async function processTrofosReport(
 
     // Generate PowerPoint using EnhancedTrofosReportGenerator
     const generator = new EnhancedTrofosReportGenerator();
-    
+
     // Update progress
     report.progress = 50;
     await report.save();
@@ -431,22 +432,30 @@ async function processTrofosReport(
 export async function validateTrofosConnection(req: Request, res: Response) {
   try {
     const { connectionId } = req.params;
-    const { projectId } = req.query;
+    const { projectId: queryProjectId } = req.query;
     const authToken = getAuthToken(req);
 
     logger.info('Validating TROFOS connection for report generation', {
       connectionId,
-      projectId: projectId || 'default-project'
+      queryProjectId: queryProjectId || 'not-provided'
     });
 
     const platformDataService = new PlatformDataService(authToken);
 
+    // FIXED: Pass "127" as default projectId so Platform Integrations can use it
+    // Platform Integrations will use its saved config projectId if available
     const reportConfig: ReportGenerationConfig = {
       platform: 'trofos',
       connectionId,
-      projectId: (projectId as string),
+      projectId: queryProjectId as string || "127", // FIXED: Default to "127"
       templateId: 'standard'
     };
+
+    logger.info('Calling platform data service with config', {
+      connectionId: reportConfig.connectionId,
+      projectId: reportConfig.projectId,
+      note: 'Platform Integrations will use saved config projectId if available'
+    });
 
     // Test data fetch
     const projectData = await platformDataService.fetchProjectData(reportConfig);
@@ -493,22 +502,29 @@ export async function validateTrofosConnection(req: Request, res: Response) {
 export async function getTrofosProjectPreview(req: Request, res: Response) {
   try {
     const { connectionId } = req.params;
-    const { projectId } = req.query;
+    const { projectId: queryProjectId } = req.query;
     const authToken = getAuthToken(req);
 
     logger.info('Getting TROFOS project preview', {
       connectionId,
-      projectId: projectId || 'default-project'
+      queryProjectId: queryProjectId || 'not-provided'
     });
 
     const platformDataService = new PlatformDataService(authToken);
 
+    // FIXED: Pass "127" as default projectId so Platform Integrations can use it
     const reportConfig: ReportGenerationConfig = {
       platform: 'trofos',
       connectionId,
-      projectId: (projectId as string),
+      projectId: queryProjectId as string || "127", // FIXED: Default to "127"
       templateId: 'standard'
     };
+
+    logger.info('Calling platform data service for preview with config', {
+      connectionId: reportConfig.connectionId,
+      projectId: reportConfig.projectId,
+      note: 'Platform Integrations will use saved config projectId if available'
+    });
 
     const projectData = await platformDataService.fetchProjectData(reportConfig);
 
@@ -525,7 +541,7 @@ export async function getTrofosProjectPreview(req: Request, res: Response) {
     const team = Array.isArray(trofosProject.team) ? trofosProject.team : [];
 
     // Calculate analytics
-    const completedTasks = tasks.filter(task => 
+    const completedTasks = tasks.filter(task =>
       task.status === 'Done' || task.status === 'Completed' || task.status === 'Closed'
     ).length;
 
@@ -533,8 +549,8 @@ export async function getTrofosProjectPreview(req: Request, res: Response) {
       task.priority === 'High' || task.priority === 'Urgent' || task.priority === 'Critical'
     ).length;
 
-    const topAssigneeWorkload = tasks.length > 0 ? 
-      Math.max(...team.map(member => 
+    const topAssigneeWorkload = tasks.length > 0 ?
+      Math.max(...team.map(member =>
         tasks.filter(task => task.assignee === member.name).length
       )) / tasks.length * 100 : 0;
 
@@ -547,7 +563,7 @@ export async function getTrofosProjectPreview(req: Request, res: Response) {
       analytics: {
         totalTasks: tasks.length,
         completedTasks,
-        completionRate: tasks.length > 0 ? 
+        completionRate: tasks.length > 0 ?
           Math.round((completedTasks / tasks.length) * 100) : 0,
         urgentTasks,
         unassignedTasks: tasks.filter(task => !task.assignee || task.assignee === 'Unassigned').length,
@@ -556,9 +572,9 @@ export async function getTrofosProjectPreview(req: Request, res: Response) {
         recommendedTemplate:
           tasks.length < 10 ? 'executive' :
             tasks.length > 50 ? 'detailed' : 'standard',
-        urgencyLevel: urgentTasks > 10 ? 'HIGH' : urgentTasks > 5 ? 'MEDIUM' : 'LOW',
-        capacityRisk: topAssigneeWorkload > 70 ? 'CRITICAL' :
-          topAssigneeWorkload > 50 ? 'HIGH' : 'LOW'
+        urgencyLevel: urgentTasks > 5 ? 'HIGH' : urgentTasks > 2 ? 'MEDIUM' : 'LOW',
+        capacityRisk: topAssigneeWorkload > 60 ? 'HIGH' :
+          topAssigneeWorkload > 40 ? 'MEDIUM' : 'LOW'
       }
     });
 

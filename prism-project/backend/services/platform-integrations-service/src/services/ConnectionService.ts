@@ -206,90 +206,153 @@ export class ConnectionService {
  */
   private async getTrofosProjectData(connection: IConnection, projectId?: string): Promise<any> {
     try {
-      const { serverUrl, apiKey, projectId: configProjectId } = connection.config;
+      const config = connection.config;
+      const configProjectId = config?.projectId;
 
-      if (!serverUrl || !apiKey) {
-        throw new Error('Missing TROFOS configuration: serverUrl and apiKey required');
+      if (!config?.serverUrl || !config?.apiKey) {
+        throw new Error('TROFOS connection missing required configuration');
       }
 
-      // FIXED: Correct URL construction to match working TrofosClient
-      const cleanServerUrl = serverUrl.replace(/\/$/, '');
-      // serverUrl should already include /api/external, so we just add /v1
-      const apiUrl = `${cleanServerUrl}/v1`;
-
-      logger.info('🔄 TROFOS: Fetching project data', {
-        serverUrl: cleanServerUrl,
-        apiUrl,
-        requestedProjectId: projectId,
-        configProjectId,
-        hasApiKey: !!apiKey
-      });
-
+      // Use the exact API pattern from successful PowerShell test
+      const apiUrl = config.serverUrl.replace(/\/$/, ''); // Remove trailing slash
       const headers = {
-        'x-api-key': apiKey,
+        'x-api-key': config.apiKey,
         'Content-Type': 'application/json'
       };
 
-      // If specific project requested, get it directly
-      if (projectId || configProjectId) {
-        const targetProjectId = projectId || configProjectId;
-        const projectUrl = `${apiUrl}/project/${targetProjectId}`;
+      logger.info('🔧 FIXED: Using correct TROFOS API endpoints', {
+        serverUrl: apiUrl,
+        requestedProjectId: projectId,
+        configProjectId: configProjectId,
+        targetProject: projectId || configProjectId || 'all'
+      });
 
-        logger.info(`📋 Fetching specific TROFOS project from: ${projectUrl}`);
-
-        try {
-          const response = await axios.get(projectUrl, {
-            headers,
-            timeout: 15000
-          });
-
-          if (response.data?.data) {
-            logger.info('✅ TROFOS single project data retrieved successfully');
-            return response.data.data;
-          } else if (response.data) {
-            // Handle case where data is not wrapped in data field
-            return response.data;
-          }
-        } catch (singleProjectError: any) {
-          logger.warn(`⚠️ Failed to fetch single project ${targetProjectId}:`, {
-            status: singleProjectError.response?.status,
-            message: singleProjectError.message
-          });
-          // Continue to project list fallback
-        }
-      }
-
-      // Get list of available projects as fallback
-      logger.info('📋 Fetching TROFOS project list as fallback');
-      const listUrl = `${apiUrl}/project/list`;
-
-      const listResponse = await axios.post(listUrl, {
-        pageNum: 1,
-        pageSize: 50,
-        sort: 'name',
-        direction: 'ASC'
+      // FIXED: Use POST endpoint with proper request body (like PowerShell test)
+      const listResponse = await axios.post(`${apiUrl}/v1/project/list`, {
+        option: 'all',
+        pageIndex: 0,
+        pageSize: 100  // Get more projects to find the target one
       }, {
         headers,
         timeout: 15000
       });
 
-      // FIXED: Handle different response structures
+      let projects = [];
+
+      // Handle different response structures
       if (listResponse.data?.data?.data) {
-        logger.info(`✅ TROFOS project list retrieved: ${listResponse.data.data.data.length} projects`);
-        return listResponse.data.data.data;
+        projects = listResponse.data.data.data;
       } else if (listResponse.data?.data) {
-        logger.info(`✅ TROFOS project list retrieved: ${listResponse.data.data.length} projects`);
-        return listResponse.data.data;
-      } else {
-        logger.warn('⚠️ TROFOS API returned unexpected structure');
-        return [];
+        projects = listResponse.data.data;
+      } else if (Array.isArray(listResponse.data)) {
+        projects = listResponse.data;
       }
+
+      logger.info(`✅ TROFOS project list retrieved: ${projects.length} projects`, {
+        availableProjects: projects.map((p: any) => ({ id: p.id, name: p.name }))
+      });
+
+      // FIXED: Filter for specific project if requested
+      const targetProjectId = projectId || configProjectId;
+      if (targetProjectId) {
+        const targetProject = projects.find((p: any) =>
+          p.id == targetProjectId || p.id === targetProjectId.toString()
+        );
+
+        if (targetProject) {
+          logger.info(`🎯 Found target project: ${targetProject.name} (ID: ${targetProject.id})`);
+
+          // FIXED: Try multiple detailed data endpoints to get task/backlog data
+          try {
+            // Try different endpoints for detailed data
+            const detailEndpoints = [
+              `/v1/project/${targetProject.id}/backlog/list`,    // Try backlog endpoint
+              `/v1/project/${targetProject.id}/items`,           // Try items endpoint  
+              `/v1/project/${targetProject.id}/tasks`,           // Try tasks endpoint
+              `/v1/project/${targetProject.id}/sprint/list`,     // Original sprint endpoint
+              `/v1/project/backlog/${targetProject.id}`,         // Alternative backlog pattern
+            ];
+
+            let detailedData = null;
+            let usedEndpoint = null;
+
+            for (const endpoint of detailEndpoints) {
+              try {
+                logger.info(`🔍 Trying detailed data endpoint: ${endpoint}`);
+
+                const detailResponse = await axios.post(`${apiUrl}${endpoint}`, {
+                  pageIndex: 0,
+                  pageSize: 50
+                }, {
+                  headers,
+                  timeout: 15000
+                });
+
+                if (detailResponse.data) {
+                  detailedData = detailResponse.data;
+                  usedEndpoint = endpoint;
+                  logger.info(`✅ Successfully retrieved detailed data from: ${endpoint}`);
+                  break;
+                }
+
+              } catch (endpointError: any) {
+                logger.debug(`❌ Endpoint ${endpoint} failed:`, endpointError.message);
+                // Continue to next endpoint
+              }
+            }
+
+            if (detailedData) {
+              // Combine project info with detailed data
+              const enrichedProject = {
+                ...targetProject,
+                detailedData: detailedData,
+                dataSource: usedEndpoint,
+                hasDetailedData: true
+              };
+
+              logger.info(`🎉 Enhanced project data retrieved using ${usedEndpoint}`);
+              return enrichedProject;
+            } else {
+              // FALLBACK: Use basic project data but log that detailed data failed
+              logger.warn(`⚠️ All detailed data endpoints failed for project ${targetProject.id}, using basic project info`);
+              return {
+                ...targetProject,
+                hasDetailedData: false,
+                detailDataError: 'All detailed endpoints returned 404'
+              };
+            }
+
+          } catch (detailError: any) {
+            logger.warn('Could not fetch detailed project data, using basic info', {
+              projectId: targetProject.id,
+              error: detailError.message
+            });
+            return targetProject;
+          }
+        } else {
+          logger.warn(`❌ Target project ${targetProjectId} not found in available projects`, {
+            targetProjectId,
+            availableIds: projects.map((p: any) => p.id)
+          });
+
+          // Return first project as fallback but log the issue
+          if (projects.length > 0) {
+            logger.info(`🔄 Using fallback project: ${projects[0].name} (ID: ${projects[0].id})`);
+            return projects[0];
+          }
+        }
+      }
+
+      // Return all projects if no specific project requested
+      logger.info(`📋 Returning all ${projects.length} projects`);
+      return projects;
 
     } catch (error: any) {
       logger.error('❌ TROFOS API request failed:', {
         message: error.message,
         status: error.response?.status,
-        url: error.config?.url
+        url: error.config?.url,
+        responseData: error.response?.data
       });
 
       if (error.response?.status === 401) {

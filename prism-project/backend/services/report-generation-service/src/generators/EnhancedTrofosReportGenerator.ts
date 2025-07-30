@@ -392,12 +392,14 @@ export class EnhancedTrofosReportGenerator {
         });
 
         // Generation timestamp
-        slide.addText(`Generated: ${new Date().toLocaleDateString('en-US', {
+        slide.addText(`Generated: ${new Date().toLocaleString('en-US', {
+            timeZone: 'Asia/Singapore', // Or your timezone
             year: 'numeric',
             month: 'long',
             day: 'numeric',
             hour: '2-digit',
-            minute: '2-digit'
+            minute: '2-digit',
+            hour12: true
         })}`, {
             x: 0.5, y: 4.5, w: 9, h: 0.6,
             fontSize: 14, color: 'FFFFFF', align: 'center'

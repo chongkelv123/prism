@@ -81,35 +81,88 @@ export class TrofosDataFetcher implements ITrofosDataFetcher {
       logger.info('Fetching TROFOS backlog items', { projectId });
 
       const client = this.createHttpClient(config);
-      
-      // Try different possible endpoints for backlog items
+
+      // FIXED: Use /v1/ prefix based on PowerShell test results
       const endpoints = [
-        `/api/external/projects/${projectId}/backlog`,
-        `/api/external/projects/${projectId}/items`,
-        `/api/external/projects/${projectId}/stories`,
-        `/api/external/backlogs?project_id=${projectId}`
+        `/v1/project/${projectId}/sprint`,         // PRIMARY: Contains all backlog data (239KB response)
+        `/v1/project/${projectId}/backlog`,        // Alternative if separate endpoint exists
+        `/v1/project/${projectId}/items`,          // Alternative naming
+        `/v1/project/${projectId}/backlogs`,       // Plural variant
       ];
 
       let backlogItems: TrofosBacklogItem[] = [];
 
       for (const endpoint of endpoints) {
         try {
+          // For backlog endpoint, add pagination params like in ConnectionService.ts
+          const requestConfig = endpoint.includes('/backlog') ? {
+            params: {
+              pageNum: 1,
+              pageSize: 100,
+              sort: 'priority',
+              direction: 'DESC'
+            }
+          } : {};
+
           const response = await this.executeWithRetry(
-            () => client.get(endpoint)
+            () => client.get(endpoint, requestConfig)
           );
 
           if (response.status === 200 && response.data) {
-            const data = Array.isArray(response.data) ? response.data : response.data.items || [];
-            backlogItems = data.map(item => this.normalizeBacklogItem(item));
+            // Handle nested data structure
+            let data = response.data;
+            if (response.data?.data?.data) {
+              data = response.data.data.data;
+            } else if (response.data?.data) {
+              data = response.data.data;
+            }
+
+            // SPECIAL HANDLING: Sprint endpoint contains backlog items embedded
+            if (endpoint.includes('/sprint')) {
+              // Extract backlog items from sprint data structure
+              const sprints = data.sprints || [data];
+              const backlogItems = [];
+
+              for (const sprint of sprints) {
+                if (sprint.backlog_items) {
+                  backlogItems.push(...sprint.backlog_items);
+                }
+                if (sprint.backlogs) {
+                  backlogItems.push(...sprint.backlogs);
+                }
+                if (sprint.items) {
+                  backlogItems.push(...sprint.items);
+                }
+              }
+
+              if (backlogItems.length > 0) {
+                const transformedItems = backlogItems.map(item => this.normalizeBacklogItem(item));
+                logger.info('TROFOS backlog items extracted from sprint data', {
+                  projectId,
+                  endpoint,
+                  count: transformedItems.length,
+                  sprints: sprints.length
+                });
+                return transformedItems;
+              }
+            }
+
+            const items = Array.isArray(data) ? data : data.items || [];
+            backlogItems = items.map(item => this.normalizeBacklogItem(item));
+
             logger.info('TROFOS backlog items fetched successfully', {
               projectId,
               endpoint,
-              count: backlogItems.length
+              count: backlogItems.length,
+              dataStructure: typeof response.data
             });
             break;
           }
-        } catch (endpointError) {
-          logger.debug(`TROFOS endpoint ${endpoint} not available`);
+        } catch (endpointError: any) {
+          logger.debug(`TROFOS endpoint ${endpoint} failed:`, {
+            status: endpointError.response?.status,
+            message: endpointError.message
+          });
           continue;
         }
       }
@@ -130,12 +183,12 @@ export class TrofosDataFetcher implements ITrofosDataFetcher {
       logger.info('Fetching TROFOS sprints', { projectId });
 
       const client = this.createHttpClient(config);
-      
-      // Try different possible endpoints for sprints
+
+      // FIXED: Use /v1/ prefix based on PowerShell test results
       const endpoints = [
-        `/api/external/projects/${projectId}/sprints`,
-        `/api/external/projects/${projectId}/iterations`,
-        `/api/external/sprints?project_id=${projectId}`
+        `/v1/project/${projectId}/sprint`,         // PRIMARY: Working endpoint (239KB response)
+        `/v1/project/${projectId}/sprints`,        // Alternative plural
+        `/v1/project/${projectId}/iterations`,     // Alternative naming
       ];
 
       let sprints: TrofosSprint[] = [];
@@ -147,17 +200,30 @@ export class TrofosDataFetcher implements ITrofosDataFetcher {
           );
 
           if (response.status === 200 && response.data) {
-            const data = Array.isArray(response.data) ? response.data : response.data.sprints || [];
-            sprints = data.map(sprint => this.normalizeSprint(sprint));
+            // Handle nested data structure
+            let data = response.data;
+            if (response.data?.data?.data) {
+              data = response.data.data.data;
+            } else if (response.data?.data) {
+              data = response.data.data;
+            }
+
+            const sprintData = Array.isArray(data) ? data : data.sprints || [];
+            sprints = sprintData.map(sprint => this.normalizeSprint(sprint));
+
             logger.info('TROFOS sprints fetched successfully', {
               projectId,
               endpoint,
-              count: sprints.length
+              count: sprints.length,
+              dataStructure: typeof response.data
             });
             break;
           }
-        } catch (endpointError) {
-          logger.debug(`TROFOS endpoint ${endpoint} not available`);
+        } catch (endpointError: any) {
+          logger.debug(`TROFOS endpoint ${endpoint} failed:`, {
+            status: endpointError.response?.status,
+            message: endpointError.message
+          });
           continue;
         }
       }
@@ -178,13 +244,13 @@ export class TrofosDataFetcher implements ITrofosDataFetcher {
       logger.info('Fetching TROFOS team resources', { projectId });
 
       const client = this.createHttpClient(config);
-      
-      // Try different possible endpoints for team resources
+
+      // FIXED: Use /v1/ prefix based on PowerShell test results
       const endpoints = [
-        `/api/external/projects/${projectId}/resources`,
-        `/api/external/projects/${projectId}/team`,
-        `/api/external/projects/${projectId}/members`,
-        `/api/external/resources?project_id=${projectId}`
+        `/v1/project/${projectId}/members`,        // PRIMARY: Standard team endpoint
+        `/v1/project/${projectId}/team`,           // Alternative naming
+        `/v1/project/${projectId}/resources`,      // Resource naming
+        `/v1/project/${projectId}/users`,          // User naming
       ];
 
       let resources: TrofosResource[] = [];
@@ -196,17 +262,30 @@ export class TrofosDataFetcher implements ITrofosDataFetcher {
           );
 
           if (response.status === 200 && response.data) {
-            const data = Array.isArray(response.data) ? response.data : response.data.resources || [];
-            resources = data.map(resource => this.normalizeResource(resource));
+            // Handle nested data structure
+            let data = response.data;
+            if (response.data?.data?.data) {
+              data = response.data.data.data;
+            } else if (response.data?.data) {
+              data = response.data.data;
+            }
+
+            const resourceData = Array.isArray(data) ? data : data.resources || data.members || [];
+            resources = resourceData.map(resource => this.normalizeResource(resource));
+
             logger.info('TROFOS team resources fetched successfully', {
               projectId,
               endpoint,
-              count: resources.length
+              count: resources.length,
+              dataStructure: typeof response.data
             });
             break;
           }
-        } catch (endpointError) {
-          logger.debug(`TROFOS endpoint ${endpoint} not available`);
+        } catch (endpointError: any) {
+          logger.debug(`TROFOS endpoint ${endpoint} failed:`, {
+            status: endpointError.response?.status,
+            message: endpointError.message
+          });
           continue;
         }
       }
@@ -237,13 +316,13 @@ export class TrofosDataFetcher implements ITrofosDataFetcher {
 
   private async executeWithRetry<T>(operation: () => Promise<T>): Promise<T> {
     let lastError: any;
-    
+
     for (let attempt = 1; attempt <= TrofosDataFetcher.MAX_RETRY_ATTEMPTS; attempt++) {
       try {
         return await operation();
       } catch (error) {
         lastError = error;
-        
+
         if (attempt === TrofosDataFetcher.MAX_RETRY_ATTEMPTS) {
           break;
         }
@@ -261,7 +340,7 @@ export class TrofosDataFetcher implements ITrofosDataFetcher {
           attempt,
           error: error instanceof Error ? error.message : 'Unknown error'
         });
-        
+
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
@@ -277,7 +356,7 @@ export class TrofosDataFetcher implements ITrofosDataFetcher {
       status: rawProject.status || 'active',
       backlog_count: rawProject.backlog_count || rawProject.backlogCount || 0,
       sprint_count: rawProject.sprint_count || rawProject.sprintCount || 0,
-      resources: Array.isArray(rawProject.resources) ? 
+      resources: Array.isArray(rawProject.resources) ?
         rawProject.resources.map(r => this.normalizeResource(r)) : undefined,
       created_at: rawProject.created_at || rawProject.createdAt || new Date().toISOString(),
       updated_at: rawProject.updated_at || rawProject.updatedAt || new Date().toISOString()
@@ -308,7 +387,7 @@ export class TrofosDataFetcher implements ITrofosDataFetcher {
       end_date: rawSprint.end_date || rawSprint.endDate || new Date().toISOString(),
       status: this.normalizeSprintStatus(rawSprint.status),
       velocity: rawSprint.velocity || undefined,
-      items: Array.isArray(rawSprint.items) ? 
+      items: Array.isArray(rawSprint.items) ?
         rawSprint.items.map(item => this.normalizeBacklogItem(item)) : undefined
     };
   }
@@ -325,7 +404,7 @@ export class TrofosDataFetcher implements ITrofosDataFetcher {
 
   private normalizePriority(priority: any): 'HIGH' | 'MEDIUM' | 'LOW' {
     if (!priority) return 'MEDIUM';
-    
+
     const p = priority.toString().toUpperCase();
     if (p.includes('HIGH') || p.includes('URGENT') || p.includes('CRITICAL')) return 'HIGH';
     if (p.includes('LOW') || p.includes('MINOR')) return 'LOW';
@@ -334,7 +413,7 @@ export class TrofosDataFetcher implements ITrofosDataFetcher {
 
   private normalizeSprintStatus(status: any): 'PLANNING' | 'ACTIVE' | 'COMPLETED' {
     if (!status) return 'PLANNING';
-    
+
     const s = status.toString().toUpperCase();
     if (s.includes('ACTIVE') || s.includes('CURRENT') || s.includes('RUNNING')) return 'ACTIVE';
     if (s.includes('COMPLETED') || s.includes('DONE') || s.includes('FINISHED')) return 'COMPLETED';

@@ -551,7 +551,7 @@ export async function downloadReport(req: AuthenticatedRequest, res: Response) {
     // const downloadFileName = `${sanitizedTitle}${templateSuffix}_${new Date().toISOString().slice(0, 10)}.pptx`;
 
     // Get project name from report data (need to fetch it)
-    let projectName = 'Unknown-Project';
+    /* let projectName = 'Unknown-Project';
     try {
       if (report.configuration?.projectId) {
         // Extract project name from stored file path or configuration
@@ -564,14 +564,17 @@ export async function downloadReport(req: AuthenticatedRequest, res: Response) {
       }
     } catch (error) {
       logger.warn('Could not extract project name for download filename:', error);
-    }
+    } */
 
-    const downloadFileName = FilenameGenerator.generateDownloadFilename({
-      reportTitle: report.title,
-      projectName: projectName,
+    // Use storage filename directly for consistent naming
+    const downloadFileName = path.basename(report.filePath || 'report.pptx');
+
+    logger.info('Using storage filename for download:', {
+      reportId,
+      storedPath: report.filePath,
+      downloadFileName,
       platform: report.platform,
-      templateType: report.template as 'standard' | 'executive' | 'detailed',
-      timestamp: report.createdAt || new Date()
+      template: report.template
     });
 
 

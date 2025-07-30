@@ -96,7 +96,7 @@ const reportService = {
 
       // ✅ NEW: Get platform-specific endpoints
       const platformEndpoints = getPlatformEndpoints(data.platformId);
-      
+
       // ✅ NEW: Map template to correct platform-specific endpoint  
       const endpoint = platformEndpoints[
         (data.templateId as 'standard' | 'executive' | 'detailed')
@@ -209,25 +209,34 @@ const reportService = {
 
       // Get the blob data
       const blob = await response.blob();
-      
+
       // Create download link
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      
-      // Use report data to create meaningful filename
-      const filename = reportData?.title 
-        ? `${reportData.title.replace(/[^a-zA-Z0-9]/g, '_')}.pptx`
-        : `report_${id}.pptx`;
-      
+
+      // ✅ Extract filename from backend's Content-Disposition header
+      const contentDisposition = response.headers.get('content-disposition');
+      let filename = `report_${id}.pptx`; // fallback
+
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1].replace(/['"]/g, '');
+        }
+      }
+
       link.download = filename;
+
+      console.log('🎯 Using backend filename:', filename);
+      console.log('Content-Disposition:', contentDisposition);
       document.body.appendChild(link);
       link.click();
-      
+
       // Cleanup
       window.URL.revokeObjectURL(url);
       document.body.removeChild(link);
-      
+
       console.log('✅ Report downloaded successfully:', filename);
 
     } catch (error) {

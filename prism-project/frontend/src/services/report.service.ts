@@ -21,6 +21,30 @@ export interface Report {
   configuration: Record<string, any>;
 }
 
+/**
+ * Transform storage filename to user-friendly download filename
+ * Replaces timestamp with today's date in DDMMYYYY format
+ */
+function transformToUserFriendlyFilename(storageFilename: string): string {
+  if (!storageFilename) {
+    return 'report.pptx';
+  }
+
+  // Generate today's date in DDMMYYYY format
+  const today = new Date();
+  const day = today.getDate().toString().padStart(2, '0');
+  const month = (today.getMonth() + 1).toString().padStart(2, '0');
+  const year = today.getFullYear().toString();
+  const dateFormat = `${day}${month}${year}`;
+
+  // Transform: platform-template-projectname-timestamp.pptx
+  // To:        platform-template-projectname_DDMMYYYY.pptx
+  return storageFilename.replace(
+    /-(\d{13})\.pptx$/,
+    `_${dateFormat}.pptx`
+  );
+}
+
 // ✅ HELPER FUNCTION TO GET AUTH HEADERS
 const getAuthHeaders = (): HeadersInit => {
   const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
@@ -215,21 +239,29 @@ const reportService = {
       const link = document.createElement('a');
       link.href = url;
 
-      // ✅ Extract filename from backend's Content-Disposition header
+      // Extract backend storage filename and transform to user-friendly format
       const contentDisposition = response.headers.get('content-disposition');
-      let filename = `report_${id}.pptx`; // fallback
+      let storageFilename = `report_${id}.pptx`; // fallback
 
       if (contentDisposition) {
         const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
         if (filenameMatch && filenameMatch[1]) {
-          filename = filenameMatch[1].replace(/['"]/g, '');
+          storageFilename = filenameMatch[1].replace(/['"]/g, '');
         }
       }
 
-      link.download = filename;
+      // Transform to user-friendly filename with date
+      const downloadFileName = transformToUserFriendlyFilename(storageFilename);
 
-      console.log('🎯 Using backend filename:', filename);
-      console.log('Content-Disposition:', contentDisposition);
+      link.download = downloadFileName;
+
+      // Enhanced logging
+      console.log('🎯 Frontend filename transformation:', {
+        storageFilename,
+        downloadFileName,
+        platform: id.slice(0, 8) // for debugging
+      });
+
       document.body.appendChild(link);
       link.click();
 
@@ -237,7 +269,7 @@ const reportService = {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(link);
 
-      console.log('✅ Report downloaded successfully:', filename);
+      console.log('✅ Report downloaded successfully:', downloadFileName);
 
     } catch (error) {
       console.error('❌ Error downloading report:', error);

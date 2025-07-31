@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, Check, FileText, CheckCircle, Clock, X, AlertCir
 import reportService, { ReportGenerationRequest } from '../../../services/report.service';
 import { useConnections } from '../../../contexts/ConnectionsContext';
 
-const SHOW_DEBUG_PANEL = false; // Set to true to enable debug panel
+const SHOW_DEBUG_PANEL = true; // Set to true to enable debug panel
 
 // FIXED: Add proper TypeScript interfaces
 interface Connection {

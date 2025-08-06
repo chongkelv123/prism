@@ -274,9 +274,14 @@ export class PlatformDataService {
       // Handle different response formats
       let projects: ProjectData[] = [];
 
+      // 🔧 FIX: Platform Integrations returns wrapper: { projects: [...], connectionId: "...", totalCount: 1 }
       if (responseData.projects) {
         // Format: { projects: [...], connectionInfo: {...} }
         projects = Array.isArray(responseData.projects) ? responseData.projects : [responseData.projects];
+
+        // 🎯 CRITICAL: Log successful extraction
+        logger.info(`[Platform-Integrations] ✅ Extracted ${projects.length} projects from wrapper response`);
+
       } else if (responseData.project) {
         // Format: { project: {...}, connectionInfo: {...} }
         projects = [responseData.project];
@@ -287,26 +292,69 @@ export class PlatformDataService {
         // Format: { id, name, ... } (single project)
         projects = [responseData];
       } else {
-        logger.warn('[Platform-Integrations] ⚠️ Unexpected response format:', responseData);
-        return [];
+        // 🚨 CRITICAL: Log parsing failure for debugging
+        logger.error('[Platform-Integrations] ❌ Failed to parse response format:', {
+          responseKeys: Object.keys(responseData || {}),
+          hasProjects: !!responseData.projects,
+          hasProject: !!responseData.project,
+          isArray: Array.isArray(responseData),
+          responseType: typeof responseData
+        });
+
+        return []; // Return empty array instead of undefined
+      }
+
+      // 🔧 FIX: Ensure projects is never undefined/null
+      if (!projects) {
+        logger.warn('[Platform-Integrations] ⚠️ Projects is null/undefined, initializing empty array');
+        projects = [];
+      } else if (!Array.isArray(projects)) {
+        logger.warn('[Platform-Integrations] ⚠️ Projects is not array, converting to array');
+        projects = [projects];
       }
 
       // Validate and clean up projects
       const validProjects = projects
-        .filter(project => project && project.id && project.name)
+        .filter(project => {
+          const isValid = project && project.id && project.name;
+          if (!isValid) {
+            logger.warn('[Platform-Integrations] ⚠️ Filtering out invalid project:', project);
+          }
+          return isValid;
+        })
         .map(project => ({
           ...project,
           platform: project.platform || platform,
           fallbackData: false, // Mark as real data
-          lastUpdated: project.lastUpdated || new Date().toISOString()
+          lastUpdated: project.lastUpdated || new Date().toISOString(),
+          // 🔧 FIX: Ensure critical arrays are never undefined
+          tasks: Array.isArray(project.tasks) ? project.tasks : [],
+          team: Array.isArray(project.team) ? project.team : [],
+          metrics: Array.isArray(project.metrics) ? project.metrics : []
         }));
 
       logger.info(`[Platform-Integrations] ✅ Parsed ${validProjects.length} valid projects from response`);
+
+      // 🎯 CRITICAL: Log project details for TROFOS debugging
+      if (platform === 'trofos' && validProjects.length > 0) {
+        const project = validProjects[0];
+        logger.info(`[Platform-Integrations] 🔍 TROFOS project validation:`, {
+          id: project.id,
+          name: project.name,
+          tasksCount: project.tasks?.length || 0,
+          teamCount: project.team?.length || 0,
+          metricsCount: project.metrics?.length || 0,
+          hasTasksArray: Array.isArray(project.tasks),
+          hasTeamArray: Array.isArray(project.team),
+          hasMetricsArray: Array.isArray(project.metrics)
+        });
+      }
+
       return validProjects;
 
     } catch (error) {
       logger.error('[Platform-Integrations] ❌ Failed to parse project data response:', error);
-      return [];
+      return []; // Return empty array to prevent undefined access
     }
   }
 

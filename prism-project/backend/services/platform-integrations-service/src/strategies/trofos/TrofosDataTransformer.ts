@@ -55,11 +55,8 @@ export class TrofosDataTransformer {
         id: item.id,
         title: item.title,
         description: item.description,
-        status: this.mapTaskStatus(item.status), // Uses fixed status mapping from Step 2A
-        assignee: this.resolveAssignee(
-          (item as any).assigneeId || (item as any).assignee_id,
-          resources
-        ), // 🔧 FIX: Proper assignee resolution
+        status: this.mapTaskStatus(item.status), 
+        assignee: (item.assignee as any)?.user?.user_display_name || 'Unassigned',
         priority: this.mapTaskPriority(item.priority),
         type: 'User Story',
         created: item.created_at,
@@ -70,8 +67,7 @@ export class TrofosDataTransformer {
       }));
 
       // Transform team members
-      const standardizedTeam = this.transformResources(resources);
-
+      const standardizedTeam = this.buildTeamFromBacklogItems(backlogItems);
       // Generate metrics with fixed calculations
       const metrics = this.generateMetrics(project, backlogItems, sprints);
 
@@ -122,6 +118,36 @@ export class TrofosDataTransformer {
       throw error;
     }
   }
+
+  /**
+ * Build team array from unique assignees in backlog items
+ */
+private buildTeamFromBacklogItems(backlogItems: TrofosBacklogItem[]): StandardizedTeamMember[] {
+  const uniqueAssignees = new Map<string, StandardizedTeamMember>();
+
+  backlogItems.forEach(item => {
+    if ((item.assignee as any)?.user?.user_display_name) {
+      const userId = (item.assignee as any).user_id?.toString() || (item as any).assignee_id?.toString();
+      const displayName = (item.assignee as any).user.user_display_name;
+      
+      if (!uniqueAssignees.has(displayName)) {
+        uniqueAssignees.set(displayName, {
+          id: userId || displayName,
+          name: displayName,
+          role: 'Team Member',
+          email: (item.assignee as any).user.user_email || '',
+          taskCount: 0
+        });
+      }
+      
+      // Increment task count
+      const member = uniqueAssignees.get(displayName)!;
+      member.taskCount = (member.taskCount || 0) + 1;
+    }
+  });
+
+  return Array.from(uniqueAssignees.values());
+}
 
   /**
    * 🔧 HELPER: Calculate data completeness score

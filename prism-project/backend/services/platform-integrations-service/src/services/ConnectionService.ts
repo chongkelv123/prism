@@ -241,6 +241,14 @@ export class ConnectionService {
 
         logger.info(`📋 Fetching specific TROFOS project from: ${projectUrl}`);
 
+        console.log('🔍 DEBUG - getTrofosProjectData called with:', {
+          serverUrl: config.serverUrl,
+          hasApiKey: !!config.apiKey,
+          apiKeyPrefix: config.apiKey?.substring(0, 10) + '...',
+          projectId: projectId || configProjectId,
+          apiUrl
+        });
+
         try {
           // Fetch project details and sprint data in parallel
           const [projectResponse, sprintResponse] = await Promise.all([
@@ -250,6 +258,13 @@ export class ConnectionService {
               return { data: { sprints: [] } }; // Return empty sprints on failure
             })
           ]);
+
+          console.log('🔍 DEBUG - TROFOS API Response:', {
+            projectStatus: projectResponse.status,
+            projectDataSize: JSON.stringify(projectResponse.data).length,
+            hasBacklogItems: !!projectResponse.data.backlogItems,
+            backlogCount: projectResponse.data.backlogItems?.length || 0
+          });
 
           if (projectResponse.data) {
             logger.info('✅ TROFOS project data retrieved successfully', {
@@ -267,16 +282,20 @@ export class ConnectionService {
               dataSource: 'LIVE_TROFOS_API'
             };
 
+            // CRITICAL: Check if TrofosDataTransformer is called
+            console.log('🔍 DEBUG - About to call TrofosDataTransformer...');
+
             return combinedData;
           }
-        } catch (singleProjectError: any) {
-          logger.warn(`⚠️ Failed to fetch single project ${targetProjectId}:`, {
-            status: singleProjectError.response?.status,
-            message: singleProjectError.message,
-            url: singleProjectError.config?.url
+        } catch (error) {        
+          console.log('🚨 DEBUG - TROFOS API FAILED:', {
+            error: (error as any).message,
+            status: (error as any).response?.status,
+            fallbackDataWillBeGenerated: true
           });
 
-          // If single project fails, continue to project list fallback
+          // If it's falling back to generated data, log it
+          throw error; // Don't let it fall back silently
         }
       }
 
@@ -946,12 +965,12 @@ export class ConnectionService {
           const priorityCounts = this.getTaskPriorityCounts(projectData.tasks);
 
           projectData.metrics = [
-            { name: 'Project ID', value: projectData.id},
-            { name: 'Platform', value: 'TROFOS'},
-            { name: 'Total Items', value: projectData.tasks.length.toString()},
-            { name: 'Backlog Counter', value: project.backlog_counter?.toString() || '0'},
-            { name: 'Team Size', value: projectData.team.length.toString()},
-            { name: 'Status', value: projectData.status},
+            { name: 'Project ID', value: projectData.id },
+            { name: 'Platform', value: 'TROFOS' },
+            { name: 'Total Items', value: projectData.tasks.length.toString() },
+            { name: 'Backlog Counter', value: project.backlog_counter?.toString() || '0' },
+            { name: 'Team Size', value: projectData.team.length.toString() },
+            { name: 'Status', value: projectData.status },
             // Task status metrics
             ...Object.entries(taskStatusCounts).map(([status, count]) => ({
               name: status,
@@ -969,7 +988,7 @@ export class ConnectionService {
               name: 'Completion Rate',
               value: projectData.tasks.length > 0
                 ? `${Math.round((taskStatusCounts['Done'] || 0) / projectData.tasks.length * 100)}%`
-                : '0%'    
+                : '0%'
             }
           ];
 
@@ -1015,7 +1034,7 @@ export class ConnectionService {
             tasks: [],
             team: [],
             metrics: [
-              { name: 'Transform Error', value: 'true'},
+              { name: 'Transform Error', value: 'true' },
               { name: 'Total Items', value: '0', type: 'number' }
             ],
             lastUpdated: new Date().toISOString()

@@ -25,61 +25,28 @@ export class TrofosClient extends BaseClient {
     super(connection);
     
     // Set up TROFOS-specific HTTP client configuration
-    this.http.defaults.baseURL = `${this.serverUrl}/v1`;
-    this.http.defaults.headers['Authorization'] = `Bearer ${this.apiKey}`;
+    this.http.defaults.baseURL = `${this.serverUrl}/v1`;    
+    this.http.defaults.headers['x-api-key'] = this.apiKey;
     this.http.defaults.headers['Content-Type'] = 'application/json';
-    this.http.defaults.headers['Accept'] = 'application/json';
-    
-    logger.info('TROFOS client initialized', { 
-      serverUrl: this.serverUrl,
-      projectId: this.projectId 
-    });
+    this.http.defaults.headers['Accept'] = 'application/json';    
   }
 
   async testConnection(): Promise<boolean> {
     try {
-      logger.info('Testing TROFOS connection...');
-      
-      // Test connection by getting projects list
-      const response = await this.http.post('/project', {
-        pageNum: 1,
-        pageSize: 1,
-        sort: 'name',
-        direction: 'ASC'
-      });
-      
+      const response = await this.http.get(`/project/${this.projectId}`);
+    
       if (response.status === 200) {
-        logger.info('TROFOS authentication successful', { 
+        logger.info('TROFOS authentication successful with x-api-key', { 
           status: response.status,
-          projectCount: response.data?.data?.length || 0
+          projectId: this.projectId
         });
-        return true;
-      } else {
-        logger.warn('TROFOS connection test failed', { status: response.status });
-        return false;
-      }
+      return true;
+    }
     } catch (error: any) {
-      logger.error('TROFOS connection test failed:', {
-        error: error.message,
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data
-      });
-      
-      // Re-throw with more specific error information
       if (error.response?.status === 401) {
-        throw new Error('Invalid API key. Please check your TROFOS API key.');
-      } else if (error.response?.status === 403) {
-        throw new Error('API key does not have sufficient permissions');
-      } else if (error.response?.status === 404) {
-        throw new Error('TROFOS server not found. Please check your server URL');
-      } else if (error.code === 'ENOTFOUND') {
-        throw new Error(`Cannot resolve TROFOS server '${this.serverUrl}'. Please check your server URL.`);
-      } else if (error.code === 'ECONNREFUSED') {
-        throw new Error('Connection refused. Please check your server URL and network connection');
-      } else {
-        throw new Error(`Connection test failed: ${error.message}`);
+        throw new Error('Invalid x-api-key. Please check your TROFOS API key.');
       }
+      return false;
     }
   }
 

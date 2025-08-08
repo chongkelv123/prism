@@ -40,11 +40,27 @@ export class TrofosDataTransformer {
     resources: TrofosResource[]
   ): StandardizedTrofosProject {
     try {
+      console.log('🚨 TRANSFORMER DEBUG: transformProject() called!', {
+        projectId: project.id,
+        backlogCount: backlogItems.length,
+        sprintCount: sprints.length
+      });
+      
       logger.info('Transforming TROFOS project with assignee resolution', {
         projectId: project.id,
         backlogItemsCount: backlogItems.length,
         resourcesCount: resources.length,
         sprintsCount: sprints.length
+      });
+
+      // Add before the task mapping
+      console.log('🔍 DEBUG - First backlog item structure:', {
+        id: backlogItems[0]?.id,
+        title: backlogItems[0]?.title,
+        summary: backlogItems[0]?.summary,
+        assignee: backlogItems[0]?.assignee,
+        assigneeUser: backlogItems[0]?.assignee?.user,
+        userDisplayName: backlogItems[0]?.assignee?.user?.user_display_name
       });
 
       // Transform sprints first
@@ -55,8 +71,8 @@ export class TrofosDataTransformer {
         id: item.id,
         title: item.title,
         description: item.description,
-        status: this.mapTaskStatus(item.status), 
-        assignee: (item.assignee as any)?.user?.user_display_name || 'Unassigned',
+        status: this.mapTaskStatus(item.status),
+        assignee: this.extractAssignee(item),
         priority: this.mapTaskPriority(item.priority),
         type: 'User Story',
         created: item.created_at,
@@ -119,35 +135,64 @@ export class TrofosDataTransformer {
     }
   }
 
+  // Add new method:
+  private extractAssignee(item: TrofosBacklogItem): string {
+    // Check multiple possible assignee field structures
+    if (item.assignee) {
+      // Structure: { assignee: { user: { user_display_name: "NAME" } } }
+      if ((item.assignee as any)?.user?.user_display_name) {
+        return (item.assignee as any).user.user_display_name;
+      }
+
+      // Structure: { assignee: "NAME" }
+      if (typeof item.assignee === 'string') {
+        return item.assignee;
+      }
+
+      // Structure: { assignee: { name: "NAME" } }
+      if ((item.assignee as any)?.name) {
+        return (item.assignee as any).name;
+      }
+    }
+
+    // Check alternative field names
+    if ((item as any).assignee_id && resources) {
+      return this.resolveAssignee((item as any).assignee_id, resources);
+    }
+
+    logger.debug('No assignee found for task', { taskId: item.id, assigneeField: item.assignee });
+    return 'Unassigned';
+  }
+
   /**
  * Build team array from unique assignees in backlog items
  */
-private buildTeamFromBacklogItems(backlogItems: TrofosBacklogItem[]): StandardizedTeamMember[] {
-  const uniqueAssignees = new Map<string, StandardizedTeamMember>();
+  private buildTeamFromBacklogItems(backlogItems: TrofosBacklogItem[]): StandardizedTeamMember[] {
+    const uniqueAssignees = new Map<string, StandardizedTeamMember>();
 
-  backlogItems.forEach(item => {
-    if ((item.assignee as any)?.user?.user_display_name) {
-      const userId = (item.assignee as any).user_id?.toString() || (item as any).assignee_id?.toString();
-      const displayName = (item.assignee as any).user.user_display_name;
-      
-      if (!uniqueAssignees.has(displayName)) {
-        uniqueAssignees.set(displayName, {
-          id: userId || displayName,
-          name: displayName,
-          role: 'Team Member',
-          email: (item.assignee as any).user.user_email || '',
-          taskCount: 0
-        });
+    backlogItems.forEach(item => {
+      if ((item.assignee as any)?.user?.user_display_name) {
+        const userId = (item.assignee as any).user_id?.toString() || (item as any).assignee_id?.toString();
+        const displayName = (item.assignee as any).user.user_display_name;
+
+        if (!uniqueAssignees.has(displayName)) {
+          uniqueAssignees.set(displayName, {
+            id: userId || displayName,
+            name: displayName,
+            role: 'Team Member',
+            email: (item.assignee as any).user.user_email || '',
+            taskCount: 0
+          });
+        }
+
+        // Increment task count
+        const member = uniqueAssignees.get(displayName)!;
+        member.taskCount = (member.taskCount || 0) + 1;
       }
-      
-      // Increment task count
-      const member = uniqueAssignees.get(displayName)!;
-      member.taskCount = (member.taskCount || 0) + 1;
-    }
-  });
+    });
 
-  return Array.from(uniqueAssignees.values());
-}
+    return Array.from(uniqueAssignees.values());
+  }
 
   /**
    * 🔧 HELPER: Calculate data completeness score

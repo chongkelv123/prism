@@ -287,7 +287,7 @@ export class ConnectionService {
 
             return combinedData;
           }
-        } catch (error) {        
+        } catch (error) {
           console.log('🚨 DEBUG - TROFOS API FAILED:', {
             error: (error as any).message,
             status: (error as any).response?.status,
@@ -916,18 +916,29 @@ export class ConnectionService {
 
           // Transform all found backlog items to tasks
           if (allBacklogItems.length > 0) {
-            projectData.tasks = allBacklogItems.map((backlog: any, taskIndex: number) => ({
-              id: backlog.id?.toString() || `task-${taskIndex}`,
-              title: backlog.title || backlog.name || backlog.summary || `Backlog Item ${taskIndex + 1}`,
-              status: this.normalizeTrofosTaskStatus(backlog.status || backlog.state),
-              assignee: backlog.assignee?.name || backlog.assigned_to || 'Unassigned',
-              priority: this.mapTrofosPriority(backlog.priority),
-              created: backlog.createdAt || backlog.created_at || new Date().toISOString(),
-              updated: backlog.updatedAt || backlog.updated_at || new Date().toISOString(),
-              description: backlog.description || backlog.body || '',
-              labels: backlog.tags || backlog.labels || [],
-              group: backlog.sprint?.name || `Sprint ${backlog.sprint_id}` || 'Backlog'
-            }));
+            projectData.tasks = allBacklogItems.map((backlog: any, taskIndex: number) => {
+              // Debug logging
+              console.log('🔍 TITLE DEBUG:', {
+                taskIndex,
+                backlog_id: backlog.backlog_id,
+                summary: backlog.summary,
+                title: backlog.title,
+                name: backlog.name
+              });
+
+              return {
+                id: backlog.backlog_id?.toString() || `task-${taskIndex}`,
+                title: backlog.summary || backlog.title || backlog.name || `Backlog Item ${taskIndex + 1}`,
+                status: this.normalizeTrofosTaskStatus(backlog.status || backlog.state),
+                assignee: backlog.assignee?.user?.user_display_name || 'Unassigned',
+                priority: this.mapTrofosPriority(backlog.priority),
+                created: backlog.createdAt || backlog.created_at || new Date().toISOString(),
+                updated: backlog.updatedAt || backlog.updated_at || new Date().toISOString(),
+                description: backlog.description || backlog.body || '',
+                labels: backlog.tags || backlog.labels || [],
+                group: backlog.sprint?.name || `Sprint ${backlog.sprint_id}` || 'Backlog'
+              };
+            });
 
             logger.info(`✅ Extracted ${projectData.tasks.length} tasks from TROFOS data`);
           } else {

@@ -926,7 +926,7 @@ export class ConnectionService {
                 name: backlog.name
               });
 
-              return {
+              const transformedTask = {
                 id: backlog.backlog_id?.toString() || `task-${taskIndex}`,
                 title: backlog.summary || backlog.title || backlog.name || `Backlog Item ${taskIndex + 1}`,
                 status: this.normalizeTrofosTaskStatus(backlog.status || backlog.state),
@@ -938,6 +938,16 @@ export class ConnectionService {
                 labels: backlog.tags || backlog.labels || [],
                 group: backlog.sprint?.name || `Sprint ${backlog.sprint_id}` || 'Backlog'
               };
+
+              // ADD THIS DEBUG LOG:
+              console.log('🔍 TRANSFORMED TASK DEBUG:', {
+                taskIndex,
+                originalSummary: backlog.summary,
+                transformedTitle: transformedTask.title,
+                taskObject: transformedTask
+              });
+
+              return transformedTask;
             });
 
             logger.info(`✅ Extracted ${projectData.tasks.length} tasks from TROFOS data`);

@@ -1,7 +1,7 @@
 // backend/services/report-generation-service/src/generators/EnhancedTrofosReportGenerator.ts
 
 import PptxGenJS from 'pptxgenjs';
-import fs from 'fs';
+import fs, { stat } from 'fs';
 import path from 'path';
 import logger from '../utils/logger';
 import { ProjectData } from '../services/PlatformDataService';
@@ -74,7 +74,7 @@ export class EnhancedTrofosReportGenerator extends SafeReportGenerator {
       });
 
       const pptx = new PptxGenJS();
-      
+
       pptx.layout = 'LAYOUT_16x9';
       pptx.author = 'PRISM Report System';
       pptx.company = 'TROFOS Integration Platform';
@@ -392,7 +392,7 @@ export class EnhancedTrofosReportGenerator extends SafeReportGenerator {
       {
         title: 'UNASSIGNED WORK',
         value: `${this.trofosAnalysis.unassignedTasks}`,
-        subtitle: this.trofosAnalysis.unassignedTasks === 0 ? 'ALL ASSIGNED' : 'NEEDS OWNERS',        
+        subtitle: this.trofosAnalysis.unassignedTasks === 0 ? 'ALL ASSIGNED' : 'NEEDS OWNERS',
         status: this.trofosAnalysis.unassignedTasks === 0 ? 'success' :
           this.trofosAnalysis.unassignedTasks <= 3 ? 'warning' : 'danger',
         x: 7.75, y: 1.2, w: 2.2, h: 1.5
@@ -954,7 +954,13 @@ export class EnhancedTrofosReportGenerator extends SafeReportGenerator {
     const sortedTasks = tasks
       .sort((a, b) => {
         const priorityOrder = { 'Highest': 4, 'High': 3, 'Medium': 2, 'Low': 1, 'None': 0 };
-        return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+        const statusOrder = { 'Done': 3, 'In Progress': 2, 'To Do': 1 };
+
+        // First sort by priority, then by status
+        const priorityDiff = (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+        if (priorityDiff !== 0) return priorityDiff;
+
+        return (statusOrder[b.status] || 0) - (statusOrder[a.status] || 0);
       })
       .slice(0, 15);
 
@@ -968,7 +974,34 @@ export class EnhancedTrofosReportGenerator extends SafeReportGenerator {
       ]
     ];
 
-    sortedTasks.forEach(task => {
+    console.log('🔍 POWERPOINT GENERATOR DEBUG - Task objects received:');
+    console.log('   - Tasks array length:', sortedTasks.length);
+    console.log('   - First 3 task objects:', JSON.stringify(sortedTasks.slice(0, 3), null, 2));
+
+    sortedTasks.forEach((task, index) => {
+      /* console.log(`🔍 TASK ACCESS TEST ${index}:`, {
+        id: task.id,
+        directAccess: task.name,
+        bracketAccess: task['title'],
+        stringified: JSON.stringify(task),
+        descriptors: Object.getOwnPropertyDescriptors(task)
+      });
+
+      // Try both access methods
+      const titleFromDirect = task.name;
+      const titleFromBracket = task['title'];
+      const titleFromStringify = JSON.parse(JSON.stringify(task)).title;
+
+      console.log('Title access methods:', { titleFromDirect, titleFromBracket, titleFromStringify }); */
+
+      /* console.log('🔍 STATUS DEBUG:', {
+        id: task.id,
+        directStatus: task.status,
+        bracketStatus: task['status'],
+        normalizedDirect: this.normalizeTrofosStatus(task.status || 'Unknown'),
+        normalizedBracket: this.normalizeTrofosStatus(task['status'] || 'Unknown')
+      }); */
+
       const priorityColor = this.getPriorityColor(task.priority || 'None');
       const statusColor = this.getStatusColor(task.status || 'Unknown');
 
@@ -978,7 +1011,7 @@ export class EnhancedTrofosReportGenerator extends SafeReportGenerator {
           options: { fontSize: 9, bold: false, fill: { color: 'FFFFFF' }, color: '000000' }
         },
         {
-          text: this.truncateText(task.name || 'Unnamed Task', 40),
+          text: this.truncateText(task['title'] || 'Unnamed Task', 40),
           options: { fontSize: 9, bold: false, fill: { color: 'FFFFFF' }, color: '000000' }
         },
         {
@@ -990,7 +1023,7 @@ export class EnhancedTrofosReportGenerator extends SafeReportGenerator {
           options: { fontSize: 9, bold: true, fill: { color: 'FFFFFF' }, color: priorityColor }
         },
         {
-          text: task.status || 'Unknown',
+          text: this.normalizeTrofosStatus(task['status'] || 'Unknown'),
           options: { fontSize: 9, bold: true, fill: { color: 'FFFFFF' }, color: statusColor }
         }
       ]);

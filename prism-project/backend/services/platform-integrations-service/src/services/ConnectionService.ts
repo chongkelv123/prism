@@ -917,14 +917,14 @@ export class ConnectionService {
           // Transform all found backlog items to tasks
           if (allBacklogItems.length > 0) {
             projectData.tasks = allBacklogItems.map((backlog: any, taskIndex: number) => {
-              // Debug logging
+              /* // Debug logging
               console.log('🔍 TITLE DEBUG:', {
                 taskIndex,
                 backlog_id: backlog.backlog_id,
                 summary: backlog.summary,
                 title: backlog.title,
                 name: backlog.name
-              });
+              }); */
 
               const transformedTask = {
                 id: backlog.backlog_id?.toString() || `task-${taskIndex}`,
@@ -939,13 +939,13 @@ export class ConnectionService {
                 group: backlog.sprint?.name || `Sprint ${backlog.sprint_id}` || 'Backlog'
               };
 
-              // ADD THIS DEBUG LOG:
+              /* // ADD THIS DEBUG LOG:
               console.log('🔍 TRANSFORMED TASK DEBUG:', {
                 taskIndex,
                 originalSummary: backlog.summary,
                 transformedTitle: transformedTask.title,
                 taskObject: transformedTask
-              });
+              }); */
 
               return transformedTask;
             });

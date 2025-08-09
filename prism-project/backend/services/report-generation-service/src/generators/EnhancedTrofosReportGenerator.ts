@@ -499,15 +499,27 @@ export class EnhancedTrofosReportGenerator extends SafeReportGenerator {
       fontSize: 28, color: theme.primary, bold: true
     });
 
+    // Critical workload warning if team concentration > 70%
     if (this.trofosAnalysis.teamWorkload[0]?.percentage >= 70) {
       slide.addShape(pptx.ShapeType.rect, {
-        x: 0.5, y: 1.5, w: 9, h: 0.6,
-        fill: { color: 'FEF2F2' }, line: { color: 'DC2626', width: 2 }
+        x: 0.5, y: 1.1, w: 9, h: 1.4,
+        fill: { color: theme.danger },
+        line: { color: theme.danger, width: 0 }
       });
 
-      slide.addText('⚠️ CRITICAL: High workload concentration detected', {
-        x: 1, y: 1.7, w: 8, h: 0.2,
-        fontSize: 14, color: 'DC2626', bold: true
+      slide.addText('CRITICAL: WORKLOAD CONCENTRATION DETECTED', {
+        x: 0.5, y: 1.3, w: 9, h: 0.4,
+        fontSize: 18, color: 'FFFFFF', bold: true, align: 'center'
+      });
+
+      slide.addText(`${this.trofosAnalysis.teamWorkload[0]?.percentage}% of tasks assigned to ${this.trofosAnalysis.teamWorkload[0]?.assignee}`, {
+        x: 0.5, y: 1.7, w: 9, h: 0.4,
+        fontSize: 14, color: 'FFFFFF', align: 'center'
+      });
+
+      slide.addText('IMMEDIATE REBALANCING REQUIRED', {
+        x: 0.5, y: 2.0, w: 9, h: 0.4,
+        fontSize: 16, color: 'FFFFFF', bold: true, align: 'center'
       });
     }
 
@@ -521,7 +533,7 @@ export class EnhancedTrofosReportGenerator extends SafeReportGenerator {
     ];
 
     slide.addChart(pptx.ChartType.bar, chartData, {
-      x: 0.5, y: 2.2, w: 9, h: 3.5,
+      x: 0.5, y: 2.6, w: 9, h: 3.0,
       showLegend: false,
       showTitle: false
     });

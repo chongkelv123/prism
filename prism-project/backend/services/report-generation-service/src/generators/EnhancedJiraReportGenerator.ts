@@ -672,52 +672,41 @@ export class EnhancedJiraReportGenerator {
     // Critical workload warning if team concentration > 70%
     if (this.jiraAnalysis.teamWorkload[0]?.percentage >= 70) {
       slide.addShape(pptx.ShapeType.rect, {
-        x: 0.5, y: 1.5, w: 9, h: 1.5,
+        x: 0.5, y: 1.1, w: 9, h: 1.4,
         fill: { color: theme.danger },
         line: { color: theme.danger, width: 0 }
       });
 
       slide.addText('CRITICAL: WORKLOAD CONCENTRATION DETECTED', {
-        x: 0.5, y: 1.7, w: 9, h: 0.4,
+        x: 0.5, y: 1.3, w: 9, h: 0.4,
         fontSize: 18, color: 'FFFFFF', bold: true, align: 'center'
       });
 
       slide.addText(`${this.jiraAnalysis.teamWorkload[0]?.percentage}% of tasks assigned to ${this.jiraAnalysis.teamWorkload[0]?.assignee}`, {
-        x: 0.5, y: 2.1, w: 9, h: 0.4,
+        x: 0.5, y: 1.7, w: 9, h: 0.4,
         fontSize: 14, color: 'FFFFFF', align: 'center'
       });
 
       slide.addText('IMMEDIATE REBALANCING REQUIRED', {
-        x: 0.5, y: 2.5, w: 9, h: 0.4,
+        x: 0.5, y: 2.0, w: 9, h: 0.4,
         fontSize: 16, color: 'FFFFFF', bold: true, align: 'center'
       });
     }
 
-    // Team workload table
-    const workloadTableData = [
-      [
-        { text: 'Team Member', options: { bold: true, fontSize: 14, fill: { color: theme.primary }, color: 'FFFFFF' } },
-        { text: 'Tasks', options: { bold: true, fontSize: 14, fill: { color: theme.primary }, color: 'FFFFFF' } },
-        { text: 'Percentage', options: { bold: true, fontSize: 14, fill: { color: theme.primary }, color: 'FFFFFF' } },
-        { text: 'Risk Level', options: { bold: true, fontSize: 14, fill: { color: theme.primary }, color: 'FFFFFF' } }
-      ]
+    const teamData = this.jiraAnalysis.teamWorkload.slice(0, 8);
+    const chartData = [
+      {
+        name: 'Team Workload Distribution',
+        labels: teamData.map(item => item.assignee),
+        values: teamData.map(item => item.count)
+      }
     ];
 
-    this.jiraAnalysis.teamWorkload.forEach(member => {
-      const riskColor = member.riskLevel === 'CRITICAL' ? theme.danger :
-        member.riskLevel === 'HIGH' ? theme.warning :
-          member.riskLevel === 'MEDIUM' ? theme.info : theme.success;
-
-      workloadTableData.push([
-        { text: member.assignee, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } },
-        { text: member.count.toString(), options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } },
-        { text: `${member.percentage}%`, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } },
-        { text: member.riskLevel, options: { fontSize: 12, color: riskColor, bold: true, fill: { color: 'FFFFFF' } } }
-
-      ]);
+    slide.addChart(pptx.ChartType.bar, chartData, {
+      x: 0.5, y: 2.6, w: 9, h: 3.0,
+      showLegend: false,
+      showTitle: false
     });
-
-    slide.addTable(workloadTableData, { x: 1, y: 3.2, w: 8, h: 2.2 });
   }
 
   /**

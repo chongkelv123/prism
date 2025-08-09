@@ -724,48 +724,35 @@ export class EnhancedJiraReportGenerator {
       fontSize: 28, color: theme.primary, bold: true
     });
 
-    // Urgent tasks alert
-    if (this.jiraAnalysis.urgentTasks > 10) {
-      slide.addShape(pptx.ShapeType.rect, {
-        x: 0.5, y: 1.5, w: 4, h: 2,
-        fill: { color: theme.danger },
-        line: { color: theme.danger, width: 0 }
-      });
-
-      slide.addText('HIGH PRIORITY ALERT', {
-        x: 0.5, y: 1.7, w: 4, h: 0.4,
-        fontSize: 16, color: 'FFFFFF', bold: true, align: 'center'
-      });
-
-      slide.addText(`${this.jiraAnalysis.urgentTasks}`, {
-        x: 0.5, y: 2.1, w: 4, h: 0.8,
-        fontSize: 36, color: 'FFFFFF', bold: true, align: 'center'
-      });
-
-      slide.addText('URGENT TASKS', {
-        x: 0.5, y: 2.9, w: 4, h: 0.4,
-        fontSize: 14, color: 'FFFFFF', align: 'center'
-      });
-    }
-
-    // Priority distribution
-    const priorityTableData = [
-      [
-        { text: 'Priority', options: { bold: true, fontSize: 14, fill: { color: theme.primary }, color: 'FFFFFF' } },
-        { text: 'Count', options: { bold: true, fontSize: 14, fill: { color: theme.primary }, color: 'FFFFFF' } },
-        { text: 'Percentage', options: { bold: true, fontSize: 14, fill: { color: theme.primary }, color: 'FFFFFF' } }
-      ]
+    const priorityData = this.jiraAnalysis.priorityDistribution;
+    const chartData = [
+      {
+        name: 'Priority Distribution',
+        labels: priorityData.map(item => item.priority),
+        values: priorityData.map(item => item.count),
+        colors: priorityData.map(item => item.color)
+      }
     ];
 
-    this.jiraAnalysis.priorityDistribution.forEach(item => {
-      priorityTableData.push([
-        { text: item.priority, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } },
-        { text: item.count.toString(), options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } },
-        { text: `${item.percentage}%`, options: { fontSize: 12, bold: false, fill: { color: 'FFFFFF' }, color: '000000' } }
-      ]);
+    slide.addChart(pptx.ChartType.bar, chartData, {
+      x: 0.5, y: 1.5, w: 5, h: 3.5,
+      showLegend: false,
+      showTitle: false
     });
 
-    slide.addTable(priorityTableData, { x: 5.5, y: 1.5, w: 3.5, h: 3 });
+    const insights = [
+      `${this.jiraAnalysis.urgentTasks} high-priority tasks require immediate attention`,
+      `${this.jiraAnalysis.unassignedTasks} tasks lack assigned owners`,
+      `Team risk level assessed as: ${this.jiraAnalysis.riskLevel}`,
+      `Completion rate stands at ${this.jiraAnalysis.completionRate}%`
+    ];
+
+    insights.forEach((insight, index) => {
+      slide.addText(`• ${insight}`, {
+        x: 6, y: 1.8 + (index * 0.4), w: 3.5, h: 0.3,
+        fontSize: 12, color: '374151'
+      });
+    });
   }
 
   /**

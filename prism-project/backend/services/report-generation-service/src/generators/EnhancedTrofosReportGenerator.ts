@@ -946,7 +946,7 @@ export class EnhancedTrofosReportGenerator extends SafeReportGenerator {
     });
 
     slide.addText('Real TROFOS tasks showing project progress and team contributions', {
-      x: 0.5, y: 1.0, w: 9, h: 0.4,
+      x: 0.5, y: 0.8, w: 9, h: 0.4,
       fontSize: 14, color: '6B7280', align: 'center'
     });
 
@@ -998,14 +998,14 @@ export class EnhancedTrofosReportGenerator extends SafeReportGenerator {
 
     slide.addTable(tableData, {
       x: 0.5,
-      y: 1.4,
+      y: 1.2,
       w: 9,
       h: 4.0,
       colW: [1.2, 3.5, 1.8, 1.2, 1.3]
     });
 
     slide.addText(`Showing ${sortedTasks.length} of ${tasks.length} total tasks (sorted by priority and status)`, {
-      x: 0.5, y: 6.5, w: 9, h: 0.3,
+      x: 0.5, y: 5.25, w: 9, h: 0.3,
       fontSize: 10, color: '6B7280', italic: true, align: 'center'
     });
   }

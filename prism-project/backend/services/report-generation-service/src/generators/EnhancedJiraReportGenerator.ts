@@ -542,15 +542,17 @@ export class EnhancedJiraReportGenerator {
       {
         title: 'TEAM CAPACITY',
         value: this.jiraAnalysis.teamWorkload[0]?.percentage >= 70 ? 'OVERLOADED' : 'BALANCED',
+        subtitle: `Top: ${this.jiraAnalysis.teamWorkload[0]?.percentage || 0}% concentration`,
         status: this.jiraAnalysis.teamWorkload[0]?.percentage >= 70 ? 'danger' : 'success',
         x: 5.25, y: 1.2, w: 2.2, h: 1.5
       },
       {
-        title: 'UNASSIGNED',
+        title: 'UNASSIGNED WORK',
         value: `${this.jiraAnalysis.unassignedTasks}`,
+        subtitle: this.jiraAnalysis.unassignedTasks === 0 ? 'ALL ASSIGNED' : 'NEEDS OWNERS',
         status: this.jiraAnalysis.unassignedTasks === 0 ? 'success' :
           this.jiraAnalysis.unassignedTasks <= 3 ? 'warning' : 'danger',
-        x: 7.75, y: 1.2, w: 1.8, h: 1.5
+        x: 7.75, y: 1.2, w: 2.2, h: 1.5
       }
     ];
 
@@ -573,9 +575,16 @@ export class EnhancedJiraReportGenerator {
 
       // KPI Value
       slide.addText(kpi.value, {
-        x: kpi.x, y: kpi.y + 0.5, w: 2, h: 0.8,
+        x: kpi.x, y: kpi.y + 0.4, w: 2, h: 0.8,
         fontSize: 20, color: 'FFFFFF', bold: true, align: 'center'
       });
+
+      if (kpi.subtitle) {
+        slide.addText(kpi.subtitle, {
+          x: kpi.x, y: kpi.y + 1, w: kpi.w, h: 0.4,
+          fontSize: 10, color: 'FFFFFF', align: 'center'
+        });
+      }
     });
 
     // Risk Level Alert

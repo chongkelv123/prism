@@ -373,28 +373,29 @@ export class EnhancedTrofosReportGenerator extends SafeReportGenerator {
         value: `${this.trofosAnalysis.completionRate}%`,
         status: this.trofosAnalysis.completionRate >= 80 ? 'success' :
           this.trofosAnalysis.completionRate >= 60 ? 'warning' : 'danger',
-        x: 0.5, y: 1.5, w: 4.3, h: 1.8
+        x: 0.25, y: 1.2, w: 2.2, h: 1.5
       },
       {
         title: 'URGENT TASKS',
         value: `${this.trofosAnalysis.urgentTasks}`,
         status: this.trofosAnalysis.urgentTasks <= 5 ? 'success' :
-          this.trofosAnalysis.urgentTasks <= 15 ? 'warning' : 'danger',
-        x: 5.2, y: 1.5, w: 4.2, h: 1.8
+          this.trofosAnalysis.urgentTasks <= 10 ? 'warning' : 'danger',
+        x: 2.75, y: 1.2, w: 2.2, h: 1.5
       },
       {
         title: 'TEAM BALANCE',
         value: this.trofosAnalysis.teamWorkload[0]?.percentage >= 70 ? 'OVERLOADED' : 'BALANCED',
         subtitle: `Top: ${this.trofosAnalysis.teamWorkload[0]?.percentage || 0}% concentration`,
         status: this.trofosAnalysis.teamWorkload[0]?.percentage >= 70 ? 'danger' : 'success',
-        x: 0.5, y: 3.5, w: 4.3, h: 1.8
+        x: 5.25, y: 1.2, w: 2.2, h: 1.5
       },
       {
         title: 'UNASSIGNED WORK',
         value: `${this.trofosAnalysis.unassignedTasks}`,
-        subtitle: this.trofosAnalysis.unassignedTasks === 0 ? 'ALL ASSIGNED' : 'NEEDS OWNERS',
-        status: this.trofosAnalysis.unassignedTasks === 0 ? 'success' : 'warning',
-        x: 5.2, y: 3.5, w: 4.2, h: 1.8
+        subtitle: this.trofosAnalysis.unassignedTasks === 0 ? 'ALL ASSIGNED' : 'NEEDS OWNERS',        
+        status: this.trofosAnalysis.unassignedTasks === 0 ? 'success' :
+          this.trofosAnalysis.unassignedTasks <= 3 ? 'warning' : 'danger',
+        x: 7.75, y: 1.2, w: 2.2, h: 1.5
       }
     ];
 
@@ -408,18 +409,18 @@ export class EnhancedTrofosReportGenerator extends SafeReportGenerator {
       });
 
       slide.addText(kpi.title, {
-        x: kpi.x, y: kpi.y + 0.2, w: kpi.w, h: 0.4,
-        fontSize: 14, color: 'FFFFFF', bold: true, align: 'center'
+        x: kpi.x, y: kpi.y + 0.1, w: kpi.w, h: 0.4,
+        fontSize: 12, color: 'FFFFFF', bold: true, align: 'center'
       });
 
       slide.addText(kpi.value, {
-        x: kpi.x, y: kpi.y + 0.6, w: kpi.w, h: 0.8,
+        x: kpi.x, y: kpi.y + 0.4, w: kpi.w, h: 0.8,
         fontSize: 20, color: 'FFFFFF', bold: true, align: 'center'
       });
 
       if (kpi.subtitle) {
         slide.addText(kpi.subtitle, {
-          x: kpi.x, y: kpi.y + 1.3, w: kpi.w, h: 0.4,
+          x: kpi.x, y: kpi.y + 1, w: kpi.w, h: 0.4,
           fontSize: 10, color: 'FFFFFF', align: 'center'
         });
       }
@@ -960,7 +961,7 @@ export class EnhancedTrofosReportGenerator extends SafeReportGenerator {
     const tableData = [
       [
         { text: 'ID', options: { bold: true, fontSize: 12, fill: { color: theme.primary }, color: 'FFFFFF' } },
-        { text: 'Task Title', options: { bold: true, fontSize: 12, fill: { color: theme.primary }, color: 'FFFFFF' } },
+        { text: 'Summary', options: { bold: true, fontSize: 12, fill: { color: theme.primary }, color: 'FFFFFF' } },
         { text: 'Assignee', options: { bold: true, fontSize: 12, fill: { color: theme.primary }, color: 'FFFFFF' } },
         { text: 'Priority', options: { bold: true, fontSize: 12, fill: { color: theme.primary }, color: 'FFFFFF' } },
         { text: 'Status', options: { bold: true, fontSize: 12, fill: { color: theme.primary }, color: 'FFFFFF' } }
@@ -977,7 +978,7 @@ export class EnhancedTrofosReportGenerator extends SafeReportGenerator {
           options: { fontSize: 9, bold: false, fill: { color: 'FFFFFF' }, color: '000000' }
         },
         {
-          text: this.truncateText(task.name || 'Unnamed Task', 30),
+          text: this.truncateText(task.name || 'Unnamed Task', 40),
           options: { fontSize: 9, bold: false, fill: { color: 'FFFFFF' }, color: '000000' }
         },
         {

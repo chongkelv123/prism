@@ -15,45 +15,92 @@ export class TrofosClient extends BaseClient {
     return apiKey.trim();
   }
 
-  private get projectId(): string {
+  private get projectId(): string | undefined {
     const projectId = this.connection.config.projectId;
-    if (!projectId) throw new Error('TROFOS project ID is required');
-    return projectId.trim();
+    return projectId?.trim();
   }
 
   constructor(connection: PlatformConnection) {
     super(connection);
-    
+
     // Set up TROFOS-specific HTTP client configuration
-    this.http.defaults.baseURL = `${this.serverUrl}/v1`;    
+    this.http.defaults.baseURL = `${this.serverUrl}/v1`;
     this.http.defaults.headers['x-api-key'] = this.apiKey;
     this.http.defaults.headers['Content-Type'] = 'application/json';
-    this.http.defaults.headers['Accept'] = 'application/json';    
+    this.http.defaults.headers['Accept'] = 'application/json';
   }
 
   async testConnection(): Promise<boolean> {
     try {
-      const response = await this.http.get(`/project/${this.projectId}`);
-    
-      if (response.status === 200) {
-        logger.info('TROFOS authentication successful with x-api-key', { 
-          status: response.status,
-          projectId: this.projectId
+      // Test connection by listing projects instead of accessing specific project
+      const response = await this.listProjects(0, 1);
+
+      if (response && (response.projects || response.data)) {
+        logger.info('TROFOS connection test successful via project list', {
+          hasProjects: true,
+          apiKeyValid: true
         });
-      return true;
-    }
+        return true;
+      }
+
+      throw new Error('No projects found or invalid response structure');
     } catch (error: any) {
       if (error.response?.status === 401) {
         throw new Error('Invalid x-api-key. Please check your TROFOS API key.');
       }
-      return false;
+      if (error.response?.status === 403) {
+        throw new Error('Insufficient permissions. Please check your API key permissions.');
+      }
+
+      logger.error('TROFOS connection test failed', {
+        error: error.message,
+        status: error.response?.status
+      });
+
+      throw new Error(`Connection test failed: ${error.message}`);
+    }
+  }
+
+  async listProjects(pageIndex = 0, pageSize = 50): Promise<any> {
+    try {
+      const response = await this.http.post('/project/list', {
+        option: "all",
+        pageIndex,
+        pageSize
+      });
+
+      if (response.status === 200 && response.data) {
+        logger.info('TROFOS projects list retrieved successfully', {
+          status: response.status,
+          projectCount: response.data.projects?.length || 0,
+          pageIndex,
+          pageSize
+        });
+        return response.data;
+      }
+
+      throw new Error('Invalid response from TROFOS project list API');
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        throw new Error('Invalid x-api-key. Please check your TROFOS API key.');
+      }
+      if (error.response?.status === 403) {
+        throw new Error('Insufficient permissions to list projects. Please check your API key permissions.');
+      }
+
+      logger.error('Failed to list TROFOS projects', {
+        error: error.message,
+        status: error.response?.status
+      });
+
+      throw new Error(`Failed to list projects: ${error.message}`);
     }
   }
 
   async getProjects(): Promise<ProjectData[]> {
     try {
       logger.info('Fetching TROFOS project data...');
-      
+
       // Get project details
       const projectResponse = await this.http.get(`/project/${this.projectId}`);
       const project = projectResponse.data;
@@ -111,7 +158,7 @@ export class TrofosClient extends BaseClient {
 
       // Calculate sprint-related metrics
       const sprintMetrics = this.calculateSprintMetrics(sprints);
-      
+
       // Calculate task status metrics
       const statusCounts = tasks.reduce((acc: any, task: Task) => {
         acc[task.status] = (acc[task.status] || 0) + 1;
@@ -168,7 +215,7 @@ export class TrofosClient extends BaseClient {
       return [projectData];
     } catch (error: any) {
       logger.error('Failed to fetch TROFOS project data:', error);
-      
+
       if (error.response?.status === 404) {
         throw new Error(`Project '${this.projectId}' not found or not accessible`);
       } else if (error.response?.status === 403) {
@@ -186,7 +233,7 @@ export class TrofosClient extends BaseClient {
     if (projectId !== this.projectId) {
       throw new Error(`Project '${projectId}' does not match configured project '${this.projectId}'`);
     }
-    
+
     const projects = await this.getProjects();
     return projects[0]; // TROFOS client only returns one project
   }

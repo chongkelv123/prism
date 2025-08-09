@@ -1065,24 +1065,26 @@ export class EnhancedTrofosReportGenerator extends SafeReportGenerator {
     slide.addText('PREDICTIVE ANALYSIS', {
       x: 0.5, y: 0.3, w: 9, h: 0.8,
       fontSize: 28, color: theme.primary, bold: true
+    });    
+
+    // Calculate projected completion based on current velocity
+    const remainingTasks = this.trofosAnalysis.totalTasks -
+      this.trofosAnalysis.statusDistribution.find(s => s.status === 'Done')?.count || 0;
+
+    const averageVelocity = Math.max(1, Math.round(this.trofosAnalysis.totalTasks * 0.1)); // Assume 10% weekly velocity
+    const projectedWeeks = Math.ceil(remainingTasks / averageVelocity);
+
+    const projectedCompletion = new Date();
+    projectedCompletion.setDate(projectedCompletion.getDate() + (projectedWeeks * 7));
+
+    slide.addText(`Based on current velocity, project completion projected for: ${projectedCompletion.toLocaleDateString()}`, {
+      x: 0.5, y: 1.5, w: '90%', h: 1,
+      fontSize: 16, color: '374151'
     });
 
-    slide.addText('Based on current progress and team velocity patterns', {
-      x: 0.5, y: 1.2, w: 9, h: 0.4,
-      fontSize: 14, color: '6B7280', align: 'center'
-    });
-
-    const predictions = [
-      'Expected completion with current velocity in 2-3 weeks',
-      'High-priority tasks likely resolved within 1 week',
-      'Team capacity optimization needed for sustained delivery',
-      'Resource allocation adjustments recommended for Q4'
-    ];
-
-    slide.addText(predictions.join('\n\n'), {
-      x: 0.5, y: 2, w: '90%', h: 3,
-      fontSize: 14, color: '374151',
-      bullet: { type: 'bullet' }
+    slide.addText(`Remaining tasks: ${remainingTasks} | Estimated velocity: ${averageVelocity} tasks/week`, {
+      x: 0.5, y: 2.5, w: '90%', h: 1,
+      fontSize: 14, color: '6B7280'
     });
   }
 

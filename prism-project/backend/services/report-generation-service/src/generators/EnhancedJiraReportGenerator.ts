@@ -1,6 +1,4 @@
 // backend/services/report-generation-service/src/generators/EnhancedJiraReportGenerator.ts
-// REAL JIRA DATA POWERPOINT GENERATOR - Windows Compatible (No Unicode/Symbols)
-// Uses authentic Jira platform data from your working connection: 686093672bb729e4dfaf6fa2
 
 import PptxGenJS from 'pptxgenjs';
 import fs from 'fs';

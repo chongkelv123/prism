@@ -25,7 +25,7 @@ const SettingsPage: React.FC = () => {
     lastName: user?.lastName || '',
     email: user?.email || '',
   });
-  
+
   const [isLoading, setIsLoading] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string>('');
   const [errors, setErrors] = useState<FormErrors>({});
@@ -35,7 +35,7 @@ const SettingsPage: React.FC = () => {
       ...prev,
       [field]: value
     }));
-    
+
     // Clear error when user starts typing
     if (errors[field]) {
       setErrors(prev => ({
@@ -47,21 +47,21 @@ const SettingsPage: React.FC = () => {
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
-    
+
     if (!profileData.firstName.trim()) {
       newErrors.firstName = 'First name is required';
     }
-    
+
     if (!profileData.lastName.trim()) {
       newErrors.lastName = 'Last name is required';
     }
-    
+
     if (!profileData.email.trim()) {
       newErrors.email = 'Email is required';
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profileData.email)) {
       newErrors.email = 'Please enter a valid email address';
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -74,15 +74,18 @@ const SettingsPage: React.FC = () => {
     try {
       setIsLoading(true);
       setErrors({});
-      
+
       await apiClient.put('/api/auth/profile', profileData);
-      
+
       setSaveMessage('Profile updated successfully!');
-      setTimeout(() => setSaveMessage(''), 3000);
-      
+      setTimeout(() => {
+        setSaveMessage('');
+        window.location.reload();
+      }, 1500);
+
     } catch (error: any) {
       console.error('Profile update error:', error);
-      
+
       if (error.response?.status === 409) {
         setErrors({ email: 'Email address is already in use' });
       } else if (error.response?.data?.message) {
@@ -131,7 +134,7 @@ const SettingsPage: React.FC = () => {
               {saveMessage}
             </div>
           )}
-          
+
           {errors.general && (
             <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-700 border border-red-200">
               {errors.general}
@@ -150,16 +153,15 @@ const SettingsPage: React.FC = () => {
                   type="text"
                   value={profileData.firstName}
                   onChange={(e) => handleInputChange('firstName', e.target.value)}
-                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    errors.firstName ? 'border-red-500' : 'border-gray-300'
-                  }`}
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.firstName ? 'border-red-500' : 'border-gray-300'
+                    }`}
                   placeholder="Enter your first name"
                 />
                 {errors.firstName && (
                   <p className="mt-1 text-sm text-red-600">{errors.firstName}</p>
                 )}
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Last Name
@@ -168,9 +170,8 @@ const SettingsPage: React.FC = () => {
                   type="text"
                   value={profileData.lastName}
                   onChange={(e) => handleInputChange('lastName', e.target.value)}
-                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    errors.lastName ? 'border-red-500' : 'border-gray-300'
-                  }`}
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.lastName ? 'border-red-500' : 'border-gray-300'
+                    }`}
                   placeholder="Enter your last name"
                 />
                 {errors.lastName && (
@@ -188,9 +189,8 @@ const SettingsPage: React.FC = () => {
                 type="email"
                 value={profileData.email}
                 onChange={(e) => handleInputChange('email', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                  errors.email ? 'border-red-500' : 'border-gray-300'
-                }`}
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.email ? 'border-red-500' : 'border-gray-300'
+                  }`}
                 placeholder="Enter your email address"
               />
               {errors.email && (
@@ -201,7 +201,7 @@ const SettingsPage: React.FC = () => {
             {/* Info Note */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <p className="text-sm text-blue-700">
-                <strong>Note:</strong> Changes to your email address will require you to log in again 
+                <strong>Note:</strong> Changes to your email address will require you to log in again
                 with your new email address.
               </p>
             </div>
@@ -217,7 +217,7 @@ const SettingsPage: React.FC = () => {
               <Save size={16} className="mr-2" />
               {isLoading ? 'Saving...' : 'Save Settings'}
             </button>
-            
+
             {!hasChanges() && !isLoading && (
               <p className="mt-2 text-sm text-gray-500">
                 No changes to save
